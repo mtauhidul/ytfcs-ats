@@ -1,20 +1,38 @@
-import { AppSidebar } from "~/components/app-sidebar"
+import { Outlet, useLocation } from "react-router";
+import { AppSidebar } from "~/components/app-sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "~/components/ui/breadcrumb"
-import { Separator } from "~/components/ui/separator"
+} from "~/components/ui/breadcrumb";
+import { Separator } from "~/components/ui/separator";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from "~/components/ui/sidebar"
+} from "~/components/ui/sidebar";
 
-export default function Page() {
+export default function DashboardLayout() {
+  const location = useLocation();
+  const segments = location.pathname.split("/").filter(Boolean);
+
+  // Mapping dashboard routes to more descriptive labels
+  const breadcrumbLabels: Record<string, string> = {
+    dashboard: "Dashboard",
+    import: "Candidate Import",
+    candidates: "Candidates List",
+    workflow: "Application Flow",
+    communication: "Communication Tools",
+    collaboration: "Collaboration & Feedback",
+  };
+
+  const breadcrumb = segments.map((segment, idx) => ({
+    title: breadcrumbLabels[segment] || segment,
+    href: `/${segments.slice(0, idx + 1).join("/")}`,
+  }));
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -28,28 +46,27 @@ export default function Page() {
             />
             <Breadcrumb>
               <BreadcrumbList>
-                <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="#">
-                    Building Your Application
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator className="hidden md:block" />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Data Fetching</BreadcrumbPage>
-                </BreadcrumbItem>
+                {breadcrumb.map((item, idx) => (
+                  <BreadcrumbItem key={item.href}>
+                    {idx < breadcrumb.length - 1 ? (
+                      <>
+                        <BreadcrumbPage>{item.title}</BreadcrumbPage>
+                        <BreadcrumbSeparator className="hidden md:block" />
+                      </>
+                    ) : (
+                      <BreadcrumbPage>{item.title}</BreadcrumbPage>
+                    )}
+                  </BreadcrumbItem>
+                ))}
               </BreadcrumbList>
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-          <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-            <div className="bg-muted/50 aspect-video rounded-xl" />
-            <div className="bg-muted/50 aspect-video rounded-xl" />
-            <div className="bg-muted/50 aspect-video rounded-xl" />
-          </div>
-          <div className="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
-        </div>
+
+        <main className="flex flex-1 flex-col gap-4 p-4 pt-0">
+          <Outlet />
+        </main>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }
