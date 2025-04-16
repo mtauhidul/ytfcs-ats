@@ -23,7 +23,7 @@ const data = {
   user: {
     name: "Mir Tauhidul",
     email: "tauhidul.stu2017@juniv.edu",
-    avatar: "/avatars/tauhid.jpg", // Replace with actual path or avatar logic
+    avatar: "/avatar.png", // Replace with actual path or avatar logic
   },
   teams: [
     {
