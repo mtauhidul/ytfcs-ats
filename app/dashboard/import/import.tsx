@@ -1,15 +1,24 @@
 "use client";
 
 import { addDoc, collection } from "firebase/firestore";
-import { Loader2 } from "lucide-react";
+import { Check, FileUp, Loader2, RefreshCw } from "lucide-react";
 import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Toaster, toast } from "sonner";
 
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { Separator } from "~/components/ui/separator";
+import { Progress } from "~/components/ui/progress";
 
 import {
   parseResume,
@@ -22,6 +31,7 @@ import type { AppDispatch, RootState } from "~/store";
 export default function ImportPage() {
   const dispatch = useDispatch<AppDispatch>();
   const [file, setFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const { parsedData, status, error } = useSelector(
     (state: RootState) => state.candidateImport
@@ -35,12 +45,17 @@ export default function ImportPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
+      // Reset any previous parsing state when a new file is selected
+      if (status !== "idle") {
+        dispatch(resetImport());
+      }
     }
   };
 
   // 2. Parse resume
   const handleParse = () => {
     if (file) {
+      setSaveStatus("idle"); // Reset save status
       dispatch(parseResume(file));
     }
   };
@@ -69,8 +84,13 @@ export default function ImportPage() {
       });
       setSaveStatus("done");
       toast.success("Candidate saved successfully!");
-      dispatch(resetImport());
-      setFile(null);
+
+      // Reset after a short delay for better user experience
+      setTimeout(() => {
+        dispatch(resetImport());
+        setFile(null);
+        setSaveStatus("idle");
+      }, 1500);
     } catch (err) {
       console.error("Error saving candidate:", err);
       setSaveStatus("error");
@@ -78,112 +98,289 @@ export default function ImportPage() {
     }
   };
 
+  // Handle drag events
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  // Handle file drop
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFile = e.dataTransfer.files[0];
+      const validTypes = [
+        ".pdf",
+        ".doc",
+        ".docx",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+
+      // Check if file type is valid
+      if (
+        validTypes.some(
+          (type) =>
+            droppedFile.name.toLowerCase().endsWith(type) ||
+            droppedFile.type === type
+        )
+      ) {
+        setFile(droppedFile);
+        if (status !== "idle") {
+          dispatch(resetImport());
+        }
+      } else {
+        toast.error("Please upload a PDF, DOC, or DOCX file");
+      }
+    }
+  };
+
+  // Reset everything
+  const handleReset = () => {
+    dispatch(resetImport());
+    setFile(null);
+    setSaveStatus("idle");
+  };
+
   return (
-    <section className="bg-muted/50 min-h-[300px] rounded-xl p-4 space-y-6">
-      <Toaster />
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">Candidate Import</h1>
-        <p className="text-sm text-muted-foreground">
-          Upload & parse resumes, then store candidate data in Firestore.
-        </p>
-      </div>
+    <div className="container py-8 mx-auto">
+      <Toaster position="top-right" />
 
-      <Separator />
+      <div className="flex flex-col md:flex-row gap-8">
+        {/* Left column - Upload */}
+        <Card className="w-full md:w-1/3 h-fit">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileUp className="size-5" />
+              Resume Upload
+            </CardTitle>
+            <CardDescription>
+              Upload a candidate's resume to parse and store their information
+            </CardDescription>
+          </CardHeader>
 
-      {/* File Upload */}
-      <div className="flex flex-col gap-2 max-w-sm">
-        <Label htmlFor="resumeFile">Select Resume (PDF, DOC, DOCX)</Label>
-        <Input
-          id="resumeFile"
-          type="file"
-          accept=".pdf,.doc,.docx"
-          onChange={handleFileChange}
-        />
-        {file && (
-          <p className="text-sm text-muted-foreground">
-            Selected file: <strong>{file.name}</strong>
-          </p>
-        )}
-        <Button
-          onClick={handleParse}
-          disabled={!file || status === "loading"}
-          className="w-fit"
-        >
-          {status === "loading" ? (
-            <div className="flex items-center gap-2">
-              <Loader2 className="size-4 animate-spin" />
-              Parsing...
+          <CardContent>
+            <div
+              className={`border-2 border-dashed ${
+                dragActive ? "border-primary bg-primary/5" : "border-border"
+              } 
+                rounded-lg p-8 flex flex-col items-center justify-center gap-4 transition-colors`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <div className="bg-muted/50 p-4 rounded-full">
+                <FileUp className="size-8 text-muted-foreground" />
+              </div>
+
+              <div className="text-center">
+                <p className="font-medium mb-1">Drop resume file here</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  PDF, DOC, or DOCX (max 10MB)
+                </p>
+
+                <div className="relative">
+                  <Button variant="outline" className="w-full">
+                    Select File
+                  </Button>
+                  <Input
+                    id="resumeFile"
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={handleFileChange}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </div>
+              </div>
             </div>
-          ) : (
-            "Parse Resume"
-          )}
-        </Button>
-        {error && (
-          <p className="text-red-500 text-sm mt-1">
-            Error parsing resume: {error}
-          </p>
-        )}
-      </div>
 
-      {/* Parsed Data */}
-      {parsedData && status === "succeeded" && (
-        <div className="space-y-4 max-w-md p-4 border border-border rounded-md bg-background">
-          <h2 className="text-lg font-medium">Parsed Candidate Data</h2>
+            {file && (
+              <div className="mt-4 bg-muted/30 p-3 rounded-md">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs font-normal">
+                    {file.name.split(".").pop()?.toUpperCase()}
+                  </Badge>
+                  <p className="text-sm font-medium truncate flex-1">
+                    {file.name}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    {(file.size / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
+                    onClick={() => setFile(null)}
+                  >
+                    <RefreshCw className="size-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
 
-          <div className="flex flex-col gap-2">
-            <Label>Name</Label>
-            <Input
-              value={parsedData.name || ""}
-              onChange={(e) => handleUpdate("name", e.target.value)}
-            />
-          </div>
+          <CardFooter className="flex-col gap-2">
+            <Button
+              onClick={handleParse}
+              disabled={!file || status === "loading"}
+              className="w-full"
+            >
+              {status === "loading" ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  Parsing Resume...
+                </div>
+              ) : (
+                "Parse Resume"
+              )}
+            </Button>
 
-          <div className="flex flex-col gap-2">
-            <Label>Experience</Label>
-            <Input
-              value={parsedData.experience || ""}
-              onChange={(e) => handleUpdate("experience", e.target.value)}
-            />
-          </div>
+            {error && (
+              <div className="text-red-500 text-sm p-2 bg-red-50 border border-red-100 rounded-md w-full">
+                {error}
+              </div>
+            )}
 
-          <div className="flex flex-col gap-2">
-            <Label>Education</Label>
-            <Input
-              // Now it's a string, not an object
-              value={parsedData.education || ""}
-              onChange={(e) => handleUpdate("education", e.target.value)}
-            />
-          </div>
+            {status === "loading" && (
+              <Progress value={50} className="w-full mt-2" />
+            )}
+          </CardFooter>
+        </Card>
 
-          <div className="flex flex-col gap-2">
-            <Label>Skills (comma-separated)</Label>
-            <Input
-              // Display them comma-separated
-              value={parsedData.skills?.join(", ") || ""}
-              onChange={(e) => handleUpdate("skills", e.target.value)}
-            />
-          </div>
+        {/* Right column - Parsed Data */}
+        <Card
+          className={`w-full md:w-2/3 transition-opacity duration-300 ${
+            parsedData && status === "succeeded"
+              ? "opacity-100"
+              : "opacity-50 pointer-events-none"
+          }`}
+        >
+          <CardHeader>
+            <CardTitle>Candidate Information</CardTitle>
+            <CardDescription>
+              Review and edit the parsed information before saving
+            </CardDescription>
+          </CardHeader>
 
-          <div className="flex items-center gap-2">
-            <Button onClick={handleSave} disabled={saveStatus === "saving"}>
+          <CardContent className="space-y-6">
+            {parsedData && status === "succeeded" ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="text-sm font-medium">
+                      Full Name
+                    </Label>
+                    <Input
+                      id="name"
+                      value={parsedData.name || ""}
+                      onChange={(e) => handleUpdate("name", e.target.value)}
+                      placeholder="Candidate name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="experience" className="text-sm font-medium">
+                      Years of Experience
+                    </Label>
+                    <Input
+                      id="experience"
+                      value={parsedData.experience || ""}
+                      onChange={(e) =>
+                        handleUpdate("experience", e.target.value)
+                      }
+                      placeholder="e.g. 5 years"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="education" className="text-sm font-medium">
+                    Education
+                  </Label>
+                  <Input
+                    id="education"
+                    value={parsedData.education || ""}
+                    onChange={(e) => handleUpdate("education", e.target.value)}
+                    placeholder="Education details"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="skills" className="text-sm font-medium">
+                    Skills (comma-separated)
+                  </Label>
+                  <Input
+                    id="skills"
+                    value={parsedData.skills?.join(", ") || ""}
+                    onChange={(e) => handleUpdate("skills", e.target.value)}
+                    placeholder="e.g. JavaScript, React, Node.js"
+                  />
+
+                  {parsedData.skills && parsedData.skills.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {parsedData.skills.map((skill, index) => (
+                        <Badge key={index} variant="secondary">
+                          {skill}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                <FileUp className="size-12 mb-4 opacity-20" />
+                <h3 className="text-lg font-medium mb-2">No Data Available</h3>
+                <p className="max-w-sm">
+                  Upload and parse a resume to see the extracted candidate
+                  information here
+                </p>
+              </div>
+            )}
+          </CardContent>
+
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={handleReset}>
+              Reset
+            </Button>
+
+            <Button
+              onClick={handleSave}
+              disabled={
+                !parsedData || saveStatus === "saving" || status !== "succeeded"
+              }
+              className="relative"
+            >
               {saveStatus === "saving" ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="size-4 animate-spin" />
                   Saving...
                 </div>
+              ) : saveStatus === "done" ? (
+                <div className="flex items-center gap-2">
+                  <Check className="size-4" />
+                  Saved!
+                </div>
               ) : (
-                "Save to Firestore"
+                "Save to Database"
               )}
             </Button>
-            {saveStatus === "done" && (
-              <p className="text-green-500 text-sm">Candidate saved!</p>
-            )}
-            {saveStatus === "error" && (
-              <p className="text-red-500 text-sm">Error saving candidate</p>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
+          </CardFooter>
+        </Card>
+      </div>
+    </div>
   );
 }

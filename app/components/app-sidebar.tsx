@@ -1,7 +1,9 @@
 import {
   Building2,
+  FolderArchive,
   Group,
   MessageSquareText,
+  Tag,
   Upload,
   Users,
   Workflow,
@@ -61,6 +63,18 @@ const data = {
       title: "Collaboration",
       url: "/dashboard/collaboration",
       icon: Group,
+      isActive: false,
+    },
+    {
+      title: "Tags",
+      url: "/dashboard/tags",
+      icon: Tag,
+      isActive: false,
+    },
+    {
+      title: "Categories",
+      url: "/dashboard/categories",
+      icon: FolderArchive,
       isActive: false,
     },
   ],

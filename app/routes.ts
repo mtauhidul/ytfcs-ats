@@ -8,5 +8,7 @@ export default [
     route("workflow", "dashboard/workflow/workflow.tsx"),
     route("communication", "dashboard/communication/communication.tsx"),
     route("collaboration", "dashboard/collaboration/collaboration.tsx"),
+    route("tags", "dashboard/tags/tags.tsx"),
+    route("categories", "dashboard/categories/categories.tsx"),
   ]),
 ] satisfies RouteConfig;

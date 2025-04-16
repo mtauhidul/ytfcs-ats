@@ -3,9 +3,13 @@
 import {
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type SortingState,
 } from "@tanstack/react-table";
+import React from "react";
 import {
   Table,
   TableBody,
@@ -14,15 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { cn } from "~/lib/utils";
 
 interface ExtendedColumnMeta {
   thClass?: string;
   tdClass?: string;
-}
-
-declare module "@tanstack/react-table" {
-  interface ColumnMeta<TData, TValue> extends ExtendedColumnMeta {}
 }
 
 interface DataTableProps<TData> {
@@ -30,60 +29,78 @@ interface DataTableProps<TData> {
   data: TData[];
 }
 
-export function DataTable<TData>({ columns, data }: DataTableProps<TData>) {
-  // Set up TanStack Table
+interface DataTableProps<TData> {
+  columns: ColumnDef<TData, any>[];
+  data: TData[];
+  globalFilter?: string; // for searching
+  onGlobalFilterChange?: (value: string) => void;
+}
+
+export function DataTable<TData>({
+  columns,
+  data,
+  globalFilter = "",
+}: DataTableProps<TData>) {
+  const [sorting, setSorting] = React.useState<SortingState>([]);
+
   const table = useReactTable({
     data,
     columns,
+    state: {
+      globalFilter,
+      sorting,
+    },
+    onSortingChange: setSorting,
+    globalFilterFn: (row, columnId, filterValue) => {
+      // basic substring match across row values
+      const value = row.getValue(columnId) as string;
+      return value
+        ?.toString()
+        .toLowerCase()
+        .includes(filterValue.toLowerCase());
+    },
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   });
 
   return (
-    // Outer container with potential horizontal scroll if truly needed
     <div className="w-full overflow-x-auto border rounded-md">
-      {/* `table-fixed w-full` is crucial for respecting our fixed widths */}
       <Table className="table-fixed w-full text-sm">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
-                const colDef = header.column.columnDef;
-                return (
-                  <TableHead
-                    key={header.id}
-                    className={cn(
-                      "px-2 py-2 font-semibold",
-                      // apply custom width or classes from meta
-                      colDef.meta?.thClass
-                    )}
-                  >
-                    {!header.isPlaceholder &&
-                      flexRender(colDef.header, header.getContext())}
-                  </TableHead>
-                );
-              })}
+              {headerGroup.headers.map((header) => (
+                <TableHead
+                  key={header.id}
+                  className="px-2 py-2 font-semibold cursor-pointer select-none"
+                  onClick={header.column.getToggleSortingHandler()}
+                >
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                  {/* Sorting indicator */}
+                  {{
+                    asc: " ▲",
+                    desc: " ▼",
+                  }[header.column.getIsSorted() as string] ?? null}
+                </TableHead>
+              ))}
             </TableRow>
           ))}
         </TableHeader>
-
         <TableBody>
-          {table.getRowModel().rows?.length ? (
+          {table.getRowModel().rows.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => {
-                  const colDef = cell.column.columnDef;
-                  return (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(
-                        "px-2 py-2 align-top",
-                        colDef.meta?.tdClass
-                      )}
-                    >
-                      {flexRender(colDef.cell, cell.getContext())}
-                    </TableCell>
-                  );
-                })}
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id} className="px-2 py-2 align-top">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
               </TableRow>
             ))
           ) : (
