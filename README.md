@@ -1,87 +1,130 @@
-# Welcome to React Router!
+# YTFCS-ATS (Applicant Tracking System)
 
-A modern, production-ready template for building full-stack React applications using React Router.
-
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+A modern, full-stack Applicant Tracking System (ATS) built with React, React Router, shadcn/ui, Redux, Tailwind CSS, and Firebase Firestore. Resume parsing is powered by Affinda's API. Designed for easy candidate import, management, and real‑time collaboration.
 
 ## Features
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+- 📄 **Resume Import & Parsing**
+  - Upload PDF/DOC/DOCX resumes
+  - Automatically extract key data (name, experience, education, skills) via Affinda API
+  - Manual adjustment of parsed fields before saving
+- 🔥 **Real‑Time Storage**
+  - Store candidates in Firestore with live updates
+- 📋 **Candidate Database (Talent Pool)**
+  - List all applicants in a responsive, searchable data table
+  - Wrap long fields (education, skills) while keeping fixed column widths
+- 🏷️ **Tag & Category Management**
+  - Create, edit, delete tags and categories via Firestore
+  - Assign tags & categories to candidates
+- 🔍 **Search & Filter**
+  - Full-text search on any candidate field
+  - Filter by tags, categories, experience, etc.
+- ⚖️ **Sorting**
+  - Sort by name, experience, date added, and other attributes
+- 📝 **Notes & Ratings**
+  - Add and edit candidate notes
+  - Rate candidates on a custom scale
+- 🖼️ **Detail Modal**
+  - Click any row to open a modal with full candidate details and edit controls
+  - Transparent, blurred backdrop for focus
+- 🔄 **Real‑Time Sync**
+  - All changes (notes, ratings, tags) persist instantly in Firestore
+- 🛠️ **Developer Tools**
+  - Redux Toolkit for state management
+  - React Router for routing and nested layouts
+  - shadcn/ui components for consistent UI
+  - Tailwind CSS for utility‑first styling
+  - PNPM for fast, disk‑efficient installs
+
+## Tech Stack
+
+- **Framework**: React (Client) + React Router (v6)
+- **UI Library**: shadcn/ui (Radix + Tailwind)
+- **State**: Redux Toolkit
+- **Database**: Firebase Firestore
+- **Resume Parsing**: Affinda API (v2)
+- **Styling**: Tailwind CSS
+- **Package Manager**: PNPM
+- **Tooling**: Vite (dev server, build), Sonner (toasts)
+
+## Prerequisites
+
+- Node.js 18+ / PNPM installed
+- Firebase project & credentials
+- Affinda API Key
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill in:
+
+```ini
+# Firebase
+VITE_FIREBASE_API_KEY=your_firebase_apiKey
+VITE_FIREBASE_AUTH_DOMAIN=your_firebase_authDomain
+VITE_FIREBASE_PROJECT_ID=your_firebase_projectId
+VITE_FIREBASE_STORAGE_BUCKET=your_firebase_storageBucket
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_firebase_messagingSenderId
+VITE_FIREBASE_APP_ID=your_firebase_appId
+
+# Affinda
+VITE_AFFINDA_API_KEY=your_affinda_api_key
+```
 
 ## Getting Started
 
-### Installation
+1. **Install dependencies**
 
-Install the dependencies:
+   ```bash
+   pnpm install
+   ```
 
-```bash
-npm install
-```
+2. **Run the development server**
 
-### Development
+   ```bash
+   pnpm dev
+   ```
 
-Start the development server with HMR:
+3. **Open** `http://localhost:5173` in your browser
 
-```bash
-npm run dev
-```
+## Available Scripts
 
-Your application will be available at `http://localhost:5173`.
-
-## Building for Production
-
-Create a production build:
-
-```bash
-npm run build
-```
+- `pnpm dev` — Start the Vite dev server with HMR
+- `pnpm build` — Create a production build
+- `pnpm preview` — Preview the production build locally
+- `pnpm lint` — Run ESLint checks
 
 ## Deployment
 
-### Docker Deployment
-
-To build and run using Docker:
+### Docker
 
 ```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
+docker build -t ytfcs-ats .
+docker run -p 3000:3000 ytfcs-ats
 ```
 
-The containerized application can be deployed to any platform that supports Docker, including:
+### Static / Node Server
 
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
+Deploy the `dist` folder output by `pnpm build` to your hosting of choice (Netlify, Vercel, DigitalOcean App Platform, etc.).
 
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
+## Folder Structure
 
 ```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
+YTFCS-ATS/
+├── app/                  # App entry & layouts
+│   ├── root.tsx          # Redux & routing root
+│   ├── dashboard/        # Dashboard pages (import, list, etc.)
+│   └── components/       # Shared UI components
+├── data/                 # Static/mock data (if any)
+├── features/             # Redux slices (candidateImport, tags, candidates)
+├── lib/                  # Utils & Firebase init
+├── routes.ts             # Router definitions
+├── store.ts              # Redux store setup
+├── public/               # Static assets
+├── tailwind.config.ts    # Tailwind config
+├── vite.config.ts        # Vite config
+└── README.md             # This file
 ```
 
-## Styling
+## License
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+YTFCS © Mir Tauhidul Islam

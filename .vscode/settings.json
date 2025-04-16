@@ -1,3 +1,4 @@
 {
-  "cSpell.words": ["firestore", "sonner"]
+  "cSpell.words": ["firestore", "sonner"],
+  "postman.settings.dotenv-detection-notification-visibility": false
 }
