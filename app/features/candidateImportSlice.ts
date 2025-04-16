@@ -14,20 +14,18 @@ type CandidateData = {
 };
 
 interface CandidateImportState {
-  file: File | null;
   parsedData: Partial<CandidateData> | null;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
 }
 
 const initialState: CandidateImportState = {
-  file: null,
   parsedData: null,
   status: "idle",
   error: null,
 };
 
-// Thunk to parse resume using Affinda
+// Affinda Resume Parsing
 export const parseResume = createAsyncThunk(
   "candidateImport/parseResume",
   async (file: File, { rejectWithValue }) => {
@@ -36,9 +34,9 @@ export const parseResume = createAsyncThunk(
       const formData = new FormData();
       formData.append("file", file);
 
-      // See Affinda docs for correct endpoint & structure
+      // v2 endpoint with trailing slash
       const response = await axios.post(
-        "https://api.affinda.com/v3/resumes",
+        "https://api.affinda.com/v2/resumes/",
         formData,
         {
           headers: {
@@ -50,7 +48,11 @@ export const parseResume = createAsyncThunk(
       );
       return response.data;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data || error.message);
+      let message = error.message || "Unknown error";
+      if (error.response?.data && typeof error.response.data === "object") {
+        message = JSON.stringify(error.response.data);
+      }
+      return rejectWithValue(message);
     }
   }
 );
@@ -59,20 +61,19 @@ export const candidateImportSlice = createSlice({
   name: "candidateImport",
   initialState,
   reducers: {
-    setFile: (state, action: PayloadAction<File | null>) => {
-      state.file = action.payload;
+    resetImport: (state) => {
+      state.parsedData = null;
+      state.status = "idle";
+      state.error = null;
     },
     updateParsedData: (
       state,
       action: PayloadAction<Partial<CandidateData>>
     ) => {
-      state.parsedData = { ...state.parsedData, ...action.payload };
-    },
-    resetImport: (state) => {
-      state.file = null;
-      state.parsedData = null;
-      state.status = "idle";
-      state.error = null;
+      state.parsedData = {
+        ...state.parsedData,
+        ...action.payload,
+      };
     },
   },
   extraReducers: (builder) => {
@@ -83,17 +84,58 @@ export const candidateImportSlice = createSlice({
       })
       .addCase(parseResume.fulfilled, (state, action) => {
         state.status = "succeeded";
-        // Example: adapt to your actual Affinda response
-        const affindaData = action.payload?.data;
+
+        const affindaData = action.payload?.data || {};
+
+        // 1. Convert name object => string
+        let candidateName = "";
+        if (typeof affindaData.name === "object") {
+          // If affindaData.name = { raw: "John Doe", first: "John", last: "Doe", ... }
+          candidateName = affindaData.name.raw || "No Name";
+        } else if (typeof affindaData.name === "string") {
+          candidateName = affindaData.name;
+        }
+
+        // 2. Convert numeric experience to string
+        const yrs = affindaData.totalYearsExperience;
+        const candidateExperience =
+          typeof yrs === "number" ? `${yrs} years` : "";
+
+        // 3. Flatten education array of objects
+        //    Example: "Bachelor of Science at University of Anytown (2009 – 2013)"
+        let candidateEducation = "";
+        if (Array.isArray(affindaData.education)) {
+          candidateEducation = affindaData.education
+            .map((ed: any) => {
+              const degree = ed.accreditation?.education || "Unknown Degree";
+              const org = ed.organization || "Unknown Institution";
+              const date = ed.dates?.rawText || "";
+              return `${degree} at ${org} (${date})`;
+            })
+            .join("; ");
+        }
+
+        // 4. Combine "certifications" + "skills" => one final array
+        //    If you'd rather keep them separate, skip this step.
+        //    (Your screenshot shows "certifications": ["Programming JavaScript Python Java SQL"]
+        //     and "skills" is an array of objects with .name)
+        const certifications = Array.isArray(affindaData.certifications)
+          ? affindaData.certifications
+          : [];
+        const skillObjs = Array.isArray(affindaData.skills)
+          ? affindaData.skills.map((sk: any) => sk.name || "")
+          : [];
+        // unify them:
+        const combinedSkills = [...certifications, ...skillObjs].filter(
+          Boolean
+        );
+
+        // Build final parsedData
         state.parsedData = {
-          name: affindaData?.name?.raw || "",
-          experience: affindaData?.totalYearsExperience
-            ? `${affindaData.totalYearsExperience} years`
-            : "",
-          education: affindaData?.education
-            ?.map((edu: any) => edu.raw)
-            .join(", "),
-          skills: affindaData?.skills?.map((skill: any) => skill.name) || [],
+          name: candidateName,
+          experience: candidateExperience,
+          education: candidateEducation,
+          skills: combinedSkills,
         };
       })
       .addCase(parseResume.rejected, (state, action) => {
@@ -103,7 +145,5 @@ export const candidateImportSlice = createSlice({
   },
 });
 
-export const { setFile, updateParsedData, resetImport } =
-  candidateImportSlice.actions;
-
+export const { resetImport, updateParsedData } = candidateImportSlice.actions;
 export default candidateImportSlice.reducer;

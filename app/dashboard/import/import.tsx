@@ -5,14 +5,15 @@ import { Loader2 } from "lucide-react";
 import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Toaster, toast } from "sonner";
+
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
+
 import {
   parseResume,
   resetImport,
-  setFile,
   updateParsedData,
 } from "~/features/candidateImportSlice";
 import { db } from "~/lib/firebase";
@@ -20,7 +21,9 @@ import type { AppDispatch, RootState } from "~/store";
 
 export default function ImportPage() {
   const dispatch = useDispatch<AppDispatch>();
-  const { file, parsedData, status, error } = useSelector(
+  const [file, setFile] = useState<File | null>(null);
+
+  const { parsedData, status, error } = useSelector(
     (state: RootState) => state.candidateImport
   );
 
@@ -28,24 +31,23 @@ export default function ImportPage() {
     "idle" | "saving" | "done" | "error"
   >("idle");
 
-  // File selection handler
+  // 1. Handle file selection (local state only)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      dispatch(setFile(e.target.files[0]));
+      setFile(e.target.files[0]);
     }
   };
 
-  // Trigger resume parsing using Affinda via Redux thunk
+  // 2. Parse resume
   const handleParse = () => {
     if (file) {
       dispatch(parseResume(file));
     }
   };
 
-  // Update parsed data fields
+  // 3. Update fields if user edits them
   const handleUpdate = (field: string, value: string) => {
     if (field === "skills") {
-      // Convert comma-separated string to an array
       const skillsArray = value
         .split(",")
         .map((skill) => skill.trim())
@@ -56,7 +58,7 @@ export default function ImportPage() {
     }
   };
 
-  // Save the candidate to Firestore
+  // 4. Save to Firestore
   const handleSave = async () => {
     if (!parsedData) return;
     try {
@@ -67,8 +69,8 @@ export default function ImportPage() {
       });
       setSaveStatus("done");
       toast.success("Candidate saved successfully!");
-      // Optionally reset form
       dispatch(resetImport());
+      setFile(null);
     } catch (err) {
       console.error("Error saving candidate:", err);
       setSaveStatus("error");
@@ -79,7 +81,6 @@ export default function ImportPage() {
   return (
     <section className="bg-muted/50 min-h-[300px] rounded-xl p-4 space-y-6">
       <Toaster />
-
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">Candidate Import</h1>
         <p className="text-sm text-muted-foreground">
@@ -89,7 +90,7 @@ export default function ImportPage() {
 
       <Separator />
 
-      {/* File Upload Section */}
+      {/* File Upload */}
       <div className="flex flex-col gap-2 max-w-sm">
         <Label htmlFor="resumeFile">Select Resume (PDF, DOC, DOCX)</Label>
         <Input
@@ -103,7 +104,6 @@ export default function ImportPage() {
             Selected file: <strong>{file.name}</strong>
           </p>
         )}
-
         <Button
           onClick={handleParse}
           disabled={!file || status === "loading"}
@@ -118,7 +118,6 @@ export default function ImportPage() {
             "Parse Resume"
           )}
         </Button>
-
         {error && (
           <p className="text-red-500 text-sm mt-1">
             Error parsing resume: {error}
@@ -126,10 +125,11 @@ export default function ImportPage() {
         )}
       </div>
 
-      {/* Parsed Data Form */}
+      {/* Parsed Data */}
       {parsedData && status === "succeeded" && (
         <div className="space-y-4 max-w-md p-4 border border-border rounded-md bg-background">
           <h2 className="text-lg font-medium">Parsed Candidate Data</h2>
+
           <div className="flex flex-col gap-2">
             <Label>Name</Label>
             <Input
@@ -137,6 +137,7 @@ export default function ImportPage() {
               onChange={(e) => handleUpdate("name", e.target.value)}
             />
           </div>
+
           <div className="flex flex-col gap-2">
             <Label>Experience</Label>
             <Input
@@ -144,16 +145,20 @@ export default function ImportPage() {
               onChange={(e) => handleUpdate("experience", e.target.value)}
             />
           </div>
+
           <div className="flex flex-col gap-2">
             <Label>Education</Label>
             <Input
+              // Now it's a string, not an object
               value={parsedData.education || ""}
               onChange={(e) => handleUpdate("education", e.target.value)}
             />
           </div>
+
           <div className="flex flex-col gap-2">
             <Label>Skills (comma-separated)</Label>
             <Input
+              // Display them comma-separated
               value={parsedData.skills?.join(", ") || ""}
               onChange={(e) => handleUpdate("skills", e.target.value)}
             />
