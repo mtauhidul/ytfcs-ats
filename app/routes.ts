@@ -10,5 +10,6 @@ export default [
     route("collaboration", "dashboard/collaboration/collaboration.tsx"),
     route("tags", "dashboard/tags/tags.tsx"),
     route("categories", "dashboard/categories/categories.tsx"),
+    route("stages", "dashboard/stages/stages.tsx"),
   ]),
 ] satisfies RouteConfig;

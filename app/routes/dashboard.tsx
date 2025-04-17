@@ -28,6 +28,7 @@ export default function DashboardLayout() {
     collaboration: "Collaboration & Feedback",
     tags: "Tag Management",
     categories: "Category Management",
+    stages: "Stage Management",
   };
 
   const breadcrumb = segments.map((segment, idx) => ({

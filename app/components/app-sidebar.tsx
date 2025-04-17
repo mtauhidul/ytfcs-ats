@@ -2,6 +2,7 @@ import {
   Building2,
   FolderArchive,
   Group,
+  LayersIcon,
   MessageSquareText,
   Tag,
   Upload,
@@ -75,6 +76,12 @@ const data = {
       title: "Categories",
       url: "/dashboard/categories",
       icon: FolderArchive,
+      isActive: false,
+    },
+    {
+      title: "Stages",
+      url: "/dashboard/stages",
+      icon: LayersIcon, // Changed from StepForwardIcon
       isActive: false,
     },
   ],
