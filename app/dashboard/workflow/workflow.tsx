@@ -20,6 +20,7 @@ import {
   InfoIcon,
   LayersIcon,
   Loader2Icon,
+  PlusIcon,
   SettingsIcon,
   UserIcon,
 } from "lucide-react";
@@ -39,12 +40,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from "~/components/ui/card";
+import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
   Tooltip,
@@ -52,6 +48,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
+import { cn } from "~/lib/utils";
 
 type Stage = { id: string; title: string; order: number; color: string };
 type Candidate = {
@@ -84,7 +81,7 @@ export default function WorkflowPage() {
             id: d.id,
             title: data.title,
             order: data.order,
-            color: data.color, // <–– pull in your stored Tailwind string
+            color: data.color,
           };
         })
       );
@@ -162,22 +159,22 @@ export default function WorkflowPage() {
   // Render loading state
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="flex items-center gap-2 mb-6">
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-4">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-8 w-24" />
         </div>
 
-        <div className="flex gap-6 overflow-x-auto pb-6">
+        <div className="flex gap-3 overflow-x-auto pb-4">
           {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="w-64 min-w-[16rem] flex-shrink-0">
-              <CardHeader className="flex-row items-center justify-between px-4 py-3">
+              <CardHeader className="flex-row items-center justify-between p-2">
                 <Skeleton className="h-6 w-24" />
                 <Skeleton className="h-6 w-12" />
               </CardHeader>
-              <CardContent className="p-4 space-y-3">
+              <CardContent className="p-2 space-y-2">
                 {[1, 2, 3].map((j) => (
-                  <Skeleton key={j} className="h-16 w-full" />
+                  <Skeleton key={j} className="h-14 w-full" />
                 ))}
               </CardContent>
             </Card>
@@ -199,7 +196,7 @@ export default function WorkflowPage() {
           You need to define stages in your hiring pipeline before you can
           visualize your workflow.
         </p>
-        <Button variant="outline" asChild>
+        <Button asChild>
           <a href="/dashboard/stages">Go to Stages Configuration</a>
         </Button>
       </div>
@@ -214,7 +211,7 @@ export default function WorkflowPage() {
           <svg
             key={star}
             xmlns="http://www.w3.org/2000/svg"
-            className={`h-3.5 w-3.5 ${
+            className={`h-3 w-3 ${
               star <= rating ? "fill-amber-400 text-amber-400" : "text-muted/30"
             }`}
             viewBox="0 0 24 24"
@@ -226,215 +223,236 @@ export default function WorkflowPage() {
     );
   };
 
+  // Get board background color based on stage color
+  const getBoardHeaderColor = (color: string) => {
+    if (!color) return "bg-zinc-100 dark:bg-zinc-800"; // Default fallback
+
+    // Extract just the background color class if it exists
+    const bgClass = color.split(" ")[0]; // Take the first class from the string
+
+    if (bgClass && bgClass.startsWith("bg-")) {
+      // If it's a bg class, use it directly
+      return bgClass;
+    }
+
+    // Fallback - try to extract color name from any class
+    const colorMatch = color.match(/(?:bg|border|text)-([a-z]+)-\d+/);
+    if (colorMatch && colorMatch[1]) {
+      return `bg-${colorMatch[1]}-100`;
+    }
+
+    return "bg-zinc-100"; // Default fallback
+  };
+
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div
+      className="flex-grow overflow-hidden p-4"
+      style={{ maxWidth: "100vw" }}
+    >
       <Toaster />
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <LayersIcon className="size-6" />
+          <h1 className="text-xl font-semibold flex items-center gap-2">
+            <LayersIcon className="size-5" />
             Application Workflow
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Drag and drop candidates between stages to update their status
+          <p className="text-muted-foreground text-xs mt-1">
+            Drag candidates between stages to update their status
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <SettingsIcon className="size-4 mr-2" />
-                  <span className="hidden sm:inline">Workflow Settings</span>
-                  <span className="inline sm:hidden">Settings</span>
+                <Button variant="outline" size="sm" className="h-8">
+                  <SettingsIcon className="size-3.5 mr-1.5" />
+                  <span className="text-xs">Settings</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                Coming soon: Customize workflow settings
+              <TooltipContent side="bottom">
+                Configure workflow settings
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <Badge
-            variant="outline"
-            className="text-xs py-1.5 h-9 px-3 mr-2 border-muted font-normal"
-          >
-            {candidates.length}{" "}
-            {candidates.length === 1 ? "candidate" : "candidates"}
+          <Badge variant="secondary" className="text-xs py-1 h-7 px-2">
+            {candidates.length} candidates
           </Badge>
+          <Button variant="default" size="sm" className="h-8">
+            <PlusIcon className="size-3.5 mr-1.5" />
+            <span className="text-xs">Add Candidate</span>
+          </Button>
         </div>
       </div>
 
-      <DragDropContext onDragEnd={onDragEnd} onDragStart={onDragStart}>
-        <div className="flex gap-4 overflow-x-auto pb-6 -mx-2 px-2 min-h-[calc(100vh-250px)]">
-          {stages.map((stage, index) => {
-            const stageItems = candidates.filter((c) => c.stageId === stage.id);
+      {/* Main container - needs to have a fixed height and overflow-auto for auto-scroll to work */}
+      <div className="h-[calc(100vh-120px)] overflow-hidden">
+        <DragDropContext onDragEnd={onDragEnd} onDragStart={onDragStart}>
+          <div className="flex gap-3 h-full overflow-x-auto pb-2">
+            {stages.map((stage, index) => {
+              const stageItems = candidates.filter(
+                (c) => c.stageId === stage.id
+              );
+              const headerBgClass = getBoardHeaderColor(stage.color);
 
-            return (
-              <Droppable key={stage.id} droppableId={stage.id}>
-                {(droppableProvided, snapshot) => (
-                  <Card
-                    ref={droppableProvided.innerRef}
-                    {...droppableProvided.droppableProps}
-                    className={`
-                      w-72 min-w-[18rem] flex-shrink-0 flex flex-col
-                      border-t-4 transition-colors duration-200
-                      ${
-                        snapshot.isDraggingOver
-                          ? "border-t-primary/70 bg-accent/10"
-                          : "border-t-primary/30"
-                      }
-                    `}
-                  >
-                    <CardHeader className="flex flex-row items-center justify-between p-3 pb-2 gap-2 border-b">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className={`${stage.color} h-6 w-6 p-0 flex items-center justify-center rounded-md font-medium`}
-                        >
-                          {index + 1}
-                        </Badge>
-
-                        <h2 className="text-md font-medium">{stage.title}</h2>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className="h-6 font-medium">
-                          {stageItems.length}
-                        </Badge>
-
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-muted-foreground hover:text-foreground"
-                                onClick={() =>
-                                  setOpenAutomationFor({
-                                    id: stage.id,
-                                    title: stage.title,
-                                  })
-                                }
-                              >
-                                <BellIcon className="size-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Stage automations</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="p-3 space-y-2 flex-grow overflow-y-auto max-h-[calc(100vh-350px)]">
-                      {stageItems.length === 0 && !snapshot.isDraggingOver && (
-                        <div className="flex flex-col items-center justify-center text-center py-6 text-sm text-muted-foreground bg-muted/20 rounded-md h-32">
-                          <UserIcon className="size-5 mb-2 opacity-40" />
-                          <p>No candidates in this stage</p>
-                        </div>
+              return (
+                <Droppable key={stage.id} droppableId={stage.id}>
+                  {(droppableProvided, snapshot) => (
+                    <div
+                      className={cn(
+                        "flex flex-col rounded-lg border shadow-sm h-full min-w-[280px] w-[280px] flex-shrink-0 bg-card",
+                        snapshot.isDraggingOver && "ring-1 ring-primary/50"
                       )}
+                    >
+                      <div
+                        className={cn(
+                          "p-2 text-center font-medium rounded-t-lg flex items-center justify-between",
+                          headerBgClass
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Badge
+                            className={cn(
+                              "size-5 p-0 flex items-center justify-center rounded-md",
+                              stage.color
+                            )}
+                          >
+                            {index + 1}
+                          </Badge>
+                          <span className="text-sm">{stage.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Badge
+                            variant="secondary"
+                            className="h-5 text-xs px-1.5"
+                          >
+                            {stageItems.length}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-5 text-muted-foreground hover:text-foreground"
+                            onClick={() =>
+                              setOpenAutomationFor({
+                                id: stage.id,
+                                title: stage.title,
+                              })
+                            }
+                          >
+                            <BellIcon className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
 
-                      {stageItems.map((candidate, idx) => (
-                        <Draggable
-                          key={candidate.id}
-                          draggableId={candidate.id}
-                          index={idx}
-                        >
-                          {(dragProvided, dragSnapshot) => (
-                            <div
-                              ref={dragProvided.innerRef}
-                              {...dragProvided.draggableProps}
-                              className={`
-                                bg-background rounded-md p-3 border shadow-sm
-                                ${
-                                  dragSnapshot.isDragging
-                                    ? "ring-2 ring-primary/60 shadow-md"
-                                    : ""
-                                }
-                                transition-shadow hover:shadow hover:border-muted
-                              `}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex-grow">
-                                  <div className="flex items-center mb-1.5">
-                                    <div
-                                      {...dragProvided.dragHandleProps}
-                                      className="mr-1.5 opacity-40 hover:opacity-100 transition-opacity p-0.5 cursor-grab active:cursor-grabbing"
-                                    >
-                                      <GripHorizontalIcon className="size-3.5" />
-                                    </div>
-                                    <p className="font-medium">
-                                      {candidate.name}
-                                    </p>
-                                  </div>
-
-                                  {/* Show tags if available */}
-                                  {candidate.tags &&
-                                    candidate.tags.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-2 mb-1">
-                                        {candidate.tags
-                                          .slice(0, 3)
-                                          .map((tag) => (
-                                            <Badge
-                                              key={tag}
-                                              variant="outline"
-                                              className="px-1.5 py-0 text-xs"
-                                            >
-                                              {tag}
-                                            </Badge>
-                                          ))}
-                                        {candidate.tags.length > 3 && (
-                                          <Badge
-                                            variant="outline"
-                                            className="px-1.5 py-0 text-xs"
-                                          >
-                                            +{candidate.tags.length - 3}
-                                          </Badge>
-                                        )}
-                                      </div>
-                                    )}
-                                </div>
-
-                                {candidate.rating !== undefined && (
-                                  <RatingStars rating={candidate.rating} />
-                                )}
-                              </div>
-
-                              {/* Last updated information */}
-                              {candidate.updatedAt && (
-                                <div className="text-xs text-muted-foreground mt-2 flex items-center">
-                                  <InfoIcon className="size-3 mr-1 opacity-70" />
-                                  Updated{" "}
-                                  {new Date(
-                                    candidate.updatedAt
-                                  ).toLocaleDateString()}
-                                </div>
-                              )}
+                      <div
+                        ref={droppableProvided.innerRef}
+                        {...droppableProvided.droppableProps}
+                        className="p-2 space-y-2 flex-grow overflow-y-auto"
+                      >
+                        {stageItems.length === 0 &&
+                          !snapshot.isDraggingOver && (
+                            <div className="flex flex-col items-center justify-center text-center py-4 text-xs text-muted-foreground bg-muted/10 rounded-md h-20">
+                              <UserIcon className="size-4 mb-1 opacity-40" />
+                              <p>No candidates</p>
                             </div>
                           )}
-                        </Draggable>
-                      ))}
-                      {droppableProvided.placeholder}
-                    </CardContent>
 
-                    <CardFooter className="p-2 border-t text-xs text-muted-foreground">
-                      {isDragging && snapshot.isDraggingOver ? (
-                        <div className="w-full text-center font-medium text-primary py-1">
-                          Drop to move to {stage.title}
-                        </div>
-                      ) : (
-                        <div className="w-full text-center py-1">
-                          {stageItems.length}{" "}
-                          {stageItems.length === 1 ? "candidate" : "candidates"}
-                        </div>
-                      )}
-                    </CardFooter>
-                  </Card>
-                )}
-              </Droppable>
-            );
-          })}
-        </div>
-      </DragDropContext>
+                        {stageItems.map((candidate, idx) => (
+                          <Draggable
+                            key={candidate.id}
+                            draggableId={candidate.id}
+                            index={idx}
+                          >
+                            {(dragProvided, dragSnapshot) => (
+                              <div
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                {...dragProvided.dragHandleProps}
+                                className={cn(
+                                  "bg-card rounded-md p-2 border text-sm",
+                                  dragSnapshot.isDragging
+                                    ? "ring-2 ring-primary/50 shadow-md"
+                                    : "hover:border-muted"
+                                )}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-grow">
+                                    <div className="flex items-center mb-1">
+                                      <GripHorizontalIcon className="size-3 mr-1 opacity-40" />
+                                      <p className="font-medium truncate text-xs">
+                                        {candidate.name}
+                                      </p>
+                                    </div>
+
+                                    {/* Show tags if available */}
+                                    {candidate.tags &&
+                                      candidate.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-1">
+                                          {candidate.tags
+                                            .slice(0, 2)
+                                            .map((tag) => (
+                                              <Badge
+                                                key={tag}
+                                                variant="outline"
+                                                className="px-1 py-0 text-[10px]"
+                                              >
+                                                {tag}
+                                              </Badge>
+                                            ))}
+                                          {candidate.tags.length > 2 && (
+                                            <Badge
+                                              variant="outline"
+                                              className="px-1 py-0 text-[10px]"
+                                            >
+                                              +{candidate.tags.length - 2}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
+
+                                  {candidate.rating !== undefined && (
+                                    <RatingStars rating={candidate.rating} />
+                                  )}
+                                </div>
+
+                                {/* Last updated information */}
+                                {candidate.updatedAt && (
+                                  <div className="text-[10px] text-muted-foreground mt-1 flex items-center">
+                                    <InfoIcon className="size-2.5 mr-0.5 opacity-70" />
+                                    {new Date(
+                                      candidate.updatedAt
+                                    ).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {droppableProvided.placeholder}
+                      </div>
+
+                      <div className="p-1.5 border-t text-xs text-muted-foreground text-center">
+                        {isDragging && snapshot.isDraggingOver ? (
+                          <div className="font-medium text-primary text-xs">
+                            Drop to move to {stage.title}
+                          </div>
+                        ) : (
+                          <div className="text-xs">
+                            {stageItems.length}{" "}
+                            {stageItems.length === 1
+                              ? "candidate"
+                              : "candidates"}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </Droppable>
+              );
+            })}
+          </div>
+        </DragDropContext>
+      </div>
 
       {/* Stage Automations Dialog */}
       <AlertDialog

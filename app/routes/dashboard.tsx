@@ -20,7 +20,7 @@ export default function DashboardLayout() {
 
   // Mapping dashboard routes to more descriptive labels
   const breadcrumbLabels: Record<string, string> = {
-    dashboard: "Dashboard",
+    dashboard: "Dashboard", // Label for the index dashboard route
     import: "Candidate Import",
     candidates: "Candidates List",
     workflow: "Application Flow",
@@ -31,10 +31,19 @@ export default function DashboardLayout() {
     stages: "Stage Management",
   };
 
+  // Generate breadcrumbs based on URL segments
   const breadcrumb = segments.map((segment, idx) => ({
     title: breadcrumbLabels[segment] || segment,
     href: `/${segments.slice(0, idx + 1).join("/")}`,
   }));
+
+  // If we're at dashboard root, show Dashboard in breadcrumb
+  if (segments.length === 1 && segments[0] === "dashboard") {
+    breadcrumb.push({
+      title: "Overview", // Add a second breadcrumb for the index page
+      href: "/dashboard",
+    });
+  }
 
   return (
     <SidebarProvider>

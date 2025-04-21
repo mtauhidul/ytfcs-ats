@@ -1,4 +1,5 @@
 import {
+  BarChart2, // Import for dashboard icon
   Building2,
   FolderArchive,
   Group,
@@ -36,6 +37,12 @@ const data = {
     },
   ],
   navMain: [
+    {
+      title: "Dashboard",
+      url: "/dashboard", // This will now point to the dashboard index page
+      icon: BarChart2, // Using BarChart2 for the dashboard icon
+      isActive: false,
+    },
     {
       title: "Candidate Import",
       url: "/dashboard/import",
@@ -81,7 +88,7 @@ const data = {
     {
       title: "Stages",
       url: "/dashboard/stages",
-      icon: LayersIcon, // Changed from StepForwardIcon
+      icon: LayersIcon,
       isActive: false,
     },
   ],

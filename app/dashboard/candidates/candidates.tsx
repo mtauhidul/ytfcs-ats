@@ -1,3 +1,5 @@
+// app/dashboard/candidates/candidates.tsx
+
 "use client";
 
 import {
@@ -11,11 +13,22 @@ import {
 } from "firebase/firestore";
 import {
   AlertCircle,
+  Clipboard,
+  ClipboardCheck,
+  Download,
+  Eye,
   FileText,
+  ListChecks,
   Loader2,
+  MessageCircle,
+  MessageSquare,
+  MessageSquarePlus,
   Search,
   Shield,
   TagIcon,
+  Trash2,
+  Upload,
+  UploadCloud,
   UserIcon,
   X,
 } from "lucide-react";
@@ -35,7 +48,16 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
 import { DataTable } from "~/components/ui/data-table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -57,7 +79,7 @@ interface Stage {
   id: string;
   title: string;
   order: number;
-  color?: string; // Add the optional 'color' property
+  color?: string;
 }
 
 // Constants for empty values - fixes the SelectItem empty value issue
@@ -76,6 +98,14 @@ export default function CandidatesPage() {
   // For user-defined tags & categories
   const [allTags, setAllTags] = useState<string[]>([]);
   const [allCategories, setAllCategories] = useState<string[]>([]);
+
+  // For bulk actions
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>(
+    []
+  );
+  const [bulkActionOpen, setBulkActionOpen] = useState(false);
+  const [bulkStageId, setBulkStageId] = useState("");
+  const [bulkTag, setBulkTag] = useState("");
 
   // For detail modal
   const [detailCandidate, setDetailCandidate] = useState<Candidate | null>(
@@ -133,7 +163,7 @@ export default function CandidatesPage() {
           id: docSnap.id,
           title: data.title,
           order: data.order,
-          color: data.color, // ← here!
+          color: data.color,
         };
       });
       setStages(stageList);
@@ -178,7 +208,7 @@ export default function CandidatesPage() {
         cand.name,
         cand.tags.join(" "),
         cand.category,
-        stageTitle, // Use the stage title instead of ID for searching
+        stageTitle,
         cand.experience,
         cand.education,
         cand.skills?.join(" "),
@@ -276,6 +306,56 @@ export default function CandidatesPage() {
     }
   };
 
+  // Handle bulk actions
+  const handleBulkAction = async (action: "stage" | "tag" | "delete") => {
+    if (selectedCandidateIds.length === 0) return;
+
+    try {
+      setIsSubmitting(true);
+      const actionLoading = toast.loading(
+        `Processing ${selectedCandidateIds.length} candidates...`
+      );
+
+      for (const id of selectedCandidateIds) {
+        const candidateRef = doc(db, "candidates", id);
+
+        if (action === "stage" && bulkStageId) {
+          await updateDoc(candidateRef, {
+            stageId: bulkStageId,
+            updatedAt: new Date().toISOString(),
+          });
+        } else if (action === "tag" && bulkTag) {
+          const candidate = candidates.find((c) => c.id === id);
+          const currentTags = candidate?.tags || [];
+          if (!currentTags.includes(bulkTag)) {
+            await updateDoc(candidateRef, {
+              tags: [...currentTags, bulkTag],
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        } else if (action === "delete") {
+          await deleteDoc(candidateRef);
+        }
+      }
+
+      toast.dismiss(actionLoading);
+      toast.success(
+        action === "delete"
+          ? `Deleted ${selectedCandidateIds.length} candidates`
+          : `Updated ${selectedCandidateIds.length} candidates`
+      );
+
+      // Clear selection after action
+      setSelectedCandidateIds([]);
+      setBulkActionOpen(false);
+    } catch (err) {
+      console.error(`Error performing bulk ${action}:`, err);
+      toast.error(`Error updating candidates`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const closeDetail = () => {
     setDetailCandidate(null);
   };
@@ -288,6 +368,12 @@ export default function CandidatesPage() {
   // Set rating
   const setRating = (rating: number) => {
     setModalRating(rating);
+  };
+
+  // Get a color style for badge by stageId
+  const getBadgeColorByStageId = (stageId: string) => {
+    const stage = stages.find((s) => s.id === stageId);
+    return stage?.color || "";
   };
 
   // Get stage title from stage ID
@@ -359,6 +445,51 @@ export default function CandidatesPage() {
           </span>
         </div>
       </div>
+
+      {/* Bulk Actions UI */}
+      {selectedCandidateIds.length > 0 && (
+        <div className="bg-muted/20 flex items-center justify-between px-4 py-2 rounded-md mb-4 border">
+          <div className="flex items-center">
+            <Checkbox
+              checked={
+                selectedCandidateIds.length === filteredCandidates.length
+              }
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  setSelectedCandidateIds(filteredCandidates.map((c) => c.id));
+                } else {
+                  setSelectedCandidateIds([]);
+                }
+              }}
+              className="mr-2"
+            />
+            <span className="text-sm font-medium">
+              {selectedCandidateIds.length} candidate
+              {selectedCandidateIds.length !== 1 ? "s" : ""} selected
+            </span>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkActionOpen(true)}
+            >
+              <ListChecks className="size-4 mr-2" />
+              Bulk Actions
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedCandidateIds([])}
+            >
+              <X className="size-4 mr-2" />
+              Clear Selection
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Separator />
 
       {/* Data Table */}
@@ -406,7 +537,11 @@ export default function CandidatesPage() {
 
               <div className="mt-2 md:mt-0 flex items-center">
                 <Badge
-                  className="mr-2"
+                  className={`mr-2 ${
+                    modalStageId !== UNASSIGNED_VALUE
+                      ? getBadgeColorByStageId(modalStageId)
+                      : ""
+                  }`}
                   variant={
                     modalStageId !== UNASSIGNED_VALUE ? "default" : "outline"
                   }
@@ -457,6 +592,27 @@ export default function CandidatesPage() {
                 >
                   <Shield className="size-4" />
                   <span>History</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="communications"
+                  className="flex items-center gap-1"
+                >
+                  <MessageSquare className="size-4" />
+                  <span>Communications</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="feedback"
+                  className="flex items-center gap-1"
+                >
+                  <MessageCircle className="size-4" />
+                  <span>Feedback</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="documents"
+                  className="flex items-center gap-1"
+                >
+                  <FileText className="size-4" />
+                  <span>Documents</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -752,6 +908,110 @@ export default function CandidatesPage() {
                     )}
                   </div>
                 </TabsContent>
+
+                <TabsContent
+                  value="communications"
+                  className="py-2 min-h-[400px]"
+                >
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-medium">Communication History</h3>
+                      <Button size="sm">
+                        <MessageSquarePlus className="size-4 mr-2" />
+                        New Message
+                      </Button>
+                    </div>
+
+                    {/* Show placeholder if no communications */}
+                    <div className="text-center py-12 border rounded-md bg-muted/20">
+                      <MessageSquare className="size-8 mx-auto mb-2 text-muted-foreground/50" />
+                      <p className="text-muted-foreground">
+                        No communication history yet
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Messages sent to this candidate will appear here
+                      </p>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="feedback" className="py-2 min-h-[400px]">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-medium">Interview Feedback</h3>
+                      <Button size="sm">
+                        <Clipboard className="size-4 mr-2" />
+                        Add Feedback
+                      </Button>
+                    </div>
+
+                    {/* Show placeholder if no feedback */}
+                    <div className="text-center py-12 border rounded-md bg-muted/20">
+                      <ClipboardCheck className="size-8 mx-auto mb-2 text-muted-foreground/50" />
+                      <p className="text-muted-foreground">
+                        No feedback submitted yet
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Team feedback for this candidate will appear here
+                      </p>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="documents" className="py-2 min-h-[400px]">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-medium">Candidate Documents</h3>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline">
+                          <Download className="size-4 mr-2" />
+                          Download All
+                        </Button>
+                        <Button size="sm">
+                          <Upload className="size-4 mr-2" />
+                          Upload
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Resume document */}
+                      <div className="border rounded-md p-4 flex flex-col">
+                        <div className="flex items-center mb-2">
+                          <FileText className="size-5 mr-2 text-muted-foreground" />
+                          <span className="font-medium truncate flex-1">
+                            Resume.pdf
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mb-3">
+                          Uploaded on {new Date().toLocaleDateString()}
+                        </div>
+                        <div className="flex justify-between mt-auto pt-2">
+                          <Button size="sm" variant="ghost">
+                            <Eye className="size-4 mr-1" />
+                            View
+                          </Button>
+                          <Button size="sm" variant="ghost">
+                            <Download className="size-4 mr-1" />
+                            Download
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Placeholder for additional documents */}
+                      <div className="border border-dashed rounded-md p-4 flex flex-col items-center justify-center text-center py-8 text-muted-foreground">
+                        <UploadCloud className="size-8 mb-2 opacity-40" />
+                        <p className="text-sm">
+                          Drag & drop additional documents
+                        </p>
+                        <p className="text-xs mt-1">or</p>
+                        <Button size="sm" variant="outline" className="mt-2">
+                          Browse Files
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
               </ScrollArea>
             </Tabs>
 
@@ -821,6 +1081,95 @@ export default function CandidatesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk Action Dialog */}
+      <Dialog open={bulkActionOpen} onOpenChange={setBulkActionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bulk Actions</DialogTitle>
+            <DialogDescription>
+              Apply actions to {selectedCandidateIds.length} selected candidate
+              {selectedCandidateIds.length !== 1 ? "s" : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Change Stage
+              </label>
+              <Select value={bulkStageId} onValueChange={setBulkStageId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  {stages.map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id}>
+                      {stage.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                className="w-full mt-2"
+                variant="outline"
+                onClick={() => handleBulkAction("stage")}
+                disabled={!bulkStageId || isSubmitting}
+              >
+                Apply Stage Change
+              </Button>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Add Tag</label>
+              <Select value={bulkTag} onValueChange={setBulkTag}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select tag to add" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allTags.map((tag) => (
+                    <SelectItem key={tag} value={tag}>
+                      {tag}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                className="w-full mt-2"
+                variant="outline"
+                onClick={() => handleBulkAction("tag")}
+                disabled={!bulkTag || isSubmitting}
+              >
+                Add Tag to Selected
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              className="mr-auto"
+              onClick={() => handleBulkAction("delete")}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4 mr-2" />
+                  Delete Selected
+                </>
+              )}
+            </Button>
+            <Button variant="outline" onClick={() => setBulkActionOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Toaster />
     </section>

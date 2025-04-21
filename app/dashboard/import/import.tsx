@@ -1,8 +1,17 @@
+// app/dashboard/import/import.tsx
+
 "use client";
 
 import { addDoc, collection } from "firebase/firestore";
-import { Check, FileUp, Loader2, RefreshCw } from "lucide-react";
-import React, { useState } from "react";
+import {
+  AlertTriangle,
+  Check,
+  FileUp,
+  Loader2,
+  Mail,
+  RefreshCw,
+} from "lucide-react";
+import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Toaster, toast } from "sonner";
 
@@ -16,9 +25,18 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Progress } from "~/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 
 import {
   parseResume,
@@ -32,6 +50,15 @@ export default function ImportPage() {
   const dispatch = useDispatch<AppDispatch>();
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [parsingProgress, setParsingProgress] = useState(0);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"file" | "email">("file");
+
+  // Email import state
+  const [emailProvider, setEmailProvider] = useState<string>("gmail");
+  const [importAttachments, setImportAttachments] = useState<boolean>(true);
+  const [importSender, setImportSender] = useState<boolean>(false);
+  const [autoImport, setAutoImport] = useState<boolean>(false);
 
   const { parsedData, status, error } = useSelector(
     (state: RootState) => state.candidateImport
@@ -49,16 +76,76 @@ export default function ImportPage() {
       if (status !== "idle") {
         dispatch(resetImport());
       }
+      setErrorDetails(null);
     }
   };
 
   // 2. Parse resume
-  const handleParse = () => {
-    if (file) {
-      setSaveStatus("idle"); // Reset save status
+  const handleParse = async () => {
+    if (!file) return;
+
+    try {
+      setParsingProgress(10);
+      setSaveStatus("idle");
+
+      // Add file type validation
+      const validFileTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+      if (!validFileTypes.includes(file.type)) {
+        setErrorDetails(
+          "Invalid file type. Please upload a PDF, DOC, or DOCX file."
+        );
+        setParsingProgress(0);
+        return;
+      }
+
+      // Add file size validation (10MB max)
+      if (file.size > 10 * 1024 * 1024) {
+        setErrorDetails("File too large. Maximum size is 10MB.");
+        setParsingProgress(0);
+        return;
+      }
+
+      setParsingProgress(30);
       dispatch(parseResume(file));
+
+      // Simulate progress while parsing (will be replaced by actual progress in production)
+      const progressInterval = setInterval(() => {
+        setParsingProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 500);
+
+      // Clear interval when component unmounts or function re-runs
+      return () => clearInterval(progressInterval);
+    } catch (error) {
+      console.error("Error during file preparation:", error);
+      setErrorDetails("An unexpected error occurred while preparing the file.");
+      setParsingProgress(0);
     }
   };
+
+  // Monitor parsing status
+  useEffect(() => {
+    if (status === "succeeded") {
+      setParsingProgress(100);
+      setErrorDetails(null);
+      toast.success("Resume parsed successfully");
+    } else if (status === "failed") {
+      setParsingProgress(0);
+      setErrorDetails(
+        error || "Failed to parse resume. Please try another file."
+      );
+      toast.error("Failed to parse resume");
+    }
+  }, [status, error]);
 
   // 3. Update fields if user edits them
   const handleUpdate = (field: string, value: string) => {
@@ -80,7 +167,10 @@ export default function ImportPage() {
       setSaveStatus("saving");
       await addDoc(collection(db, "candidates"), {
         ...parsedData,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        stageId: "", // Default stage
+        tags: parsedData.skills ? [...parsedData.skills].slice(0, 3) : [], // Use skills as initial tags
       });
       setSaveStatus("done");
       toast.success("Candidate saved successfully!");
@@ -96,6 +186,14 @@ export default function ImportPage() {
       setSaveStatus("error");
       toast.error("Error saving candidate");
     }
+  };
+
+  // Handle email connection
+  const handleConnectEmail = () => {
+    toast.loading("Connecting to email...");
+    setTimeout(() => {
+      toast.success("Email connection feature coming soon!");
+    }, 1500);
   };
 
   // Handle drag events
@@ -139,8 +237,12 @@ export default function ImportPage() {
         if (status !== "idle") {
           dispatch(resetImport());
         }
+        setErrorDetails(null);
       } else {
         toast.error("Please upload a PDF, DOC, or DOCX file");
+        setErrorDetails(
+          "Invalid file type. Please upload a PDF, DOC, or DOCX file."
+        );
       }
     }
   };
@@ -150,6 +252,8 @@ export default function ImportPage() {
     dispatch(resetImport());
     setFile(null);
     setSaveStatus("idle");
+    setErrorDetails(null);
+    setParsingProgress(0);
   };
 
   return (
@@ -170,42 +274,126 @@ export default function ImportPage() {
           </CardHeader>
 
           <CardContent>
-            <div
-              className={`border-2 border-dashed ${
-                dragActive ? "border-primary bg-primary/5" : "border-border"
-              } 
-                rounded-lg p-8 flex flex-col items-center justify-center gap-4 transition-colors`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
+            <Tabs
+              defaultValue="file"
+              onValueChange={(value) => setActiveTab(value as "file" | "email")}
             >
-              <div className="bg-muted/50 p-4 rounded-full">
-                <FileUp className="size-8 text-muted-foreground" />
-              </div>
+              <TabsList className="mb-4">
+                <TabsTrigger value="file">Upload File</TabsTrigger>
+                <TabsTrigger value="email">Import from Email</TabsTrigger>
+              </TabsList>
 
-              <div className="text-center">
-                <p className="font-medium mb-1">Drop resume file here</p>
-                <p className="text-sm text-muted-foreground mb-4">
-                  PDF, DOC, or DOCX (max 10MB)
-                </p>
+              <TabsContent value="file">
+                <div
+                  className={`border-2 border-dashed ${
+                    dragActive ? "border-primary bg-primary/5" : "border-border"
+                  } 
+                    rounded-lg p-8 flex flex-col items-center justify-center gap-4 transition-colors`}
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                >
+                  <div className="bg-muted/50 p-4 rounded-full">
+                    <FileUp className="size-8 text-muted-foreground" />
+                  </div>
 
-                <div className="relative">
-                  <Button variant="outline" className="w-full">
-                    Select File
-                  </Button>
-                  <Input
-                    id="resumeFile"
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    onChange={handleFileChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
+                  <div className="text-center">
+                    <p className="font-medium mb-1">Drop resume file here</p>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      PDF, DOC, or DOCX (max 10MB)
+                    </p>
+
+                    <div className="relative">
+                      <Button variant="outline" className="w-full">
+                        Select File
+                      </Button>
+                      <Input
+                        id="resumeFile"
+                        type="file"
+                        accept=".pdf,.doc,.docx"
+                        onChange={handleFileChange}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </TabsContent>
 
-            {file && (
+              <TabsContent value="email">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Email Provider
+                    </label>
+                    <Select
+                      value={emailProvider}
+                      onValueChange={setEmailProvider}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select email provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gmail">Gmail</SelectItem>
+                        <SelectItem value="outlook">Outlook</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Import Settings
+                    </label>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="import-attachments"
+                          checked={importAttachments}
+                          onCheckedChange={(checked) =>
+                            setImportAttachments(!!checked)
+                          }
+                        />
+                        <label htmlFor="import-attachments" className="text-sm">
+                          Import email attachments as resumes
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="import-sender"
+                          checked={importSender}
+                          onCheckedChange={(checked) =>
+                            setImportSender(!!checked)
+                          }
+                        />
+                        <label htmlFor="import-sender" className="text-sm">
+                          Create candidates from email senders
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="auto-import"
+                          checked={autoImport}
+                          onCheckedChange={(checked) =>
+                            setAutoImport(!!checked)
+                          }
+                        />
+                        <label htmlFor="auto-import" className="text-sm">
+                          Automatically import new emails
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button className="w-full mt-4" onClick={handleConnectEmail}>
+                    <Mail className="size-4 mr-2" />
+                    Connect Email Account
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            {file && activeTab === "file" && (
               <div className="mt-4 bg-muted/30 p-3 rounded-md">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs font-normal">
@@ -230,12 +418,38 @@ export default function ImportPage() {
                 </div>
               </div>
             )}
+
+            {/* Error display */}
+            {errorDetails && (
+              <div className="mt-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-md p-3 text-sm flex items-start gap-2">
+                <AlertTriangle className="size-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Error</p>
+                  <p>{errorDetails}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Progress indicator */}
+            {status === "loading" && (
+              <div className="mt-4">
+                <div className="flex justify-between mb-1">
+                  <span className="text-xs text-muted-foreground">
+                    Parsing resume...
+                  </span>
+                  <span className="text-xs font-medium">
+                    {parsingProgress}%
+                  </span>
+                </div>
+                <Progress value={parsingProgress} className="w-full" />
+              </div>
+            )}
           </CardContent>
 
           <CardFooter className="flex-col gap-2">
             <Button
               onClick={handleParse}
-              disabled={!file || status === "loading"}
+              disabled={!file || status === "loading" || activeTab !== "file"}
               className="w-full"
             >
               {status === "loading" ? (
@@ -247,16 +461,6 @@ export default function ImportPage() {
                 "Parse Resume"
               )}
             </Button>
-
-            {error && (
-              <div className="text-red-500 text-sm p-2 bg-red-50 border border-red-100 rounded-md w-full">
-                {error}
-              </div>
-            )}
-
-            {status === "loading" && (
-              <Progress value={50} className="w-full mt-2" />
-            )}
           </CardFooter>
         </Card>
 
