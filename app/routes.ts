@@ -1,9 +1,16 @@
+// app/routes.ts
 import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
 export default [
   index("routes/home.tsx"),
+  route("auth", "routes/auth/layout.tsx", [
+    route("login", "routes/auth/login.tsx"),
+    route("confirm", "routes/auth/confirm.tsx"),
+  ]),
   route("dashboard", "routes/dashboard.tsx", [
-    index("dashboard/dashboard/dashboard.tsx"), // Added the dashboard as index route
+    index("dashboard/dashboard/index.tsx"), // Corrected path
+    // Or simply: index("dashboard/dashboard/index.tsx")
+
     route("import", "dashboard/import/import.tsx"),
     route("candidates", "dashboard/candidates/candidates.tsx"),
     route("workflow", "dashboard/workflow/workflow.tsx"),

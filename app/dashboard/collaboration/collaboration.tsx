@@ -104,6 +104,7 @@ interface FeedbackRecord {
   weaknesses: string;
   recommendation: "hire" | "consider" | "reject";
   createdAt: string;
+  submittedBy?: string;
 }
 
 interface Stage {

@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from "react-router";
 import { AppSidebar } from "~/components/app-sidebar";
+import { ProtectedRoute } from "~/components/auth/protected-route";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -46,39 +47,41 @@ export default function DashboardLayout() {
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator
-              orientation="vertical"
-              className="mr-2 data-[orientation=vertical]:h-4"
-            />
-            <Breadcrumb>
-              <BreadcrumbList>
-                {breadcrumb.map((item, idx) => (
-                  <BreadcrumbItem key={item.href}>
-                    {idx < breadcrumb.length - 1 ? (
-                      <>
+    <ProtectedRoute>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+            <div className="flex items-center gap-2 px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator
+                orientation="vertical"
+                className="mr-2 data-[orientation=vertical]:h-4"
+              />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  {breadcrumb.map((item, idx) => (
+                    <BreadcrumbItem key={item.href}>
+                      {idx < breadcrumb.length - 1 ? (
+                        <>
+                          <BreadcrumbPage>{item.title}</BreadcrumbPage>
+                          <BreadcrumbSeparator className="hidden md:block" />
+                        </>
+                      ) : (
                         <BreadcrumbPage>{item.title}</BreadcrumbPage>
-                        <BreadcrumbSeparator className="hidden md:block" />
-                      </>
-                    ) : (
-                      <BreadcrumbPage>{item.title}</BreadcrumbPage>
-                    )}
-                  </BreadcrumbItem>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
-          </div>
-        </header>
+                      )}
+                    </BreadcrumbItem>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+          </header>
 
-        <main className="flex flex-1 flex-col gap-4 p-4 pt-0">
-          <Outlet />
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+          <main className="flex flex-1 flex-col gap-4 p-4 pt-0">
+            <Outlet />
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    </ProtectedRoute>
   );
 }

@@ -1,8 +1,12 @@
+// NavUser component
 "use client";
 
+import { getAuth, signOut } from "firebase/auth";
 import { ChevronsUpDown, LogOut } from "lucide-react";
+import { useNavigate } from "react-router";
+import { useAuth } from "~/context/auth-context";
 
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
+import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,16 +22,47 @@ import {
   useSidebar,
 } from "~/components/ui/sidebar";
 
-export function NavUser({
-  user,
-}: {
-  user: {
-    name: string;
-    email: string;
-    avatar: string;
-  };
-}) {
+export function NavUser() {
   const { isMobile } = useSidebar();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Fallback for when user data is not fully loaded
+  const displayName = user?.name || "User";
+  const email = user?.email || "";
+
+  const handleLogout = async (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+
+    try {
+      const auth = getAuth();
+      // Use a hardcoded path to navigate to first, then perform signOut
+      // This avoids the race condition that might be causing your issues
+
+      // First navigate away to prevent infinite loops
+      navigate("/auth/login");
+
+      // Then perform signout after navigation
+      setTimeout(async () => {
+        await signOut(auth);
+      }, 100);
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  // Generate initials from name - maximum 2 characters from first two name parts
+  const getInitials = (name: string) => {
+    const nameParts = name.split(" ");
+
+    if (nameParts.length === 1) {
+      // If only one name part, take the first two letters (or just one if name is one letter)
+      return nameParts[0].substring(0, 2).toUpperCase();
+    } else {
+      // If multiple name parts, take the first letter of first and first letter of second part
+      return (nameParts[0][0] + (nameParts[1]?.[0] || "")).toUpperCase();
+    }
+  };
 
   return (
     <SidebarMenu>
@@ -39,18 +74,13 @@ export function NavUser({
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">
-                  {user.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase()}
+                <AvatarFallback className="rounded-lg bg-primary/10 text-primary">
+                  {getInitials(displayName)}
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-xs">{user.email}</span>
+                <span className="truncate font-medium">{displayName}</span>
+                <span className="truncate text-xs">{email}</span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
@@ -64,24 +94,19 @@ export function NavUser({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">
-                    {user.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .toUpperCase()}
+                  <AvatarFallback className="rounded-lg bg-primary/10 text-primary">
+                    {getInitials(displayName)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs">{user.email}</span>
+                  <span className="truncate font-medium">{displayName}</span>
+                  <span className="truncate text-xs">{email}</span>
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOut />
+            <DropdownMenuItem onClick={handleLogout}>
+              <LogOut className="mr-2 size-4" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
