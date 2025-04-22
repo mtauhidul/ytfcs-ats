@@ -15,9 +15,14 @@ import {
   ArrowUpIcon,
   CheckIcon,
   GripVertical,
+  Info,
+  LayersIcon,
+  Loader2,
   PencilIcon,
   PlusIcon,
   SearchIcon,
+  ShieldAlert,
+  SortAscIcon,
   TrashIcon,
   XIcon,
 } from "lucide-react";
@@ -48,6 +53,12 @@ import {
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Separator } from "~/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 
 interface Stage {
   id: string;
@@ -65,19 +76,12 @@ export default function StagesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReordering, setIsReordering] = useState(false);
 
   // Fetch stages in real-time, ordered by `order`
   useEffect(() => {
     const q = query(collection(db, "stages"), orderBy("order", "asc"));
     const unsub = onSnapshot(q, (snap) => {
-      setStages(
-        snap.docs.map((d) => ({
-          id: d.id,
-          title: d.data().title,
-          order: d.data().order,
-          color: d.data().color || "", // Provide a default value for color
-        }))
-      );
       setStages(
         snap.docs.map((d) => {
           const data = d.data();
@@ -85,7 +89,7 @@ export default function StagesPage() {
             id: d.id,
             title: data.title,
             order: data.order,
-            color: data.color, // pull the Tailwind class string
+            color: data.color || "", // provide default if missing
           } as Stage;
         })
       );
@@ -98,7 +102,6 @@ export default function StagesPage() {
   );
 
   // Add new stage at the end
-  // In StagesPage.tsx, update the handleCreate function
   const handleCreate = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newTitle.trim() || isSubmitting) return;
@@ -130,7 +133,6 @@ export default function StagesPage() {
         "bg-cyan-50 border-cyan-200 text-cyan-700",
         "bg-teal-50 border-teal-200 text-teal-700",
         "bg-lime-50 border-lime-200 text-lime-700",
-        "bg-lemon-50 border-lemon-200 text-lemon-700",
       ];
       const color = defaultColors[maxOrder % defaultColors.length];
 
@@ -138,6 +140,7 @@ export default function StagesPage() {
         title: newTitle.trim(),
         order: maxOrder + 1,
         color: color, // Store the color
+        createdAt: new Date().toISOString(),
       });
 
       setNewTitle("");
@@ -167,6 +170,7 @@ export default function StagesPage() {
       setIsSubmitting(true);
       await updateDoc(doc(db, "stages", id), {
         title: editingTitle.trim(),
+        updatedAt: new Date().toISOString(),
       });
 
       setEditingId(null);
@@ -201,24 +205,37 @@ export default function StagesPage() {
     }
   };
 
-  // Move stage up or down in the order
-  const handleMove = async (idx: number, dir: -1 | 1) => {
-    if (isSubmitting) return;
+  // Fix for the move functionality
+  const handleMove = async (stageId: string, direction: -1 | 1) => {
+    if (isSubmitting || isReordering) return;
 
-    const targetIdx = idx + dir;
-    if (targetIdx < 0 || targetIdx >= stages.length) return;
+    // Find current stage and its index
+    const currentStage = stages.find((s) => s.id === stageId);
+    if (!currentStage) return;
 
-    const currentStage = stages[idx];
-    const targetStage = stages[targetIdx];
+    const currentIndex = stages.findIndex((s) => s.id === stageId);
+    const nextIndex = currentIndex + direction;
+
+    // Check if move is valid
+    if (nextIndex < 0 || nextIndex >= stages.length) return;
+
+    const nextStage = stages[nextIndex];
 
     try {
-      setIsSubmitting(true);
-      // Swap orders
+      setIsReordering(true);
+
+      // Swap the orders
+      const currentOrder = currentStage.order;
+      const nextOrder = nextStage.order;
+
+      // Update current stage
       await updateDoc(doc(db, "stages", currentStage.id), {
-        order: targetStage.order,
+        order: nextOrder,
       });
-      await updateDoc(doc(db, "stages", targetStage.id), {
-        order: currentStage.order,
+
+      // Update target stage
+      await updateDoc(doc(db, "stages", nextStage.id), {
+        order: currentOrder,
       });
 
       toast.success("Stage reordered successfully");
@@ -226,33 +243,40 @@ export default function StagesPage() {
       toast.error("Failed to reorder stages");
       console.error(error);
     } finally {
-      setIsSubmitting(false);
+      setIsReordering(false);
     }
   };
 
-  function getDefaultColor(order: number): string {
-    // Cycle through predefined colors
-    const colors = [
-      "#4f46e5",
-      "#06b6d4",
-      "#10b981",
-      "#f59e0b",
-      "#ef4444",
-      "#8b5cf6",
-    ];
-    return colors[order % colors.length];
-  }
+  // Reorder all stages to fix any gaps or inconsistencies
+  const handleFixOrdering = async () => {
+    if (isSubmitting || isReordering || stages.length < 2) return;
 
-  function getContrastTextColor(bgColor: string): string {
-    // Calculate whether text should be white or black based on background
-    // Simplified version - you might want a more robust solution
-    const color = bgColor.replace("#", "");
-    const r = parseInt(color.substr(0, 2), 16);
-    const g = parseInt(color.substr(2, 2), 16);
-    const b = parseInt(color.substr(4, 2), 16);
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-    return brightness > 128 ? "#000000" : "#ffffff";
-  }
+    try {
+      setIsReordering(true);
+
+      // Sort stages by current order
+      const orderedStages = [...stages].sort((a, b) => a.order - b.order);
+
+      // Update each stage with sequential order
+      const updates = orderedStages.map((stage, index) => {
+        const newOrder = index + 1;
+        if (stage.order !== newOrder) {
+          return updateDoc(doc(db, "stages", stage.id), {
+            order: newOrder,
+          });
+        }
+        return Promise.resolve();
+      });
+
+      await Promise.all(updates);
+      toast.success("Stages reordered successfully");
+    } catch (error) {
+      toast.error("Failed to reorder stages");
+      console.error(error);
+    } finally {
+      setIsReordering(false);
+    }
+  };
 
   return (
     <div className="container mx-auto py-8">
@@ -266,7 +290,7 @@ export default function StagesPage() {
                 variant="outline"
                 className="bg-primary/10 text-primary size-6 flex items-center justify-center rounded-md font-normal"
               >
-                S
+                <LayersIcon className="size-3.5" />
               </Badge>
               Workflow Stages
             </CardTitle>
@@ -274,9 +298,35 @@ export default function StagesPage() {
               Define and organize your hiring pipeline stages
             </CardDescription>
           </div>
-          <Badge variant="secondary" className="text-xs py-1 px-2 h-7">
-            {stages.length} {stages.length === 1 ? "stage" : "stages"}
-          </Badge>
+
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs py-1 px-2 h-7">
+              {stages.length} {stages.length === 1 ? "stage" : "stages"}
+            </Badge>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={isReordering || isSubmitting}
+                    onClick={handleFixOrdering}
+                  >
+                    {isReordering ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <SortAscIcon className="size-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Fix stage ordering</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-6">
@@ -290,6 +340,7 @@ export default function StagesPage() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     className="pr-10"
+                    disabled={isSubmitting}
                   />
                   {newTitle && (
                     <Button
@@ -298,6 +349,7 @@ export default function StagesPage() {
                       size="icon"
                       className="absolute right-0 top-0 size-9"
                       onClick={() => setNewTitle("")}
+                      disabled={isSubmitting}
                     >
                       <XIcon className="size-4" />
                     </Button>
@@ -308,9 +360,18 @@ export default function StagesPage() {
                   disabled={!newTitle.trim() || isSubmitting}
                   className="gap-1.5"
                 >
-                  <PlusIcon className="size-4" />
-                  <span className="hidden sm:inline">Add Stage</span>
-                  <span className="inline sm:hidden">Add</span>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span className="hidden sm:inline">Adding...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlusIcon className="size-4" />
+                      <span className="hidden sm:inline">Add Stage</span>
+                      <span className="inline sm:hidden">Add</span>
+                    </>
+                  )}
                 </Button>
               </form>
             </CardContent>
@@ -339,13 +400,19 @@ export default function StagesPage() {
 
           {/* Stages List */}
           <ScrollArea className="h-[420px] pr-4 -mr-4">
+            {isReordering && (
+              <div className="mb-2 bg-muted/30 p-2 text-xs text-center flex items-center justify-center gap-2 rounded-md">
+                <Loader2 className="size-3 animate-spin" />
+                <span>Reordering stages...</span>
+              </div>
+            )}
+
             <div className="space-y-2">
               {filteredStages.length > 0 ? (
                 filteredStages.map((stage, i) => {
-                  const idx = stages.findIndex((s) => s.id === stage.id);
-                  const isFirst = idx === 0;
-                  const isLast = idx === stages.length - 1;
-                  const stageNumber = idx + 1;
+                  const stageNumber = i + 1;
+                  const isFirst = i === 0;
+                  const isLast = i === filteredStages.length - 1;
 
                   return (
                     <div
@@ -353,13 +420,28 @@ export default function StagesPage() {
                       className="group flex items-center gap-3 p-3 border rounded-lg hover:bg-muted/40 transition-colors"
                     >
                       <div className="flex items-center gap-3 text-muted-foreground">
-                        <GripVertical className="size-4 opacity-40" />
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center">
+                                <GripVertical className="size-4 opacity-40" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <p className="text-xs">
+                                Drag to reorder (coming soon)
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
                         <div
                           className={`
-    flex items-center justify-center size-6
-    rounded-full font-medium text-xs
-    ${stage.color}
-  `}
+                            flex items-center justify-center size-6
+                            rounded-full font-medium text-xs
+                            ${stage.color}
+                            drop-shadow-sm
+                          `}
                         >
                           {stageNumber}
                         </div>
@@ -372,6 +454,7 @@ export default function StagesPage() {
                             onChange={(e) => setEditingTitle(e.target.value)}
                             className="flex-1"
                             autoFocus
+                            disabled={isSubmitting}
                           />
                           <div className="flex items-center gap-1">
                             <Button
@@ -379,6 +462,7 @@ export default function StagesPage() {
                               size="icon"
                               onClick={handleCancelEdit}
                               className="size-8"
+                              disabled={isSubmitting}
                             >
                               <XIcon className="size-4" />
                             </Button>
@@ -389,59 +473,104 @@ export default function StagesPage() {
                               disabled={!editingTitle.trim() || isSubmitting}
                               className="size-8 text-green-500"
                             >
-                              <CheckIcon className="size-4" />
+                              {isSubmitting ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <CheckIcon className="size-4" />
+                              )}
                             </Button>
                           </div>
                         </div>
                       ) : (
                         <>
-                          <span className="font-medium flex-1">
+                          <span className="font-medium flex-1 truncate">
                             {stage.title}
                           </span>
 
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleMove(idx, -1)}
-                              disabled={isFirst || isSubmitting}
-                              className="size-7 text-muted-foreground"
-                              title="Move up"
-                            >
-                              <ArrowUpIcon className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleMove(idx, 1)}
-                              disabled={isLast || isSubmitting}
-                              className="size-7 text-muted-foreground"
-                              title="Move down"
-                            >
-                              <ArrowDownIcon className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() =>
-                                handleStartEdit(stage.id, stage.title)
-                              }
-                              disabled={isSubmitting}
-                              className="size-7 text-muted-foreground"
-                              title="Edit"
-                            >
-                              <PencilIcon className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleConfirmDelete(stage.id)}
-                              disabled={isSubmitting}
-                              className="size-7 text-destructive"
-                              title="Delete"
-                            >
-                              <TrashIcon className="size-3.5" />
-                            </Button>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleMove(stage.id, -1)}
+                                    disabled={
+                                      isFirst || isSubmitting || isReordering
+                                    }
+                                    className="size-7 text-muted-foreground"
+                                  >
+                                    <ArrowUpIcon className="size-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Move up</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleMove(stage.id, 1)}
+                                    disabled={
+                                      isLast || isSubmitting || isReordering
+                                    }
+                                    className="size-7 text-muted-foreground"
+                                  >
+                                    <ArrowDownIcon className="size-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Move down</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      handleStartEdit(stage.id, stage.title)
+                                    }
+                                    disabled={isSubmitting || isReordering}
+                                    className="size-7 text-muted-foreground"
+                                  >
+                                    <PencilIcon className="size-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Edit stage</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      handleConfirmDelete(stage.id)
+                                    }
+                                    disabled={isSubmitting || isReordering}
+                                    className="size-7 text-destructive"
+                                  >
+                                    <TrashIcon className="size-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  <p>Delete stage</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </div>
                         </>
                       )}
@@ -480,15 +609,35 @@ export default function StagesPage() {
               )}
             </div>
           </ScrollArea>
+
+          {stages.length > 0 && (
+            <div className="bg-muted/30 p-3 rounded-lg text-sm flex items-start gap-2 text-muted-foreground">
+              <ShieldAlert className="size-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-foreground">
+                  Workflow Information
+                </p>
+                <p>
+                  Stages represent the steps in your hiring process. Candidates
+                  will move from one stage to the next as they progress through
+                  your pipeline. You can reorder stages by using the up and down
+                  arrows.
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
 
         <Separator />
 
         <CardFooter className="flex justify-between text-xs text-muted-foreground pt-4">
-          <span>
-            {filteredStages.length} of {stages.length} stages
-            {search && " matching your search"}
-          </span>
+          <div className="flex items-center gap-1">
+            <Info className="size-3 opacity-70" />
+            <span>
+              {filteredStages.length} of {stages.length} stages
+              {search && " matching your search"}
+            </span>
+          </div>
           <span>Last updated: {new Date().toLocaleDateString()}</span>
         </CardFooter>
       </Card>
@@ -504,13 +653,22 @@ export default function StagesPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isSubmitting}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={isSubmitting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {isSubmitting ? (
+                <div className="flex items-center gap-1">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Deleting...</span>
+                </div>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
