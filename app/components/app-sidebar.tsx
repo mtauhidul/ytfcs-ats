@@ -8,6 +8,7 @@ import {
   Tag,
   Upload,
   Users,
+  UsersIcon,
   Workflow,
 } from "lucide-react";
 import * as React from "react";
@@ -91,6 +92,12 @@ const data = {
       icon: LayersIcon,
       isActive: false,
     },
+    {
+      title: "Profile",
+      url: "/dashboard/profile",
+      icon: UsersIcon,
+      isActive: false,
+    },
   ],
 };
 
@@ -104,7 +111,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

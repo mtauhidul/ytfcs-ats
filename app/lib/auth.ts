@@ -1,11 +1,17 @@
 // app/lib/auth.ts
 import {
+  EmailAuthProvider,
   getAuth,
   isSignInWithEmailLink,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendSignInLinkToEmail,
+  signInWithEmailAndPassword,
   signInWithEmailLink,
   signOut,
+  updatePassword,
+  updateProfile,
+  type User,
 } from "firebase/auth";
 import {
   collection,
@@ -14,6 +20,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -43,6 +50,7 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   photoUrl?: string;
+  hasPassword?: boolean;
 }
 
 // Save email locally for the authentication process
@@ -122,6 +130,9 @@ export const completeSignIn = async (): Promise<AuthUser | null> => {
         // User exists in teamMembers collection
         const teamMemberData = querySnapshot.docs[0].data();
 
+        // Check if user has password provider
+        const hasPassword = checkUserHasPassword(result.user);
+
         // Return authenticated user with role information
         return {
           uid: result.user.uid,
@@ -130,6 +141,7 @@ export const completeSignIn = async (): Promise<AuthUser | null> => {
           role: teamMemberData.role || "Team Member",
           photoUrl:
             teamMemberData.photoUrl || result.user.photoURL || undefined,
+          hasPassword,
         };
       } else {
         // User authenticated but not in teamMembers - handle this case
@@ -184,6 +196,13 @@ export const hasRole = async (
   }
 };
 
+// Helper function to check if user has password auth method
+export const checkUserHasPassword = (user: User): boolean => {
+  return user.providerData.some(
+    (provider) => provider.providerId === "password"
+  );
+};
+
 // Get current authenticated user with additional data from Firestore
 export const getCurrentUser = (): Promise<AuthUser | null> => {
   return new Promise((resolve) => {
@@ -218,12 +237,16 @@ export const getCurrentUser = (): Promise<AuthUser | null> => {
           await setDoc(teamMemberRef, { uid: user.uid }, { merge: true });
         }
 
+        // Check if user has password provider
+        const hasPassword = checkUserHasPassword(user);
+
         resolve({
           uid: user.uid,
           email: user.email || "",
           name: teamMemberData.name || "Team Member",
           role: teamMemberData.role || "Team Member",
           photoUrl: teamMemberData.photoUrl || user.photoURL || undefined,
+          hasPassword,
         });
       } catch (error) {
         console.error("Error getting user data:", error);
@@ -256,5 +279,141 @@ export const sendInvitation = async (
   } catch (error) {
     console.error("Error sending invitation:", error);
     return false;
+  }
+};
+
+// Sign in with email and password
+export const signInWithPassword = async (
+  email: string,
+  password: string
+): Promise<AuthUser | null> => {
+  try {
+    const auth = getAuth();
+    const result = await signInWithEmailAndPassword(auth, email, password);
+
+    // Get user data from Firestore
+    const teamMemberQuery = query(
+      collection(db, "teamMembers"),
+      where("email", "==", email)
+    );
+
+    const querySnapshot = await getDocs(teamMemberQuery);
+
+    if (querySnapshot.empty) {
+      console.warn("User authenticated but not found in teamMembers");
+      await signOut(auth);
+      return null;
+    }
+
+    const teamMemberData = querySnapshot.docs[0].data();
+
+    // Update the teamMember with the Firebase uid if not present
+    if (!teamMemberData.uid) {
+      const teamMemberRef = querySnapshot.docs[0].ref;
+      await setDoc(teamMemberRef, { uid: result.user.uid }, { merge: true });
+    }
+
+    return {
+      uid: result.user.uid,
+      email: result.user.email || email,
+      name: teamMemberData.name || "Team Member",
+      role: teamMemberData.role || "Team Member",
+      photoUrl: teamMemberData.photoUrl || result.user.photoURL || undefined,
+      hasPassword: true,
+    };
+  } catch (error) {
+    console.error("Error signing in with password:", error);
+    throw error;
+  }
+};
+
+// Set up or change password for current user
+// Update your setupUserPassword function in auth.ts
+export const setupUserPassword = async (
+  newPassword: string,
+  currentPassword?: string
+): Promise<boolean> => {
+  try {
+    const auth = getAuth();
+    const user = auth.currentUser;
+
+    if (!user) {
+      throw new Error("User not authenticated");
+    }
+
+    // Check if user already has a password
+    const hasPassword = checkUserHasPassword(user);
+
+    // For users with password, re-authenticate with current password
+    if (hasPassword && currentPassword) {
+      // Re-authenticate with current password first
+      const credential = EmailAuthProvider.credential(
+        user.email || "",
+        currentPassword
+      );
+      await reauthenticateWithCredential(user, credential);
+    }
+    // For passwordless users who can't re-authenticate with password
+    else if (!hasPassword) {
+      // Get a fresh ID token
+      try {
+        await user.getIdToken(true); // Force token refresh
+      } catch (refreshError) {
+        console.error("Error refreshing token:", refreshError);
+        // If refresh fails, we'll need to go with the more disruptive approach
+        throw new Error("auth/requires-recent-login");
+      }
+    }
+
+    // Set or update password
+    await updatePassword(user, newPassword);
+    return true;
+  } catch (error) {
+    console.error("Error setting up password:", error);
+    throw error;
+  }
+};
+
+// Update user profile information
+export const updateUserProfile = async (
+  uid: string,
+  updates: { name?: string; photoUrl?: string }
+): Promise<boolean> => {
+  try {
+    // Update in Firestore
+    const teamMemberQuery = query(
+      collection(db, "teamMembers"),
+      where("uid", "==", uid)
+    );
+
+    const querySnapshot = await getDocs(teamMemberQuery);
+
+    if (!querySnapshot.empty) {
+      const teamMemberRef = querySnapshot.docs[0].ref;
+      const updateData: any = {};
+
+      if (updates.name) updateData.name = updates.name;
+      if (updates.photoUrl) updateData.photoUrl = updates.photoUrl;
+
+      await updateDoc(teamMemberRef, updateData);
+
+      // Also update Firebase Auth profile if needed
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (user) {
+        await updateProfile(user, {
+          displayName: updates.name,
+          photoURL: updates.photoUrl,
+        });
+      }
+
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error updating user profile:", error);
+    throw error;
   }
 };

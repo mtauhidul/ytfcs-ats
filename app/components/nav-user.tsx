@@ -1,8 +1,6 @@
-// NavUser component
-"use client";
-
+// components/nav-user.tsx
 import { getAuth, signOut } from "firebase/auth";
-import { ChevronsUpDown, LogOut } from "lucide-react";
+import { ChevronsUpDown, LogOut, UserCircle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useAuth } from "~/context/auth-context";
 
@@ -36,13 +34,8 @@ export function NavUser() {
 
     try {
       const auth = getAuth();
-      // Use a hardcoded path to navigate to first, then perform signOut
-      // This avoids the race condition that might be causing your issues
-
-      // First navigate away to prevent infinite loops
       navigate("/auth/login");
 
-      // Then perform signout after navigation
       setTimeout(async () => {
         await signOut(auth);
       }, 100);
@@ -56,10 +49,8 @@ export function NavUser() {
     const nameParts = name.split(" ");
 
     if (nameParts.length === 1) {
-      // If only one name part, take the first two letters (or just one if name is one letter)
       return nameParts[0].substring(0, 2).toUpperCase();
     } else {
-      // If multiple name parts, take the first letter of first and first letter of second part
       return (nameParts[0][0] + (nameParts[1]?.[0] || "")).toUpperCase();
     }
   };
@@ -105,6 +96,11 @@ export function NavUser() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {/* Add Profile menu item */}
+            <DropdownMenuItem onClick={() => navigate("/dashboard/profile")}>
+              <UserCircle className="mr-2 size-4" />
+              My Profile
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 size-4" />
               Log out

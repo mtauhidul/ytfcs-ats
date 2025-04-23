@@ -21,7 +21,8 @@ export default function DashboardLayout() {
 
   // Mapping dashboard routes to more descriptive labels
   const breadcrumbLabels: Record<string, string> = {
-    dashboard: "Dashboard", // Label for the index dashboard route
+    dashboard: "Dashboard",
+    profile: "Profile",
     import: "Candidate Import",
     candidates: "Candidates List",
     workflow: "Application Flow",
@@ -61,7 +62,7 @@ export default function DashboardLayout() {
               <Breadcrumb>
                 <BreadcrumbList>
                   {breadcrumb.map((item, idx) => (
-                    <BreadcrumbItem key={item.href}>
+                    <BreadcrumbItem key={item.href + idx}>
                       {idx < breadcrumb.length - 1 ? (
                         <>
                           <BreadcrumbPage>{item.title}</BreadcrumbPage>

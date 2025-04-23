@@ -1,4 +1,4 @@
-// app/routes.ts
+//routes.ts
 import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
 export default [
@@ -8,9 +8,8 @@ export default [
     route("confirm", "routes/auth/confirm.tsx"),
   ]),
   route("dashboard", "routes/dashboard.tsx", [
-    index("dashboard/dashboard/index.tsx"), // Corrected path
-    // Or simply: index("dashboard/dashboard/index.tsx")
-
+    index("dashboard/dashboard/index.tsx"),
+    route("profile", "dashboard/profile/profile.tsx"), // Add profile route
     route("import", "dashboard/import/import.tsx"),
     route("candidates", "dashboard/candidates/candidates.tsx"),
     route("workflow", "dashboard/workflow/workflow.tsx"),

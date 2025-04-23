@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
-import { Navigate, useLocation } from "react-router";
+import { useEffect } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "~/context/auth-context";
 import type { UserRole } from "~/lib/auth";
 
@@ -14,6 +15,17 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      // Move navigation into an effect to avoid render loops
+      navigate("/auth/login", {
+        state: { from: location.pathname },
+        replace: true,
+      });
+    }
+  }, [user, loading, location.pathname, navigate]);
 
   // Show loading indicator while checking authentication
   if (loading) {
@@ -25,11 +37,13 @@ export function ProtectedRoute({
     );
   }
 
-  // Redirect to login if user is not authenticated
+  // Hidden loading state for when we're about to redirect
   if (!user) {
-    // We need to use Navigate rather than directly changing location
     return (
-      <Navigate to="/auth/login" state={{ from: location.pathname }} replace />
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-lg">Redirecting...</span>
+      </div>
     );
   }
 
