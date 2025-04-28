@@ -65,12 +65,37 @@ export default function ProfilePage() {
     "weak" | "medium" | "strong" | ""
   >("");
 
+  // Check if user has set up a password by checking if they have a UID in Firestore
   useEffect(() => {
-    if (user) {
+    const checkPasswordStatus = async () => {
+      if (!user) return;
+
       setDisplayName(user.name || "");
-      // Use the hasPassword property from AuthUser if available
-      setHasPassword(user.hasPassword || false);
-    }
+
+      try {
+        // Query Firestore to check if the user has a UID in their document
+        const teamMemberQuery = query(
+          collection(db, "teamMembers"),
+          where("email", "==", user.email)
+        );
+
+        const querySnapshot = await getDocs(teamMemberQuery);
+
+        if (!querySnapshot.empty) {
+          const teamMemberData = querySnapshot.docs[0].data();
+          // If the user has a UID in Firestore, they've set up a password
+          const hasUidInFirestore = Boolean(teamMemberData.uid);
+          setHasPassword(hasUidInFirestore);
+        } else {
+          setHasPassword(false);
+        }
+      } catch (error) {
+        console.error("Error checking password status:", error);
+        setHasPassword(false);
+      }
+    };
+
+    checkPasswordStatus();
   }, [user]);
 
   // Evaluate password strength when newPassword changes
@@ -160,37 +185,61 @@ export default function ProfilePage() {
     try {
       setIsSubmitting(true);
 
-      // Use the imported setupUserPassword function from auth.ts
+      // Check if current password is required but not provided
       if (hasPassword && !currentPassword) {
         setPasswordError("Current password is required");
         setIsSubmitting(false);
         return;
       }
 
-      // Call the auth function with proper parameters
+      // Call the setupUserPassword function with the appropriate parameters
       await setupUserPassword(
         newPassword,
         hasPassword ? currentPassword : undefined
       );
 
+      // Find the teamMember document and update the UID field if it's not already set
+      const teamMemberQuery = query(
+        collection(db, "teamMembers"),
+        where("email", "==", user?.email)
+      );
+
+      const querySnapshot = await getDocs(teamMemberQuery);
+
+      if (!querySnapshot.empty) {
+        const teamMemberRef = querySnapshot.docs[0].ref;
+        const auth = getAuth();
+        const currentUser = auth.currentUser;
+
+        if (currentUser) {
+          // Update the UID in Firestore to indicate the user has set up a password
+          await updateDoc(teamMemberRef, {
+            uid: currentUser.uid,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      // Success! Clean up the form and update states
       setHasPassword(true);
       setNewPassword("");
       setConfirmPassword("");
       setCurrentPassword("");
       setPasswordDialogOpen(false);
 
+      // Show success message
       toast.success(
         hasPassword
           ? "Password updated successfully"
           : "Password set up successfully"
       );
 
-      // Refresh user to update hasPassword state
+      // Refresh user data to get the updated password status
       await refreshUser();
     } catch (error: any) {
-      // In handleSetupPassword function, update the catch block
       console.error("Error setting up password:", error);
 
+      // Handle specific error cases
       if (error.code === "auth/wrong-password") {
         setPasswordError("Current password is incorrect");
       } else if (
@@ -216,11 +265,15 @@ export default function ProfilePage() {
       } else {
         setPasswordError(error.message || "Failed to set up password");
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // Generate initials from name
   const getInitials = (name: string) => {
+    if (!name) return "??";
+
     const nameParts = name.split(" ");
     if (nameParts.length === 1) {
       return nameParts[0].substring(0, 2).toUpperCase();
@@ -229,6 +282,7 @@ export default function ProfilePage() {
     }
   };
 
+  // Show loading state if user data is not available
   if (!user) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
