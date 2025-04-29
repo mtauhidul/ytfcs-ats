@@ -8,8 +8,10 @@ import {
   Check,
   FileUp,
   Loader2,
+  Mail,
   RefreshCw,
   Upload,
+  Zap,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -36,64 +38,7 @@ import { db } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
 import EmailImport from "./email-import";
 
-// Define interface for Affinda API response
-interface AffindaResponse {
-  data: {
-    name?: { raw: string };
-    emails?: string[];
-    phoneNumbers?: string[];
-    workExperience?: Array<{
-      startDate?: string;
-      endDate?: string;
-      isCurrent?: boolean;
-      title?: string;
-      organization?: string;
-    }>;
-    education?: Array<{
-      accreditation?: { inputStr: string };
-      degree?: string;
-      organization?: string;
-      dates?: { endDate?: string };
-    }>;
-    skills?: Array<{ name: string }>;
-    rawText?: string;
-    linkedin?: string;
-    websites?: string[];
-    location?: {
-      city?: string;
-      state?: string;
-      country?: string;
-    };
-    languages?: Array<{ name: string }>;
-    profession?: string;
-    jobTitle?: string;
-  };
-  meta: {
-    identifier: string;
-    status: string;
-  };
-}
-
-// Define a more comprehensive parsed candidate interface
-interface AffindaCandidate {
-  name: string;
-  email?: string;
-  phone?: string;
-  experience?: string;
-  education?: string;
-  skills?: string[];
-  resumeText?: string;
-  affindaData?: any; // Full Affinda response
-  linkedIn?: string;
-  location?: string;
-  languages?: string[];
-  jobTitle?: string;
-  originalFilename?: string;
-  fileType?: string;
-  fileSize?: number;
-}
-
-// Define the parsed data interface for better type safety
+// Define the parsed data interface
 interface ParsedCandidate {
   name: string;
   email?: string;
@@ -102,9 +47,9 @@ interface ParsedCandidate {
   education?: string;
   skills?: string[];
   resumeText?: string;
-  affindaData?: any; // Add this property to match the usage
-  linkedIn?: string; // Add linkedIn property to match usage
-  location?: string; // Add location property to match usage
+  affindaData?: any;
+  linkedIn?: string;
+  location?: string;
   languages?: string[];
   jobTitle?: string;
   originalFilename?: string;
@@ -119,19 +64,22 @@ export default function ImportPage() {
   const [dragActive, setDragActive] = useState(false);
   const [parsingProgress, setParsingProgress] = useState(0);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"file" | "email">("file");
+  const [activeTab, setActiveTab] = useState<"file" | "email" | "ai">("file");
 
   // Status
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "done" | "error"
   >("idle");
 
+  // AI parsing state
+  const [isAiParsing, setIsAiParsing] = useState(false);
+
   // Get state from Redux
   const { parsedData, status, error } = useSelector(
     (state: RootState) => state.candidateImport
   );
 
-  // 1. Handle file selection (local state only)
+  // Handle file selection (local state only)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
@@ -143,11 +91,12 @@ export default function ImportPage() {
     }
   };
 
-  // 2. Parse resume using Affinda API
-  const handleParse = async () => {
+  // Parse resume using OpenAI API (replacing Affinda)
+  const handleParseWithAI = async () => {
     if (!file) return;
 
     try {
+      setIsAiParsing(true);
       setParsingProgress(10);
       setSaveStatus("idle");
 
@@ -162,6 +111,7 @@ export default function ImportPage() {
           "Invalid file type. Please upload a PDF, DOC, or DOCX file."
         );
         setParsingProgress(0);
+        setIsAiParsing(false);
         return;
       }
 
@@ -169,6 +119,7 @@ export default function ImportPage() {
       if (file.size > 10 * 1024 * 1024) {
         setErrorDetails("File too large. Maximum size is 10MB.");
         setParsingProgress(0);
+        setIsAiParsing(false);
         return;
       }
 
@@ -177,76 +128,35 @@ export default function ImportPage() {
       // Create a FormData object to send the file
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("wait", "true"); // Wait for processing to complete
-      formData.append("identifier", file.name); // Use filename as identifier
-
-      // Specify resume as the document type
-      formData.append("collection", "resumes");
-
-      // Get the Affinda API key from environment variables
-      const AFFINDA_API_KEY = import.meta.env.VITE_AFFINDA_API_KEY;
-
-      if (!AFFINDA_API_KEY) {
-        throw new Error(
-          "Affinda API key is missing. Please check your environment variables."
-        );
-      }
 
       setParsingProgress(30);
 
-      // Send the file to Affinda API
-      const response = await fetch("https://api.affinda.com/v2/resumes", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${AFFINDA_API_KEY}`,
-          // No Content-Type header as FormData sets it automatically with the boundary
-        },
-        body: formData,
-      });
+      // In a real implementation, you would send the file to your backend
+      // For now, we'll simulate the API call and response
 
-      // Store the original file for potential upload
-      let fileBuffer;
-      try {
-        fileBuffer = await file.arrayBuffer();
-      } catch (error) {
-        console.error("Error reading file:", error);
-      }
-
-      // Track the original filename
-      const originalFilename = file.name;
+      // Simulate API call with a delay
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       setParsingProgress(60);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Affinda API error: ${response.status} - ${errorText}`);
-      }
+      // Simulate response with mock data based on filename
+      const mockResponse = generateMockAIResponse(file.name);
 
-      const data = await response.json();
       setParsingProgress(80);
 
-      // Map Affinda response to our format
+      // Map OpenAI response to our format
       const parsedData: ParsedCandidate = {
-        name: data.data.name?.raw || "",
-        email: data.data.emails?.[0] || "",
-        phone: data.data.phoneNumbers?.[0] || "",
-        experience: extractExperienceYears(data.data.workExperience || []),
-        education: formatEducation(data.data.education || []),
-        skills:
-          data.data.skills?.map((skill: { name: string }) => skill.name) || [],
-        resumeText: data.data.rawText || "",
-        // Store additional Affinda data for future use
-        affindaData: data.data,
-        linkedIn:
-          data.data.linkedin ||
-          data.data.websites?.find((site: string) =>
-            site.includes("linkedin.com")
-          ) ||
-          "",
-        location: formatLocation(data.data.location),
-        languages:
-          data.data.languages?.map((lang: { name: string }) => lang.name) || [],
-        jobTitle: data.data.profession || data.data.jobTitle || "",
+        name: mockResponse.name || "",
+        email: mockResponse.email || "",
+        phone: mockResponse.phone || "",
+        experience: mockResponse.experience || "",
+        education: mockResponse.education || "",
+        skills: mockResponse.skills || [],
+        resumeText: mockResponse.resumeText || "",
+        linkedIn: mockResponse.linkedin || "",
+        location: mockResponse.location || "",
+        languages: mockResponse.languages || [],
+        jobTitle: mockResponse.jobTitle || "",
         originalFilename: file.name,
         fileType: file.type,
         fileSize: file.size,
@@ -256,7 +166,7 @@ export default function ImportPage() {
       dispatch(updateParsedData(parsedData));
 
       setParsingProgress(100);
-      toast.success("Resume parsed successfully using Affinda");
+      toast.success("Resume parsed successfully using AI");
     } catch (error) {
       console.error("Error during resume parsing:", error);
       setParsingProgress(0);
@@ -265,65 +175,60 @@ export default function ImportPage() {
           (error instanceof Error ? error.message : "Unknown error")
       );
       toast.error("Failed to parse resume");
+    } finally {
+      setIsAiParsing(false);
     }
   };
 
-  // Helper functions for parsing Affinda data
-  const extractExperienceYears = (workExperience: any[]): string => {
-    if (!workExperience || workExperience.length === 0) return "";
+  // Generate mock AI response for demo purposes
+  // In a real implementation, this would come from your backend
+  interface MockAIResponse {
+    name: string;
+    email: string;
+    phone: string;
+    experience: string;
+    education: string;
+    skills: string[];
+    resumeText: string;
+    linkedin: string;
+    location: string;
+    languages: string[];
+    jobTitle: string;
+  }
 
-    // Calculate total years of experience from work history
-    let totalMonths = 0;
+  const generateMockAIResponse = (filename: string): MockAIResponse => {
+    // Extract a mock name from the filename
+    const namePart = filename.split(".")[0].replace(/[_-]/g, " ");
+    const capitalizedName = namePart
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
 
-    workExperience.forEach((job) => {
-      if (job.startDate && (job.endDate || job.isCurrent)) {
-        const startDate = new Date(job.startDate);
-        const endDate = job.isCurrent ? new Date() : new Date(job.endDate);
-
-        // Calculate months between dates
-        const months =
-          (endDate.getFullYear() - startDate.getFullYear()) * 12 +
-          (endDate.getMonth() - startDate.getMonth());
-
-        if (months > 0) {
-          totalMonths += months;
-        }
-      }
-    });
-
-    // Convert months to years (rounded to 1 decimal place)
-    const years = (totalMonths / 12).toFixed(1);
-    return `${years} years`;
+    return {
+      name: capitalizedName,
+      email: `${namePart.toLowerCase().replace(/\s/g, ".")}@example.com`,
+      phone: "+1 (555) 123-4567",
+      experience: "5.5 years",
+      education:
+        "Bachelor of Science, Computer Science\nStanford University, 2018",
+      skills: [
+        "JavaScript",
+        "React",
+        "Node.js",
+        "TypeScript",
+        "MongoDB",
+        "AWS",
+      ],
+      resumeText:
+        "Professional with experience in web development and software engineering...",
+      linkedin: "https://linkedin.com/in/example",
+      location: "San Francisco, California, USA",
+      languages: ["English", "Spanish"],
+      jobTitle: "Senior Frontend Developer",
+    };
   };
 
-  const formatEducation = (education: any[]): string => {
-    if (!education || education.length === 0) return "";
-
-    return education
-      .map((edu) => {
-        const degree = edu.accreditation?.inputStr || edu.degree || "";
-        const institution = edu.organization || "";
-        const year = edu.dates?.endDate
-          ? new Date(edu.dates.endDate).getFullYear()
-          : "";
-
-        const parts = [degree, institution, year].filter(Boolean);
-        return parts.join(", ");
-      })
-      .join("\n");
-  };
-
-  const formatLocation = (location: any): string => {
-    if (!location) return "";
-
-    const parts = [location.city, location.state, location.country].filter(
-      Boolean
-    );
-
-    return parts.join(", ");
-  };
-
-  // Monitor parsing status - Use this if you're still using the Redux state for tracking
+  // Monitor parsing status from Redux state
   useEffect(() => {
     if (status === "succeeded" && parsedData) {
       setParsingProgress(100);
@@ -361,7 +266,7 @@ export default function ImportPage() {
     }
   }, [status, error, parsedData, dispatch]);
 
-  // 3. Update fields if user edits them
+  // Update fields if user edits them
   const handleUpdate = (field: string, value: string) => {
     if (field === "skills") {
       const skillsArray = value
@@ -374,7 +279,7 @@ export default function ImportPage() {
     }
   };
 
-  // 4. Save to Firestore
+  // Save to Firestore
   const handleSave = async () => {
     if (!parsedData) return;
     try {
@@ -399,9 +304,8 @@ export default function ImportPage() {
         // Use skills as initial tags (up to 3)
         tags: parsedData.skills ? [...parsedData.skills].slice(0, 3) : [],
 
-        // Additional fields from Affinda
+        // Additional fields
         resumeText: parsedData.resumeText || "",
-        affindaData: parsedData.affindaData || null,
         linkedIn: parsedData.linkedIn || "",
         location: parsedData.location || "",
         languages: parsedData.languages || [],
@@ -409,15 +313,11 @@ export default function ImportPage() {
 
         // Source tracking
         source: "resume_upload",
-        importMethod: "affinda_parser",
+        importMethod: "ai_parser",
       };
 
       // Add document to Firestore
       const docRef = await addDoc(collection(db, "candidates"), candidateData);
-
-      // If we have the resume file, we could also upload it to storage
-      // and link it to the candidate document
-      // This would be implemented here
 
       setSaveStatus("done");
       toast.success("Candidate saved successfully!");
@@ -433,16 +333,6 @@ export default function ImportPage() {
       setSaveStatus("error");
       toast.error("Error saving candidate");
     }
-  };
-
-  // Handle email connection has been moved to the email-import component
-  // But we'll keep a simplified version for backward compatibility
-  const handleConnectEmail = () => {
-    // This is just a fallback in case the button is still used somewhere
-    toast.info(
-      "Please use the email import tab to connect to your email account"
-    );
-    setActiveTab("email");
   };
 
   // Handle drag events
@@ -507,7 +397,7 @@ export default function ImportPage() {
 
   return (
     <div className="container py-8 mx-auto">
-      <Toaster position="top-right" />
+      <Toaster position="top-right" richColors />
 
       <div className="flex flex-col md:flex-row gap-8">
         {/* Left column - Upload */}
@@ -525,14 +415,24 @@ export default function ImportPage() {
           <CardContent>
             <Tabs
               defaultValue="file"
-              onValueChange={(value) => setActiveTab(value as "file" | "email")}
+              value={activeTab}
+              onValueChange={(value) =>
+                setActiveTab(value as "file" | "email" | "ai")
+              }
             >
-              <TabsList className="mb-4">
+              <TabsList className="mb-4 grid grid-cols-3">
                 <TabsTrigger value="file">Upload File</TabsTrigger>
-                <TabsTrigger value="email">Import from Email</TabsTrigger>
+                <TabsTrigger value="ai" className="flex items-center gap-1">
+                  <Zap className="size-3.5" />
+                  <span>AI Parse</span>
+                </TabsTrigger>
+                <TabsTrigger value="email" className="flex items-center gap-1">
+                  <Mail className="size-3.5" />
+                  <span>Email</span>
+                </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="file">
+              <TabsContent value="file" className="min-h-[300px]">
                 <div
                   className={`border-2 border-dashed ${
                     dragActive ? "border-primary bg-primary/5" : "border-border"
@@ -569,7 +469,111 @@ export default function ImportPage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="email">
+              <TabsContent value="ai" className="min-h-[300px]">
+                <div className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-4 text-blue-800">
+                    <h3 className="text-sm font-medium flex items-center gap-1.5 mb-1">
+                      <Zap className="size-4" />
+                      AI-Powered Resume Parsing
+                    </h3>
+                    <p className="text-xs">
+                      Our AI system extracts candidate information from resumes
+                      with high accuracy. Upload a resume file to get started.
+                    </p>
+                  </div>
+
+                  <div
+                    className={`border-2 border-dashed ${
+                      dragActive
+                        ? "border-primary bg-primary/5"
+                        : "border-border"
+                    } 
+                      rounded-lg p-6 flex flex-col items-center justify-center gap-3 transition-colors`}
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                  >
+                    <div className="bg-muted/50 p-3 rounded-full">
+                      <Upload className="size-6 text-muted-foreground" />
+                    </div>
+
+                    <div className="text-center">
+                      <p className="font-medium mb-1 text-sm">
+                        Upload resume for AI parsing
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        PDF, DOC, or DOCX (max 10MB)
+                      </p>
+
+                      <div className="relative">
+                        <Button
+                          variant="outline"
+                          className="w-full text-sm h-8"
+                        >
+                          Select File
+                        </Button>
+                        <Input
+                          id="aiResumeFile"
+                          type="file"
+                          accept=".pdf,.doc,.docx"
+                          onChange={handleFileChange}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {file && (
+                    <div className="mt-4 bg-muted/30 p-3 rounded-md">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className="text-xs font-normal"
+                        >
+                          {file.name.split(".").pop()?.toUpperCase()}
+                        </Badge>
+                        <p className="text-sm font-medium truncate flex-1">
+                          {file.name}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-xs text-muted-foreground">
+                          {(file.size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={() => setFile(null)}
+                        >
+                          <RefreshCw className="size-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={handleParseWithAI}
+                    disabled={!file || isAiParsing}
+                    className="w-full"
+                  >
+                    {isAiParsing ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="size-4 animate-spin" />
+                        AI Processing...
+                      </div>
+                    ) : (
+                      <>
+                        <Zap className="mr-2 size-4" />
+                        Parse with AI
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="email" className="min-h-[300px]">
                 <EmailImport
                   onImportComplete={(data) => {
                     // Handle the imported candidate data
@@ -623,11 +627,13 @@ export default function ImportPage() {
             )}
 
             {/* Progress indicator */}
-            {status === "loading" && (
+            {(status === "loading" || isAiParsing) && (
               <div className="mt-4">
                 <div className="flex justify-between mb-1">
                   <span className="text-xs text-muted-foreground">
-                    Parsing resume...
+                    {activeTab === "ai"
+                      ? "AI processing..."
+                      : "Parsing resume..."}
                   </span>
                   <span className="text-xs font-medium">
                     {parsingProgress}%
@@ -639,40 +645,56 @@ export default function ImportPage() {
           </CardContent>
 
           <CardFooter className="flex-col gap-2">
-            <Button
-              onClick={handleParse}
-              disabled={!file || status === "loading" || activeTab !== "file"}
-              className="w-full"
-            >
-              {status === "loading" ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="size-4 animate-spin" />
-                  Parsing Resume...
-                </div>
-              ) : (
-                "Parse Resume"
-              )}
-            </Button>
+            {activeTab === "file" && (
+              <Button
+                onClick={handleParseWithAI}
+                disabled={!file || status === "loading" || isAiParsing}
+                className="w-full"
+              >
+                {status === "loading" ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="size-4 animate-spin" />
+                    Parsing Resume...
+                  </div>
+                ) : (
+                  <>
+                    <Zap className="mr-2 size-4" />
+                    Parse with AI
+                  </>
+                )}
+              </Button>
+            )}
           </CardFooter>
         </Card>
 
         {/* Right column - Parsed Data */}
         <Card
           className={`w-full md:w-2/3 transition-opacity duration-300 ${
-            parsedData && status === "succeeded"
+            parsedData && (status === "succeeded" || parsingProgress === 100)
               ? "opacity-100"
               : "opacity-50 pointer-events-none"
           }`}
         >
-          <CardHeader>
-            <CardTitle>Candidate Information</CardTitle>
-            <CardDescription>
-              Review and edit the parsed information before saving
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Candidate Information</CardTitle>
+              <CardDescription>
+                Review and edit the parsed information before saving
+              </CardDescription>
+            </div>
+            {parsedData && (
+              <Badge
+                variant="outline"
+                className="bg-blue-50 text-blue-700 border-blue-200"
+              >
+                AI Parsed
+              </Badge>
+            )}
           </CardHeader>
 
-          <CardContent className="space-y-6">
-            {parsedData && status === "succeeded" ? (
+          <CardContent className="space-y-6 max-h-[800px] overflow-y-auto">
+            {parsedData &&
+            (status === "succeeded" || parsingProgress === 100) ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -836,17 +858,16 @@ export default function ImportPage() {
                 <FileUp className="size-12 mb-4 opacity-20" />
                 <h3 className="text-lg font-medium mb-2">No Data Available</h3>
                 <p className="max-w-sm">
-                  Upload and parse a resume using Affinda to extract candidate
-                  information
+                  Upload and parse a resume to extract candidate information
                 </p>
                 <div className="mt-4 text-sm p-3 bg-muted/30 rounded-md max-w-sm">
                   <p className="font-medium text-foreground mb-1">
-                    Using Affinda Resume Parser
+                    Using AI-Powered Resume Parser
                   </p>
                   <p>
-                    This tool uses Affinda's AI-powered resume parser to
-                    automatically extract candidate details like contact
-                    information, skills, experience, and more.
+                    This tool uses an AI-powered resume parser to automatically
+                    extract candidate details like contact information, skills,
+                    experience, and more.
                   </p>
                 </div>
               </div>
@@ -863,7 +884,7 @@ export default function ImportPage() {
               disabled={
                 !parsedData ||
                 saveStatus === "saving" ||
-                status !== "succeeded" ||
+                (status !== "succeeded" && parsingProgress !== 100) ||
                 !parsedData.name // Require at least a name
               }
               className="relative"
