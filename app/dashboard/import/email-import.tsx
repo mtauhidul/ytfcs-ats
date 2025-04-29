@@ -1,6 +1,5 @@
 // app/dashboard/import/email-import.tsx
 
-import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { Check, Info, Loader2, Mail, RefreshCw, Search, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useDispatch } from "react-redux";
@@ -18,8 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { db } from "~/lib/firebase";
 import type { AppDispatch } from "~/store";
+// Import the email service
+import { emailService } from "~/services/emailService";
 
 // Email provider configuration interfaces
 interface EmailProvider {
@@ -81,7 +81,7 @@ const providers: EmailProvider[] = [
 ];
 
 // Email import hook
-const useEmailImport = () => {
+const useEmailImport = (onImportComplete?: (data: any) => void) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [provider, setProvider] = useState<string>("gmail");
@@ -126,53 +126,28 @@ const useEmailImport = () => {
   const connectToProvider = async () => {
     setIsConnecting(true);
 
-    // For demo purposes, we'll simulate the OAuth flow
     try {
-      // In a real implementation, you would:
-      // 1. Redirect to provider auth URL
-      // 2. Handle the callback with code
-      // 3. Exchange code for tokens
-      // 4. Store tokens securely
+      // Instead of simulating the connection, actually connect via the backend
+      const credentials = {
+        provider,
+        server: provider === "other" ? imapServer : undefined,
+        port: provider === "other" ? imapPort : undefined,
+        username: provider === "other" ? imapUsername : imapUsername, // Gmail/Outlook still need username
+        password: provider === "other" ? imapPassword : imapPassword, // Gmail/Outlook still need password
+      };
 
-      // Simulate OAuth flow delay
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Call the backend to verify credentials and setup connection
+      await emailService.importCandidatesFromEmail(credentials);
 
-      // For IMAP server, validate credentials
-      if (provider === "other") {
-        if (!imapServer || !imapUsername || !imapPassword) {
-          throw new Error("Please provide all IMAP server details");
-        }
+      // Store minimal credential info (no passwords) for state management
+      const safeCredentials = {
+        provider,
+        username: imapUsername,
+        server: provider === "other" ? imapServer : undefined,
+      };
 
-        // Simulate server connection
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const credentials = {
-          provider: "other",
-          server: imapServer,
-          port: imapPort,
-          username: imapUsername,
-          // In a real app, never store passwords in localStorage
-          // This is just for demonstration
-          password: imapPassword,
-        };
-
-        // Store credentials (in a real app, use a secure method or just token)
-        localStorage.setItem("emailCredentials", JSON.stringify(credentials));
-        setEmailCredentials(credentials);
-      } else {
-        // For OAuth providers (Gmail, Outlook)
-        const credentials = {
-          provider,
-          accessToken: "simulated_access_token",
-          refreshToken: "simulated_refresh_token",
-          expiresAt: Date.now() + 3600 * 1000, // 1 hour from now
-        };
-
-        // Store credentials (in a real app, use a secure method)
-        localStorage.setItem("emailCredentials", JSON.stringify(credentials));
-        setEmailCredentials(credentials);
-      }
-
+      localStorage.setItem("emailCredentials", JSON.stringify(safeCredentials));
+      setEmailCredentials(safeCredentials);
       setIsConnected(true);
       toast.success(
         `Connected to ${provider === "other" ? "IMAP server" : provider}`
@@ -182,7 +157,23 @@ const useEmailImport = () => {
       await fetchEmails();
     } catch (error) {
       console.error("Error connecting to email provider:", error);
-      toast.error("Failed to connect to email provider");
+
+      // Handle specific error types
+      if (
+        error instanceof Error &&
+        error.message.includes("authentication failed")
+      ) {
+        toast.error("Authentication failed. Please check your credentials.");
+      } else if (
+        error instanceof Error &&
+        error.message.includes("connection refused")
+      ) {
+        toast.error(
+          "Connection refused. Please check server details and try again."
+        );
+      } else {
+        toast.error("Failed to connect to email provider");
+      }
     } finally {
       setIsConnecting(false);
     }
@@ -209,72 +200,29 @@ const useEmailImport = () => {
     setIsLoadingEmails(true);
 
     try {
-      // In a real implementation, you would:
-      // 1. Call your backend API or directly use email provider's API
-      // 2. Fetch emails and attachments
-      // 3. Process and filter the results
-
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Generate mock email data
-      const mockEmails: EmailMessage[] = Array.from({ length: 15 }, (_, i) => {
-        const hasAttachments = Math.random() > 0.3;
-        const attachments: EmailAttachment[] = hasAttachments
-          ? [
-              {
-                id: `att-${i}-1`,
-                name: `resume-${i}.${Math.random() > 0.5 ? "pdf" : "docx"}`,
-                contentType:
-                  Math.random() > 0.5
-                    ? "application/pdf"
-                    : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                size: Math.floor(Math.random() * 5000000) + 100000,
-                isResume: true,
-              },
-              ...Array.from(
-                { length: Math.floor(Math.random() * 2) },
-                (_, j) => ({
-                  id: `att-${i}-${j + 2}`,
-                  name: `attachment-${j}.${
-                    ["jpg", "png", "txt"][Math.floor(Math.random() * 3)]
-                  }`,
-                  contentType: ["image/jpeg", "image/png", "text/plain"][
-                    Math.floor(Math.random() * 3)
-                  ],
-                  size: Math.floor(Math.random() * 1000000) + 10000,
-                  isResume: false,
-                })
-              ),
-            ]
-          : [];
-
-        const date = new Date();
-        date.setDate(date.getDate() - Math.floor(Math.random() * 30));
-
-        return {
-          id: `email-${i}`,
-          from: {
-            name: `Candidate ${i + 1}`,
-            email: `candidate${i + 1}@example.com`,
-          },
-          subject: [
-            `Job Application`,
-            `Resume for review`,
-            `Looking for opportunities`,
-            `Application for position`,
-          ][Math.floor(Math.random() * 4)],
-          receivedAt: date.toISOString(),
-          hasAttachments,
-          attachments,
-          isSelected: false,
-        };
+      // Actually fetch emails from the backend
+      const response = await emailService.importCandidatesFromEmail({
+        ...emailCredentials,
+        action: "listEmails",
+        filters: {
+          dateFilter,
+          showOnlyWithAttachments,
+          searchQuery,
+        },
       });
 
-      setEmails(mockEmails);
+      setEmails(response.emails || []);
     } catch (error) {
       console.error("Error fetching emails:", error);
-      toast.error("Failed to fetch emails");
+
+      // Handle specific error types
+      if (error instanceof Error && error.message.includes("session expired")) {
+        toast.error("Email session expired. Please reconnect.");
+        // Disconnect to force reconnection
+        disconnectProvider();
+      } else {
+        toast.error("Failed to fetch emails");
+      }
     } finally {
       setIsLoadingEmails(false);
     }
@@ -332,88 +280,20 @@ const useEmailImport = () => {
       return;
     }
 
-    toast.loading(`Processing ${selectedEmails.length} emails...`);
+    const toastId = toast.loading(
+      `Processing ${selectedEmails.length} emails...`
+    );
 
     try {
-      // For each selected email
-      for (const emailId of selectedEmails) {
-        const email = emails.find((e) => e.id === emailId);
-        if (!email) continue;
+      // Process emails via the backend service
+      const result = await emailService.importCandidatesFromEmail({
+        ...emailCredentials,
+        action: "processEmails",
+        emailIds: selectedEmails,
+      });
 
-        if (email.hasAttachments && email.attachments) {
-          // Find resume attachments
-          const resumeAttachments = email.attachments.filter(
-            (att) => att.isResume
-          );
-
-          for (const attachment of resumeAttachments) {
-            // In a real implementation, you would:
-            // 1. Download attachment content
-            // 2. Convert to a File object
-            // 3. Process through Affinda
-
-            // Here, we'll just simulate a successful parse
-            // In a production app, you would create a real file object
-            // and dispatch it to the parseResume action
-
-            // Simulate API delay
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-
-            // Create a basic candidate
-            const candidateData = {
-              name: email.from.name,
-              email: email.from.email,
-              source: "email_import",
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              notes: `Imported from email: ${email.subject}`,
-              stageId: "", // Default stage
-              history: [
-                {
-                  date: new Date().toISOString(),
-                  note: `Imported from email with subject: "${email.subject}"`,
-                },
-              ],
-            };
-
-            // Add to Firestore
-            await addDoc(collection(db, "candidates"), candidateData);
-          }
-        } else if (email.from && email.from.email) {
-          // Create candidate from sender if there are no attachments
-          const candidateData = {
-            name: email.from.name,
-            email: email.from.email,
-            source: "email_sender",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            notes: `Imported from email sender: ${email.subject}`,
-            stageId: "", // Default stage
-            history: [
-              {
-                date: new Date().toISOString(),
-                note: `Imported from email sender with subject: "${email.subject}"`,
-              },
-            ],
-          };
-
-          // Check if candidate with this email already exists
-          const q = query(
-            collection(db, "candidates"),
-            where("email", "==", email.from.email)
-          );
-          const querySnapshot = await getDocs(q);
-
-          if (querySnapshot.empty) {
-            // Only add if candidate doesn't exist
-            await addDoc(collection(db, "candidates"), candidateData);
-          }
-        }
-      }
-
-      toast.dismiss();
-      toast.success(`Processed ${selectedEmails.length} emails successfully`);
-      setSelectedEmails([]);
+      toast.dismiss(toastId);
+      toast.success(`Processed ${result.processed} emails successfully`);
 
       // Mark processed emails
       setEmails((prevEmails) =>
@@ -423,10 +303,32 @@ const useEmailImport = () => {
             : email
         )
       );
+
+      setSelectedEmails([]);
+
+      // Notify the parent component if needed
+      if (typeof onImportComplete === "function") {
+        onImportComplete(result.candidates);
+      }
     } catch (error) {
       console.error("Error processing emails:", error);
-      toast.dismiss();
-      toast.error("Failed to process emails");
+      toast.dismiss(toastId);
+
+      // Handle specific error types
+      if (error instanceof Error && error.message.includes("session expired")) {
+        toast.error("Email session expired. Please reconnect.");
+        // Disconnect to force reconnection
+        disconnectProvider();
+      } else if (
+        error instanceof Error &&
+        error.message.includes("parser error")
+      ) {
+        toast.error(
+          "Error parsing email content. Some candidates may not be imported correctly."
+        );
+      } else {
+        toast.error("Failed to process emails");
+      }
     }
   };
 
@@ -490,7 +392,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     toggleEmailSelection,
     toggleSelectAll,
     processSelectedEmails,
-  } = useEmailImport();
+  } = useEmailImport(onImportComplete);
 
   return (
     <div className="space-y-4">

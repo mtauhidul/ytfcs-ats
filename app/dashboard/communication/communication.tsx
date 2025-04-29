@@ -1,4 +1,4 @@
-// app/dashboard/communication/communication.tsx
+"use client";
 
 import {
   addDoc,
@@ -72,6 +72,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
+// Import the email service
+import { emailService } from "~/services/emailService";
+// Import useAuth to get the current user's information
+import { useAuth } from "~/context/auth-context";
 
 interface EmailTemplate {
   id: string;
@@ -120,6 +124,9 @@ export default function CommunicationPage() {
     candidates: true,
     messages: true,
   });
+
+  // Get the current user from auth context
+  const { user } = useAuth();
 
   // State for forms
   const [newTemplate, setNewTemplate] = useState<{
@@ -342,20 +349,64 @@ export default function CommunicationPage() {
         return;
       }
 
-      // Create a message record
+      // Create a message record (modify the status to 'sending')
       const messageData = {
         ...messageForm,
         candidateId: messageForm.recipientId,
         candidateName: recipient.name || "",
-        status: "sent" as const,
+        status: "sending", // Change to 'sending' instead of 'sent'
         sentAt: new Date().toISOString(),
       };
 
-      // Simulate API call to email service
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Save the message to firestore first
+      const docRef = await addDoc(collection(db, "messages"), messageData);
 
-      // Save the message to firestore
-      await addDoc(collection(db, "messages"), messageData);
+      // Actually send the email via backend
+      try {
+        await emailService.sendCandidateEmail({
+          messageId: docRef.id,
+          candidateId: messageForm.recipientId,
+          candidateName: recipient.name,
+          candidateEmail: recipient.email,
+          subject: messageForm.subject,
+          body: messageForm.body,
+          type: messageForm.type,
+          senderName: user?.name || "Hiring Team",
+        });
+
+        // Update the message status to 'sent'
+        await updateDoc(doc(db, "messages", docRef.id), {
+          status: "sent",
+        });
+      } catch (emailError) {
+        console.error("Email sending error:", emailError);
+
+        // Update the message status to 'failed'
+        await updateDoc(doc(db, "messages", docRef.id), {
+          status: "failed",
+        });
+
+        // Handle specific error types
+        if (
+          emailError instanceof Error &&
+          emailError.message.includes("rate limit")
+        ) {
+          toast.error(
+            "Email sending failed: Rate limit exceeded. Please try again later."
+          );
+        } else if (
+          emailError instanceof Error &&
+          emailError.message.includes("authentication")
+        ) {
+          toast.error(
+            "Email sending failed: Authentication error. Please check email settings."
+          );
+        } else {
+          toast.error("Failed to send email. Message saved as draft.");
+        }
+
+        throw emailError; // Re-throw to be caught by the outer catch
+      }
 
       // Reset form
       setMessageForm({
@@ -368,7 +419,13 @@ export default function CommunicationPage() {
       toast.success(`Message sent to ${recipient.name} successfully`);
     } catch (error) {
       console.error("Error sending message:", error);
-      toast.error("Error sending message");
+      // Only show the generic error if it wasn't already handled in the inner catch
+      if (
+        !(error instanceof Error && error.message.includes("rate limit")) &&
+        !(error instanceof Error && error.message.includes("authentication"))
+      ) {
+        toast.error("Error sending message");
+      }
     } finally {
       setIsSending(false);
     }

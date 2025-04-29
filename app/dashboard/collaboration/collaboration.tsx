@@ -11,14 +11,14 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import {
-  Calendar,
-  CheckCircle,
+  Check,
+  Clock,
   Edit,
-  Filter,
   Loader2,
   MoreHorizontal,
   RefreshCw,
   Search,
+  SearchIcon,
   Trash2,
   UserCircle,
   UserPlus,
@@ -70,6 +70,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
+// Import the email service
+import { emailService } from "~/services/emailService";
+// Import useAuth to get the current user's information
+import { useAuth } from "~/context/auth-context";
 
 // Define interfaces
 interface TeamMember {
@@ -166,6 +170,9 @@ export default function CollaborationPage() {
     null
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Get the current user from auth context
+  const { user } = useAuth();
 
   // Fetch data
   useEffect(() => {
@@ -327,10 +334,42 @@ export default function CollaborationPage() {
         updatedAt: new Date().toISOString(),
       });
 
-      const candidateName = candidates.find((c) => c.id === candidateId)?.name;
+      const candidateName =
+        candidates.find((c) => c.id === candidateId)?.name || "";
       const memberName = teamMemberId
         ? getTeamMemberName(teamMemberId)
         : "Unassigned";
+
+      // ADD THIS NEW CODE: Send email notification
+      try {
+        await emailService.sendAssignmentNotification({
+          candidateId,
+          teamMemberId,
+          candidateName,
+          assignerName: user?.name || "A team member", // Use logged-in user's name
+          candidateEmail: candidates.find((c) => c.id === candidateId)?.email,
+          teamMemberEmail: teamMembers.find((t) => t.id === teamMemberId)
+            ?.email,
+        });
+      } catch (emailError) {
+        // Handle known error types
+        if (
+          emailError instanceof Error &&
+          emailError.message.includes("rate limit")
+        ) {
+          console.warn("Email rate limit exceeded for assignment notification");
+        } else if (
+          emailError instanceof Error &&
+          emailError.message.includes("authentication")
+        ) {
+          console.warn(
+            "Email authentication failed for assignment notification"
+          );
+        } else {
+          // Log but don't prevent assignment if email fails
+          console.warn("Assignment email notification failed:", emailError);
+        }
+      }
 
       toast.success(`Assigned ${candidateName} to ${memberName}`);
       setIsSubmitting(false);
@@ -394,10 +433,41 @@ export default function CollaborationPage() {
 
     try {
       setIsSubmitting(true);
-      await addDoc(collection(db, "teamMembers"), {
+
+      // Existing Firestore code
+      const docRef = await addDoc(collection(db, "teamMembers"), {
         ...newTeamMember,
         createdAt: new Date().toISOString(),
       });
+
+      // ADD THIS NEW CODE: Send invitation email
+      try {
+        await emailService.sendTeamMemberNotification({
+          type: "invitation",
+          teamMemberId: docRef.id,
+          name: newTeamMember.name,
+          email: newTeamMember.email,
+          role: newTeamMember.role,
+          inviterName: user?.name || "The hiring team",
+        });
+      } catch (emailError) {
+        // Handle known error types
+        if (
+          emailError instanceof Error &&
+          emailError.message.includes("rate limit")
+        ) {
+          console.warn("Email rate limit exceeded for team member invitation");
+        } else if (
+          emailError instanceof Error &&
+          emailError.message.includes("authentication")
+        ) {
+          console.warn(
+            "Email authentication failed for team member invitation"
+          );
+        } else {
+          console.warn("Team member invitation email failed:", emailError);
+        }
+      }
 
       setNewTeamMember({
         name: "",
@@ -428,12 +498,49 @@ export default function CollaborationPage() {
 
     try {
       setIsSubmitting(true);
+
+      // Store original values for comparison
+      const originalTeamMember = teamMembers.find(
+        (m) => m.id === editingTeamMember.id
+      );
+
+      // Existing Firestore update
       await updateDoc(doc(db, "teamMembers", editingTeamMember.id), {
         name: editingTeamMember.name,
         email: editingTeamMember.email,
         role: editingTeamMember.role,
         updatedAt: new Date().toISOString(),
       });
+
+      // ADD THIS NEW CODE: Only send update email if role changed
+      if (originalTeamMember?.role !== editingTeamMember.role) {
+        try {
+          await emailService.sendTeamMemberNotification({
+            type: "update",
+            teamMemberId: editingTeamMember.id,
+            name: editingTeamMember.name,
+            email: editingTeamMember.email,
+            role: editingTeamMember.role,
+            previousRole: originalTeamMember?.role,
+            updaterName: user?.name || "A team administrator",
+          });
+        } catch (emailError) {
+          // Handle known error types
+          if (
+            emailError instanceof Error &&
+            emailError.message.includes("rate limit")
+          ) {
+            console.warn("Email rate limit exceeded for team member update");
+          } else if (
+            emailError instanceof Error &&
+            emailError.message.includes("authentication")
+          ) {
+            console.warn("Email authentication failed for team member update");
+          } else {
+            console.warn("Team member update email failed:", emailError);
+          }
+        }
+      }
 
       setIsEditTeamMemberOpen(false);
       toast.success("Team member updated successfully");
@@ -584,7 +691,7 @@ export default function CollaborationPage() {
             {teamMembers.length} team members
           </Badge>
           <Badge variant="outline" className="rounded-lg font-normal py-1 px-3">
-            <CheckCircle className="mr-1 size-3.5" />
+            <Check className="mr-1 size-3.5" />
             {feedbackRecords.length} feedback records
           </Badge>
         </div>
@@ -600,7 +707,7 @@ export default function CollaborationPage() {
             <span>Assignments</span>
           </TabsTrigger>
           <TabsTrigger value="feedback" className="flex items-center gap-1.5">
-            <CheckCircle className="size-4" />
+            <Check className="size-4" />
             <span>Feedback</span>
           </TabsTrigger>
           <TabsTrigger value="team" className="flex items-center gap-1.5">
@@ -700,7 +807,7 @@ export default function CollaborationPage() {
                 </div>
               ) : filteredCandidates.length === 0 ? (
                 <div className="text-center py-12 border rounded-md bg-muted/20">
-                  <Filter className="mx-auto mb-3 size-8 text-muted-foreground/50" />
+                  <SearchIcon className="mx-auto mb-3 size-8 text-muted-foreground/50" />
                   <p className="text-muted-foreground">
                     No candidates match your filters
                   </p>
@@ -876,7 +983,7 @@ export default function CollaborationPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="size-5" />
+                  <Check className="size-5" />
                   Submit Interview Feedback
                 </CardTitle>
                 <CardDescription>
@@ -1069,7 +1176,7 @@ export default function CollaborationPage() {
                     </>
                   ) : (
                     <>
-                      <CheckCircle className="size-4 mr-2" />
+                      <Check className="size-4 mr-2" />
                       Submit Feedback
                     </>
                   )}
@@ -1081,7 +1188,7 @@ export default function CollaborationPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Calendar className="size-5" />
+                  <Clock className="size-5" />
                   Feedback History
                 </CardTitle>
                 <CardDescription>
@@ -1095,7 +1202,7 @@ export default function CollaborationPage() {
                   </div>
                 ) : feedbackRecords.length === 0 ? (
                   <div className="text-center py-12 border rounded-md bg-muted/20">
-                    <CheckCircle className="size-8 mx-auto mb-3 text-muted-foreground/40" />
+                    <Check className="size-8 mx-auto mb-3 text-muted-foreground/40" />
                     <p className="text-muted-foreground font-medium">
                       No feedback yet
                     </p>
