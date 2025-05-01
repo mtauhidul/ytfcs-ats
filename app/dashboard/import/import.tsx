@@ -5,6 +5,7 @@
 import { addDoc, collection } from "firebase/firestore";
 import {
   AlertTriangle,
+  ArrowRight,
   Check,
   FileUp,
   Loader2,
@@ -38,8 +39,6 @@ import { db } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
 import type { ImportedCandidate } from "~/types/email";
 import EmailImport from "./email-import";
-
-// Import types
 
 // Define the parsed data interface
 interface ParsedCandidate {
@@ -85,7 +84,40 @@ export default function ImportPage() {
   // Handle file selection (local state only)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+
+      // Validate file type
+      const validTypes = [
+        ".pdf",
+        ".doc",
+        ".docx",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+
+      const isValidType = validTypes.some(
+        (type) =>
+          selectedFile.name.toLowerCase().endsWith(type) ||
+          selectedFile.type === type
+      );
+
+      if (!isValidType) {
+        toast.error("Please upload a PDF, DOC, or DOCX file");
+        setErrorDetails(
+          "Invalid file type. Please upload a PDF, DOC, or DOCX file."
+        );
+        return;
+      }
+
+      // Validate file size (10MB max)
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        toast.error("File too large. Maximum size is 10MB.");
+        setErrorDetails("File too large. Maximum size is 10MB.");
+        return;
+      }
+
+      setFile(selectedFile);
       // Reset any previous parsing state when a new file is selected
       if (status !== "idle") {
         dispatch(resetImport());
@@ -94,7 +126,8 @@ export default function ImportPage() {
     }
   };
 
-  // Parse resume using OpenAI API
+  // Parse resume using AI
+  // Updated handleParseWithAI function with better error handling for OpenAI API issues
   const handleParseWithAI = async () => {
     if (!file) return;
 
@@ -134,40 +167,55 @@ export default function ImportPage() {
 
       setParsingProgress(30);
 
-      // In a production environment, send the file to your backend API
-      // const response = await fetch(`${import.meta.env.VITE_API_URL}/resume/parse`, {
-      //   method: 'POST',
-      //   body: formData,
-      // });
+      // Make the actual API call to the backend
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/resume/parse`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
-      // if (!response.ok) {
-      //   const errorData = await response.json();
-      //   throw new Error(errorData.message || 'Failed to parse resume');
-      // }
+      setParsingProgress(50);
 
-      // const data = await response.json();
-      // const parsedData = data.data;
+      // Check for error response
+      if (!response.ok) {
+        let errorMessage = "Failed to parse resume";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch (e) {
+          // If response can't be parsed as JSON, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
 
-      // For now, we'll simulate the API call and response
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      setParsingProgress(60);
-      const mockResponse = generateMockAIResponse(file.name);
+      // Process the successful response
+      const data = await response.json();
+      setParsingProgress(70);
+
+      if (!data.success || !data.data) {
+        throw new Error("Invalid response format from resume parsing API");
+      }
+
+      const parsedResume = data.data;
       setParsingProgress(80);
 
       // Map response to our format
       const parsedData: ParsedCandidate = {
-        name: mockResponse.name || "",
-        email: mockResponse.email || "",
-        phone: mockResponse.phone || "",
-        experience: mockResponse.experience || "",
-        education: mockResponse.education || "",
-        skills: mockResponse.skills || [],
-        resumeText: mockResponse.resumeText || "",
-        linkedIn: mockResponse.linkedin || "",
-        location: mockResponse.location || "",
-        languages: mockResponse.languages || [],
-        jobTitle: mockResponse.jobTitle || "",
-        originalFilename: file.name,
+        name: parsedResume.name || "",
+        email: parsedResume.email || "",
+        phone: parsedResume.phone || "",
+        experience: parsedResume.experience || "",
+        education: parsedResume.education || "",
+        skills: parsedResume.skills || [],
+        resumeText: parsedResume.resumeText || "",
+        linkedIn: parsedResume.linkedIn || "",
+        location: parsedResume.location || "",
+        languages: parsedResume.languages || [],
+        jobTitle: parsedResume.jobTitle || "",
+        originalFilename: parsedResume.originalFilename || file.name,
         fileType: file.type,
         fileSize: file.size,
       };
@@ -175,16 +223,48 @@ export default function ImportPage() {
       // Dispatch to Redux store
       dispatch(updateParsedData(parsedData));
 
+      if (
+        parsedData &&
+        parsedData.education &&
+        Array.isArray(parsedData.education)
+      ) {
+        const educationText = parsedData.education
+          .map((edu) => {
+            if (typeof edu === "object") {
+              // Extract relevant fields from education object
+              const degree = edu.degree || "";
+              const school = edu.institution || edu.school || "";
+              const year = edu.year || edu.graduationYear || "";
+              return `${degree}${degree && school ? " - " : ""}${school}${
+                (degree || school) && year ? " (" + year + ")" : year
+              }`;
+            }
+            return edu;
+          })
+          .join("\n");
+
+        dispatch(updateParsedData({ education: educationText }));
+      }
+
       setParsingProgress(100);
       toast.success("Resume parsed successfully using AI");
     } catch (error) {
       console.error("Error during resume parsing:", error);
       setParsingProgress(0);
-      setErrorDetails(
-        "Failed to parse resume: " +
-          (error instanceof Error ? error.message : "Unknown error")
-      );
-      toast.error("Failed to parse resume");
+
+      // More specific error messaging
+      if (error instanceof Error && error.message.includes("response_format")) {
+        setErrorDetails(
+          "AI model configuration error. Please notify the administrator."
+        );
+        toast.error("AI service configuration error");
+      } else {
+        setErrorDetails(
+          "Failed to parse resume: " +
+            (error instanceof Error ? error.message : "Unknown error")
+        );
+        toast.error("Failed to parse resume");
+      }
     } finally {
       setIsAiParsing(false);
     }
@@ -246,7 +326,7 @@ export default function ImportPage() {
 
       // If email wasn't extracted, try to extract it from the resume text
       if (!parsedData.email && parsedData.resumeText) {
-        // Simple regex to find emails in text - not foolproof but catches common formats
+        // Simple regex to find emails in text
         const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
         const matches = parsedData.resumeText.match(emailRegex);
 
@@ -255,9 +335,9 @@ export default function ImportPage() {
         }
       }
 
-      // Similarly, try to extract phone if not already found
+      // Try to extract phone if not already found
       if (!parsedData.phone && parsedData.resumeText) {
-        // Simple regex for phone numbers - captures common formats
+        // Simple regex for phone numbers
         const phoneRegex =
           /(\+\d{1,3}[-\s]?)?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{4}/g;
         const matches = parsedData.resumeText.match(phoneRegex);
@@ -283,6 +363,12 @@ export default function ImportPage() {
         .map((skill) => skill.trim())
         .filter(Boolean);
       dispatch(updateParsedData({ skills: skillsArray }));
+    } else if (field === "languages") {
+      const languagesArray = value
+        .split(",")
+        .map((language) => language.trim())
+        .filter(Boolean);
+      dispatch(updateParsedData({ languages: languagesArray }));
     } else {
       dispatch(updateParsedData({ [field]: value }));
     }
@@ -326,7 +412,7 @@ export default function ImportPage() {
       };
 
       // Add document to Firestore
-      const docRef = await addDoc(collection(db, "candidates"), candidateData);
+      await addDoc(collection(db, "candidates"), candidateData);
 
       setSaveStatus("done");
       toast.success("Candidate saved successfully!");
@@ -381,6 +467,13 @@ export default function ImportPage() {
             droppedFile.type === type
         )
       ) {
+        // Check file size
+        if (droppedFile.size > 10 * 1024 * 1024) {
+          toast.error("File too large. Maximum size is 10MB.");
+          setErrorDetails("File too large. Maximum size is 10MB.");
+          return;
+        }
+
         setFile(droppedFile);
         if (status !== "idle") {
           dispatch(resetImport());
@@ -435,19 +528,29 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="container py-8 mx-auto">
+    <div className="container py-6 px-4 md:py-8 mx-auto">
       <Toaster position="top-right" richColors />
 
-      <div className="flex flex-col md:flex-row gap-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <FileUp className="size-6" />
+          Import Candidates
+        </h1>
+        <p className="text-muted-foreground mt-1">
+          Upload resumes or import candidates from email
+        </p>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-6 lg:gap-8">
         {/* Left column - Upload */}
-        <Card className="w-full md:w-1/3 h-fit">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileUp className="size-5" />
-              Resume Upload
+        <Card className="w-full md:w-2/5 h-fit">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Upload className="size-5 text-primary" />
+              Import Methods
             </CardTitle>
             <CardDescription>
-              Upload a candidate's resume to parse and store their information
+              Choose how to import your candidates
             </CardDescription>
           </CardHeader>
 
@@ -458,149 +561,117 @@ export default function ImportPage() {
               onValueChange={(value) =>
                 setActiveTab(value as "file" | "email" | "ai")
               }
+              className="space-y-4"
             >
-              <TabsList className="mb-4 grid grid-cols-3">
-                <TabsTrigger value="file">Upload File</TabsTrigger>
-                <TabsTrigger value="ai" className="flex items-center gap-1">
+              <TabsList className="grid grid-cols-3 w-full">
+                <TabsTrigger value="file" className="text-sm">
+                  Upload File
+                </TabsTrigger>
+                <TabsTrigger
+                  value="ai"
+                  className="flex items-center gap-1.5 text-sm"
+                >
                   <Zap className="size-3.5" />
                   <span>AI Parse</span>
                 </TabsTrigger>
-                <TabsTrigger value="email" className="flex items-center gap-1">
+                <TabsTrigger
+                  value="email"
+                  className="flex items-center gap-1.5 text-sm"
+                >
                   <Mail className="size-3.5" />
                   <span>Email</span>
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="file" className="min-h-[300px]">
+              <TabsContent value="file" className="min-h-[300px] space-y-4">
                 <div
-                  className={`border-2 border-dashed ${
-                    dragActive ? "border-primary bg-primary/5" : "border-border"
-                  } 
+                  className={`border-2 border-dashed 
+                    ${
+                      dragActive
+                        ? "border-primary bg-primary/5"
+                        : file
+                        ? "border-green-300 bg-green-50/40"
+                        : "border-muted-foreground/20"
+                    } 
                     rounded-lg p-8 flex flex-col items-center justify-center gap-4 transition-colors`}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
                 >
-                  <div className="bg-muted/50 p-4 rounded-full">
-                    <Upload className="size-8 text-muted-foreground" />
+                  <div
+                    className={`${
+                      file ? "bg-green-100" : "bg-muted/50"
+                    } p-4 rounded-full`}
+                  >
+                    {file ? (
+                      <Check className="size-8 text-green-600" />
+                    ) : (
+                      <Upload className="size-8 text-muted-foreground" />
+                    )}
                   </div>
 
                   <div className="text-center">
-                    <p className="font-medium mb-1">Drop resume file here</p>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      PDF, DOC, or DOCX (max 10MB)
-                    </p>
+                    {file ? (
+                      <>
+                        <p className="font-medium mb-1 text-green-700">
+                          File selected
+                        </p>
+                        <p className="text-sm mb-1">{file.name}</p>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          {(file.size / (1024 * 1024)).toFixed(2)} MB ·{" "}
+                          {file.type.split("/")[1].toUpperCase()}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium mb-1">
+                          Drop resume file here
+                        </p>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          PDF, DOC, or DOCX (max 10MB)
+                        </p>
+                      </>
+                    )}
 
                     <div className="relative">
-                      <Button variant="outline" className="w-full">
-                        Select File
-                      </Button>
-                      <Input
-                        id="resumeFile"
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        onChange={handleFileChange}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                      />
+                      {file ? (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setFile(null)}
+                        >
+                          <RefreshCw className="mr-2 size-4" />
+                          Change File
+                        </Button>
+                      ) : (
+                        <>
+                          <Button variant="outline" className="w-full">
+                            Select File
+                          </Button>
+                          <Input
+                            id="resumeFile"
+                            type="file"
+                            accept=".pdf,.doc,.docx"
+                            onChange={handleFileChange}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
-              </TabsContent>
 
-              <TabsContent value="ai" className="min-h-[300px]">
-                <div className="space-y-4">
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-4 text-blue-800">
-                    <h3 className="text-sm font-medium flex items-center gap-1.5 mb-1">
-                      <Zap className="size-4" />
-                      AI-Powered Resume Parsing
-                    </h3>
-                    <p className="text-xs">
-                      Our AI system extracts candidate information from resumes
-                      with high accuracy. Upload a resume file to get started.
-                    </p>
-                  </div>
-
-                  <div
-                    className={`border-2 border-dashed ${
-                      dragActive
-                        ? "border-primary bg-primary/5"
-                        : "border-border"
-                    } 
-                      rounded-lg p-6 flex flex-col items-center justify-center gap-3 transition-colors`}
-                    onDragEnter={handleDrag}
-                    onDragLeave={handleDrag}
-                    onDragOver={handleDrag}
-                    onDrop={handleDrop}
-                  >
-                    <div className="bg-muted/50 p-3 rounded-full">
-                      <Upload className="size-6 text-muted-foreground" />
-                    </div>
-
-                    <div className="text-center">
-                      <p className="font-medium mb-1 text-sm">
-                        Upload resume for AI parsing
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-3">
-                        PDF, DOC, or DOCX (max 10MB)
-                      </p>
-
-                      <div className="relative">
-                        <Button
-                          variant="outline"
-                          className="w-full text-sm h-8"
-                        >
-                          Select File
-                        </Button>
-                        <Input
-                          id="aiResumeFile"
-                          type="file"
-                          accept=".pdf,.doc,.docx"
-                          onChange={handleFileChange}
-                          className="absolute inset-0 opacity-0 cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {file && (
-                    <div className="mt-4 bg-muted/30 p-3 rounded-md">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className="text-xs font-normal"
-                        >
-                          {file.name.split(".").pop()?.toUpperCase()}
-                        </Badge>
-                        <p className="text-sm font-medium truncate flex-1">
-                          {file.name}
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <p className="text-xs text-muted-foreground">
-                          {(file.size / (1024 * 1024)).toFixed(2)} MB
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-6"
-                          onClick={() => setFile(null)}
-                        >
-                          <RefreshCw className="size-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
+                {file && (
                   <Button
                     onClick={handleParseWithAI}
-                    disabled={!file || isAiParsing}
+                    disabled={status === "loading" || isAiParsing}
                     className="w-full"
                   >
-                    {isAiParsing ? (
+                    {status === "loading" ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="size-4 animate-spin" />
-                        AI Processing...
+                        Parsing Resume...
                       </div>
                     ) : (
                       <>
@@ -609,7 +680,121 @@ export default function ImportPage() {
                       </>
                     )}
                   </Button>
+                )}
+              </TabsContent>
+
+              <TabsContent value="ai" className="min-h-[300px] space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-4 text-blue-800">
+                  <h3 className="text-sm font-medium flex items-center gap-1.5 mb-1">
+                    <Zap className="size-4" />
+                    AI-Powered Resume Parsing
+                  </h3>
+                  <p className="text-xs">
+                    Our AI system extracts candidate information from resumes
+                    with high accuracy. Upload a resume file to get started.
+                  </p>
                 </div>
+
+                <div
+                  className={`border-2 border-dashed 
+                    ${
+                      dragActive
+                        ? "border-primary bg-primary/5"
+                        : file
+                        ? "border-green-300 bg-green-50/40"
+                        : "border-muted-foreground/20"
+                    } 
+                    rounded-lg p-6 flex flex-col items-center justify-center gap-3 transition-colors`}
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                >
+                  <div
+                    className={`${
+                      file ? "bg-green-100" : "bg-muted/50"
+                    } p-3 rounded-full`}
+                  >
+                    {file ? (
+                      <Check className="size-6 text-green-600" />
+                    ) : (
+                      <Upload className="size-6 text-muted-foreground" />
+                    )}
+                  </div>
+
+                  <div className="text-center">
+                    {file ? (
+                      <>
+                        <p className="font-medium mb-1 text-sm text-green-700">
+                          File ready for AI parsing
+                        </p>
+                        <p className="text-sm mb-1">{file.name}</p>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          {(file.size / (1024 * 1024)).toFixed(2)} MB ·{" "}
+                          {file.type.split("/")[1].toUpperCase()}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium mb-1 text-sm">
+                          Upload resume for AI parsing
+                        </p>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          PDF, DOC, or DOCX (max 10MB)
+                        </p>
+                      </>
+                    )}
+
+                    <div className="relative">
+                      {file ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-sm"
+                          onClick={() => setFile(null)}
+                        >
+                          <RefreshCw className="mr-1.5 size-3.5" />
+                          Change File
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-sm"
+                          >
+                            Select File
+                          </Button>
+                          <Input
+                            id="aiResumeFile"
+                            type="file"
+                            accept=".pdf,.doc,.docx"
+                            onChange={handleFileChange}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleParseWithAI}
+                  disabled={!file || isAiParsing}
+                  className="w-full"
+                >
+                  {isAiParsing ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="size-4 animate-spin" />
+                      AI Processing...
+                    </div>
+                  ) : (
+                    <>
+                      <Zap className="mr-2 size-4" />
+                      Parse with AI
+                    </>
+                  )}
+                </Button>
               </TabsContent>
 
               <TabsContent value="email" className="min-h-[300px]">
@@ -617,39 +802,13 @@ export default function ImportPage() {
               </TabsContent>
             </Tabs>
 
-            {file && activeTab === "file" && (
-              <div className="mt-4 bg-muted/30 p-3 rounded-md">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs font-normal">
-                    {file.name.split(".").pop()?.toUpperCase()}
-                  </Badge>
-                  <p className="text-sm font-medium truncate flex-1">
-                    {file.name}
-                  </p>
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs text-muted-foreground">
-                    {(file.size / (1024 * 1024)).toFixed(2)} MB
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-6"
-                    onClick={() => setFile(null)}
-                  >
-                    <RefreshCw className="size-3" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {/* Error display */}
             {errorDetails && (
-              <div className="mt-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-md p-3 text-sm flex items-start gap-2">
-                <AlertTriangle className="size-4 mt-0.5 flex-shrink-0" />
+              <div className="mt-4 bg-red-50 text-red-600 border border-red-200 rounded-md p-3 text-sm flex items-start gap-2">
+                <AlertTriangle className="size-4 mt-0.5 flex-shrink-0 text-red-500" />
                 <div>
                   <p className="font-medium">Error</p>
-                  <p>{errorDetails}</p>
+                  <p className="text-sm text-red-600/90">{errorDetails}</p>
                 </div>
               </div>
             )}
@@ -657,7 +816,7 @@ export default function ImportPage() {
             {/* Progress indicator */}
             {(status === "loading" || isAiParsing) && (
               <div className="mt-4">
-                <div className="flex justify-between mb-1">
+                <div className="flex justify-between mb-1.5">
                   <span className="text-xs text-muted-foreground">
                     {activeTab === "ai"
                       ? "AI processing..."
@@ -667,64 +826,46 @@ export default function ImportPage() {
                     {parsingProgress}%
                   </span>
                 </div>
-                <Progress value={parsingProgress} className="w-full" />
+                <Progress value={parsingProgress} className="w-full h-1.5" />
               </div>
             )}
           </CardContent>
-
-          <CardFooter className="flex-col gap-2">
-            {activeTab === "file" && (
-              <Button
-                onClick={handleParseWithAI}
-                disabled={!file || status === "loading" || isAiParsing}
-                className="w-full"
-              >
-                {status === "loading" ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="size-4 animate-spin" />
-                    Parsing Resume...
-                  </div>
-                ) : (
-                  <>
-                    <Zap className="mr-2 size-4" />
-                    Parse with AI
-                  </>
-                )}
-              </Button>
-            )}
-          </CardFooter>
         </Card>
 
         {/* Right column - Parsed Data */}
         <Card
-          className={`w-full md:w-2/3 transition-opacity duration-300 ${
+          className={`w-full md:w-3/5 transition-opacity duration-300 ${
             parsedData && (status === "succeeded" || parsingProgress === 100)
               ? "opacity-100"
               : "opacity-50 pointer-events-none"
           }`}
         >
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
             <div>
-              <CardTitle>Candidate Information</CardTitle>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ArrowRight className="size-5 text-primary" />
+                Candidate Information
+              </CardTitle>
               <CardDescription>
-                Review and edit the parsed information before saving
+                Review and edit the extracted information
               </CardDescription>
             </div>
             {parsedData && (
               <Badge
                 variant="outline"
-                className="bg-blue-50 text-blue-700 border-blue-200"
+                className="bg-blue-50 text-blue-700 border-blue-200 font-normal"
               >
+                <Zap className="mr-1.5 size-3.5" />
                 AI Parsed
               </Badge>
             )}
           </CardHeader>
 
-          <CardContent className="space-y-6 max-h-[800px] overflow-y-auto">
+          <CardContent className="space-y-5 max-h-[650px] overflow-y-auto pr-1">
             {parsedData &&
             (status === "succeeded" || parsingProgress === 100) ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-2">
                     <Label htmlFor="name" className="text-sm font-medium">
                       Full Name*
@@ -735,6 +876,7 @@ export default function ImportPage() {
                       onChange={(e) => handleUpdate("name", e.target.value)}
                       placeholder="Candidate name"
                       required
+                      className="border-input/80"
                     />
                   </div>
 
@@ -748,11 +890,12 @@ export default function ImportPage() {
                       value={parsedData.email || ""}
                       onChange={(e) => handleUpdate("email", e.target.value)}
                       placeholder="candidate@example.com"
+                      className="border-input/80"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-2">
                     <Label htmlFor="phone" className="text-sm font-medium">
                       Phone Number
@@ -762,6 +905,7 @@ export default function ImportPage() {
                       value={parsedData.phone || ""}
                       onChange={(e) => handleUpdate("phone", e.target.value)}
                       placeholder="(123) 456-7890"
+                      className="border-input/80"
                     />
                   </div>
 
@@ -776,6 +920,7 @@ export default function ImportPage() {
                         handleUpdate("experience", e.target.value)
                       }
                       placeholder="e.g. 5 years"
+                      className="border-input/80"
                     />
                   </div>
                 </div>
@@ -789,7 +934,7 @@ export default function ImportPage() {
                     value={parsedData.education || ""}
                     onChange={(e) => handleUpdate("education", e.target.value)}
                     placeholder="Education details"
-                    className="min-h-[80px]"
+                    className="min-h-[80px] border-input/80 resize-y"
                   />
                 </div>
 
@@ -803,6 +948,7 @@ export default function ImportPage() {
                       value={parsedData.jobTitle || ""}
                       onChange={(e) => handleUpdate("jobTitle", e.target.value)}
                       placeholder="Current job title"
+                      className="border-input/80"
                     />
                   </div>
                 )}
@@ -817,6 +963,7 @@ export default function ImportPage() {
                       value={parsedData.location || ""}
                       onChange={(e) => handleUpdate("location", e.target.value)}
                       placeholder="Candidate location"
+                      className="border-input/80"
                     />
                   </div>
                 )}
@@ -827,45 +974,65 @@ export default function ImportPage() {
                   </Label>
                   <Textarea
                     id="skills"
-                    value={parsedData.skills?.join(", ") || ""}
+                    value={
+                      Array.isArray(parsedData.skills)
+                        ? parsedData.skills.join(", ")
+                        : ""
+                    }
                     onChange={(e) => handleUpdate("skills", e.target.value)}
                     placeholder="e.g. JavaScript, React, Node.js"
-                    className="min-h-[80px]"
+                    className="min-h-[80px] border-input/80 resize-y"
                   />
 
-                  {parsedData.skills && parsedData.skills.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {parsedData.skills.map((skill, index) => (
-                        <Badge key={index} variant="secondary">
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+                  {parsedData.skills &&
+                    Array.isArray(parsedData.skills) &&
+                    parsedData.skills.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {parsedData.skills.map((skill, index) => (
+                          <Badge
+                            key={index}
+                            variant="secondary"
+                            className="px-2 py-0.5"
+                          >
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                 </div>
 
-                {parsedData.languages && parsedData.languages.length > 0 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="languages" className="text-sm font-medium">
-                      Languages
-                    </Label>
-                    <Input
-                      id="languages"
-                      value={parsedData.languages?.join(", ") || ""}
-                      onChange={(e) =>
-                        handleUpdate("languages", e.target.value)
-                      }
-                      placeholder="Languages spoken"
-                    />
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {parsedData.languages.map((language, index) => (
-                        <Badge key={index} variant="outline">
-                          {language}
-                        </Badge>
-                      ))}
+                {parsedData.languages &&
+                  Array.isArray(parsedData.languages) &&
+                  parsedData.languages.length > 0 && (
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="languages"
+                        className="text-sm font-medium"
+                      >
+                        Languages
+                      </Label>
+                      <Input
+                        id="languages"
+                        value={parsedData.languages.join(", ")}
+                        onChange={(e) =>
+                          handleUpdate("languages", e.target.value)
+                        }
+                        placeholder="Languages spoken"
+                        className="border-input/80"
+                      />
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {parsedData.languages.map((language, index) => (
+                          <Badge
+                            key={index}
+                            variant="outline"
+                            className="px-2 py-0.5"
+                          >
+                            {language}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {parsedData.linkedIn && (
                   <div className="space-y-2">
@@ -877,33 +1044,36 @@ export default function ImportPage() {
                       value={parsedData.linkedIn || ""}
                       onChange={(e) => handleUpdate("linkedIn", e.target.value)}
                       placeholder="LinkedIn URL"
+                      className="border-input/80"
                     />
                   </div>
                 )}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                <FileUp className="size-12 mb-4 opacity-20" />
+                <div className="bg-muted/20 p-4 rounded-full mb-4">
+                  <FileUp className="size-8 opacity-40" />
+                </div>
                 <h3 className="text-lg font-medium mb-2">No Data Available</h3>
                 <p className="max-w-sm">
                   Upload and parse a resume to extract candidate information
                 </p>
-                <div className="mt-4 text-sm p-3 bg-muted/30 rounded-md max-w-sm">
-                  <p className="font-medium text-foreground mb-1">
-                    Using AI-Powered Resume Parser
+                <div className="mt-6 text-sm p-4 bg-blue-50 text-blue-700 rounded-md max-w-sm">
+                  <p className="font-medium mb-2 flex items-center gap-1.5">
+                    <Zap className="size-4" />
+                    AI-Powered Resume Parser
                   </p>
                   <p>
-                    This tool uses an AI-powered resume parser to automatically
-                    extract candidate details like contact information, skills,
-                    experience, and more.
+                    This tool uses AI to automatically extract candidate details
+                    including contact information, skills, experience, and more.
                   </p>
                 </div>
               </div>
             )}
           </CardContent>
 
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={handleReset}>
+          <CardFooter className="flex justify-between pt-4 border-t">
+            <Button variant="outline" onClick={handleReset} className="px-4">
               Reset
             </Button>
 
@@ -915,7 +1085,7 @@ export default function ImportPage() {
                 (status !== "succeeded" && parsingProgress !== 100) ||
                 !parsedData.name // Require at least a name
               }
-              className="relative"
+              className="relative px-4"
             >
               {saveStatus === "saving" ? (
                 <div className="flex items-center gap-2">

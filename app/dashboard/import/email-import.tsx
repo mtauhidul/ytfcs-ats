@@ -4,13 +4,16 @@ import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
 import {
   Calendar,
   Check,
+  CheckSquare,
   Info,
   Loader2,
   Mail,
+  Paperclip,
   RefreshCw,
   Search,
   Shield,
   X,
+  XSquareIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -80,7 +83,7 @@ interface EmailImportProps {
 }
 
 // Default API endpoint for email operations
-const API_ENDPOINT = import.meta.env.VITE_API_URL || "/api";
+const API_ENDPOINT = import.meta.env.VITE_API_URL || "";
 
 // Email import hook
 export const useEmailImport = () => {
@@ -114,8 +117,6 @@ export const useEmailImport = () => {
   useEffect(() => {
     const checkExistingConnection = async () => {
       try {
-        // Check for stored credentials in localStorage (for demo)
-        // In production, you should use a more secure method
         const storedCredentials = localStorage.getItem("emailCredentials");
 
         if (storedCredentials) {
@@ -168,20 +169,22 @@ export const useEmailImport = () => {
       setImportProgress(30);
 
       // Make API call to connect to email provider
-      // Updated endpoint path to /api/email/inbox/connect
-      const response = await fetch(`${API_ENDPOINT}/email/inbox/connect`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_API_KEY || "",
-        },
-        body: JSON.stringify(credentials),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/inbox/connect`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_API_KEY || "",
+          },
+          body: JSON.stringify(credentials),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
-          errorData.message || "Failed to connect to email provider"
+          errorData.error || "Failed to connect to email provider"
         );
       }
 
@@ -236,37 +239,30 @@ export const useEmailImport = () => {
     setImportProgress(10);
 
     try {
-      // const {
-      //   provider,
-      //   server,
-      //   port,
-      //   username,
-      //   password,
-      //   filters = {},
-      // } = req.body;
-      // Include above the API call to fetch emails
       // Make API call to fetch emails
-      // Updated endpoint path to /api/email/inbox/list
-      const response = await fetch(`${API_ENDPOINT}/email/inbox/list`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_API_KEY || "",
-        },
-        body: JSON.stringify({
-          ...credentials,
-          filters: {
-            dateFilter,
-            withAttachments: showOnlyWithAttachments,
-            jobRelated: showOnlyJobRelated,
-            searchTerm: searchQuery,
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/inbox/list`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_API_KEY || "",
           },
-        }),
-      });
+          body: JSON.stringify({
+            ...credentials,
+            filters: {
+              dateFilter,
+              withAttachments: showOnlyWithAttachments,
+              jobRelated: showOnlyJobRelated,
+              searchTerm: searchQuery,
+            },
+          }),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch emails");
+        throw new Error(errorData.error || "Failed to fetch emails");
       }
 
       setImportProgress(50);
@@ -310,13 +306,7 @@ export const useEmailImport = () => {
           });
         }
 
-        // Mark emails as imported if they exist in Firestore
-        setEmails(
-          fetchedEmails.map((email) => ({
-            ...email,
-            isImported: importedEmails.has(email.from.email),
-          }))
-        );
+        setEmails(fetchedEmails);
       } else {
         setEmails(fetchedEmails);
       }
@@ -343,7 +333,7 @@ export const useEmailImport = () => {
     });
   };
 
-  // Toggle select all emails and deselect all emails
+  // Toggle select all emails
   const toggleSelectAll = () => {
     if (selectedEmails.length === emails.length) {
       setSelectedEmails([]);
@@ -353,7 +343,6 @@ export const useEmailImport = () => {
     }
   };
 
-  // Process selected emails
   const processSelectedEmails = async () => {
     if (selectedEmails.length === 0) {
       toast.error("No emails selected");
@@ -367,28 +356,54 @@ export const useEmailImport = () => {
 
     try {
       // Make API call to process selected emails
-      // Updated endpoint path to /api/email/inbox/process
-      const response = await fetch(`${API_ENDPOINT}/email/inbox/process`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_API_KEY || "",
-        },
-        body: JSON.stringify({
-          ...emailCredentials,
-          emailIds: selectedEmails,
-        }),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/inbox/process`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_API_KEY || "",
+          },
+          body: JSON.stringify({
+            ...emailCredentials,
+            emailIds: selectedEmails,
+          }),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to process emails");
+        throw new Error(errorData.error || "Failed to process emails");
       }
 
       const result = await response.json();
+      setImportProgress(80);
 
-      // If no API available, process locally as fallback
-      if (!result.success && !result.processed) {
+      // Handle success
+      if (result.success && result.processed) {
+        // If API successfully processed the emails
+        setImportProgress(100);
+        toast.dismiss(processingToast);
+        toast.success(`Processed ${selectedEmails.length} emails successfully`);
+
+        // Mark processed emails
+        setEmails((prevEmails) =>
+          prevEmails.map((email) =>
+            selectedEmails.includes(email.id)
+              ? { ...email, isProcessed: true, isImported: false }
+              : email
+          )
+        );
+
+        // Clear selection
+        setSelectedEmails([]);
+
+        // If candidates were returned, pass them to onImportComplete
+        if (result.candidates) {
+          console.log("Candidates processed:", result.candidates);
+        }
+      } else {
+        // If API failed to process, fallback to local processing
         // Get selected email objects
         const selectedEmailObjects = emails.filter((email) =>
           selectedEmails.includes(email.id)
@@ -420,7 +435,7 @@ export const useEmailImport = () => {
             ],
           };
 
-          // Store imported candidates in Firestore without batch operation)
+          // Store imported candidates in Firestore
           try {
             await addDoc(collection(db, "candidates"), candidateData);
             completed++;
@@ -433,23 +448,23 @@ export const useEmailImport = () => {
             );
           }
         }
+
+        setImportProgress(100);
+        toast.dismiss(processingToast);
+        toast.success(`Processed ${selectedEmails.length} emails successfully`);
+
+        // Mark processed emails
+        setEmails((prevEmails) =>
+          prevEmails.map((email) =>
+            selectedEmails.includes(email.id)
+              ? { ...email, isProcessed: true, isImported: false }
+              : email
+          )
+        );
+
+        // Clear selection
+        setSelectedEmails([]);
       }
-
-      setImportProgress(100);
-      toast.dismiss(processingToast);
-      toast.success(`Processed ${selectedEmails.length} emails successfully`);
-
-      // Mark processed emails
-      setEmails((prevEmails) =>
-        prevEmails.map((email) =>
-          selectedEmails.includes(email.id)
-            ? { ...email, isProcessed: true, isImported: false }
-            : email
-        )
-      );
-
-      // Clear selection
-      setSelectedEmails([]);
     } catch (error) {
       console.error("Error processing emails:", error);
       toast.dismiss(processingToast);
@@ -459,6 +474,99 @@ export const useEmailImport = () => {
     } finally {
       // Reset progress after a delay
       setTimeout(() => setImportProgress(0), 2000);
+    }
+  };
+
+  // Add this function to process email attachments in the useEmailImport hook
+
+  // Process email attachment (resume)
+  const processEmailAttachment = async (
+    emailId: string,
+    attachmentId: string
+  ) => {
+    if (!emailCredentials) {
+      toast.error("Not connected to email provider");
+      return null;
+    }
+
+    try {
+      const processingToast = toast.loading("Processing attachment...");
+
+      // Make API call to process the attachment
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/parse-attachment`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_API_KEY || "",
+          },
+          body: JSON.stringify({
+            ...emailCredentials,
+            emailId,
+            attachmentId,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to process attachment");
+      }
+
+      const result = await response.json();
+      toast.dismiss(processingToast);
+
+      if (!result.success || !result.data) {
+        throw new Error("Invalid response from attachment parsing API");
+      }
+
+      // Return the parsed data
+      return result.data;
+    } catch (error) {
+      console.error("Error processing email attachment:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to process attachment"
+      );
+      return null;
+    }
+  };
+
+  // Add this handler to the email item component to process individual attachments
+  const handleProcessAttachment = async (
+    email: EmailMessage,
+    attachment: EmailAttachment
+  ) => {
+    if (!attachment.isResume) {
+      toast.info("Only resume attachments can be processed.");
+      return;
+    }
+
+    const parsedData = await processEmailAttachment(email.id, attachment.id);
+
+    if (parsedData && onImportComplete) {
+      // Mark this email as processed
+      setEmails((prevEmails) =>
+        prevEmails.map((e) =>
+          e.id === email.id ? { ...e, isProcessed: true } : e
+        )
+      );
+
+      // Pass the parsed data to the parent component
+      onImportComplete({
+        name: parsedData.name || email.from.name,
+        email: parsedData.email || email.from.email,
+        skills: parsedData.skills || [],
+        experience: parsedData.experience || "",
+        education: parsedData.education || "",
+        resumeText: parsedData.resumeText || "",
+        linkedIn: parsedData.linkedIn || "",
+        location: parsedData.location || "",
+        languages: parsedData.languages || [],
+        jobTitle: parsedData.jobTitle || "",
+        resumeFileName: attachment.name,
+        source: "email_attachment",
+      });
     }
   };
 
@@ -510,6 +618,7 @@ export const useEmailImport = () => {
     provider,
     setProvider,
     emails: filteredEmails,
+    filteredEmails, // Add filteredEmails explicitly to the return object
     isLoadingEmails,
     selectedEmails,
     searchQuery,
@@ -571,13 +680,14 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     toggleEmailSelection,
     toggleSelectAll,
     processSelectedEmails,
+    filteredEmails, // Ensure filteredEmails is destructured here
   } = useEmailImport();
 
   return (
     <div className="space-y-4">
       {!isConnected ? (
         // Connection form
-        <>
+        <div className="space-y-5">
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium mb-2 block">
@@ -586,15 +696,15 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
               <RadioGroup
                 value={provider}
                 onValueChange={(value: EmailProvider) => setProvider(value)}
-                className="grid grid-cols-3 gap-2"
+                className="grid grid-cols-1 sm:grid-cols-3 gap-2"
               >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="gmail" id="provider-gmail" />
                   <Label
                     htmlFor="provider-gmail"
-                    className="flex items-center gap-1"
+                    className="flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Mail className="size-4" />
+                    <Mail className="size-4 text-red-500" />
                     <span className="text-sm">Gmail</span>
                   </Label>
                 </div>
@@ -602,9 +712,9 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   <RadioGroupItem value="outlook" id="provider-outlook" />
                   <Label
                     htmlFor="provider-outlook"
-                    className="flex items-center gap-1"
+                    className="flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Mail className="size-4" />
+                    <Mail className="size-4 text-blue-500" />
                     <span className="text-sm">Outlook</span>
                   </Label>
                 </div>
@@ -612,19 +722,18 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   <RadioGroupItem value="other" id="provider-other" />
                   <Label
                     htmlFor="provider-other"
-                    className="flex items-center gap-1"
+                    className="flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Mail className="size-4" />
+                    <Mail className="size-4 text-purple-500" />
                     <span className="text-sm">IMAP</span>
                   </Label>
                 </div>
               </RadioGroup>
             </div>
 
-            {/* Email credential inputs */}
-            <div className="space-y-3 border rounded-md p-3 bg-muted/30">
+            <div className="space-y-3 border rounded-md p-4 bg-muted/20">
               {provider === "other" && (
-                <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor="imap-server" className="text-sm">
                       IMAP Server
@@ -634,6 +743,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                       placeholder="imap.example.com"
                       value={imapServer}
                       onChange={(e) => setImapServer(e.target.value)}
+                      className="mt-1"
                     />
                   </div>
                   <div>
@@ -645,9 +755,10 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                       placeholder="993"
                       value={imapPort}
                       onChange={(e) => setImapPort(e.target.value)}
+                      className="mt-1"
                     />
                   </div>
-                </>
+                </div>
               )}
               <div>
                 <Label htmlFor="email-username" className="text-sm">
@@ -658,6 +769,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   placeholder="user@example.com"
                   value={imapUsername}
                   onChange={(e) => setImapUsername(e.target.value)}
+                  className="mt-1"
                 />
               </div>
               <div>
@@ -670,20 +782,23 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   placeholder="Password"
                   value={imapPassword}
                   onChange={(e) => setImapPassword(e.target.value)}
+                  className="mt-1"
                 />
                 {provider !== "other" && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    <Shield className="inline-block size-3 mr-1" />
-                    For Gmail, use an app password.
-                    <a
-                      href="https://support.google.com/accounts/answer/185833"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline ml-1"
-                    >
-                      Learn more
-                    </a>
-                  </p>
+                  <div className="flex items-start gap-1.5 text-xs text-muted-foreground mt-2 bg-amber-50 text-amber-800 p-2 rounded-md border border-amber-200">
+                    <Shield className="size-3.5 mt-0.5 flex-shrink-0" />
+                    <div>
+                      For Gmail, use an app password.{" "}
+                      <a
+                        href="https://support.google.com/accounts/answer/185833"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline hover:text-amber-900"
+                      >
+                        Learn more
+                      </a>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -691,13 +806,13 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
 
           {importProgress > 0 && (
             <div className="mt-4">
-              <div className="flex justify-between mb-1">
+              <div className="flex justify-between mb-1.5">
                 <span className="text-xs text-muted-foreground">
                   Connecting...
                 </span>
                 <span className="text-xs font-medium">{importProgress}%</span>
               </div>
-              <Progress value={importProgress} className="w-full" />
+              <Progress value={importProgress} className="w-full h-1.5" />
             </div>
           )}
 
@@ -718,189 +833,231 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
               </>
             )}
           </Button>
-        </>
+        </div>
       ) : (
         // Email management - connected state
-        <>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge
-                variant="outline"
-                className="font-normal flex gap-1 items-center"
-              >
-                <Mail className="h-3.5 w-3.5" />
-                {provider === "other"
-                  ? "IMAP Server"
-                  : `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`}
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={disconnectProvider}
-                className="h-7 text-xs"
-              >
-                Disconnect
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchEmails}
-                disabled={isLoadingEmails}
-                className="h-7 text-xs"
-              >
-                {isLoadingEmails ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3 w-3" />
-                )}
-                <span className="ml-1">Refresh</span>
-              </Button>
-            </div>
+        <div className="space-y-4">
+          <div className="bg-muted/20 p-3 rounded-md border">
+            <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-3 mb-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="font-normal flex gap-1.5 items-center bg-primary/10 text-primary border-primary/20"
+                >
+                  <Mail className="h-3 w-3" />
+                  {provider === "other"
+                    ? "IMAP Server"
+                    : `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`}
+                </Badge>
+                <span className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[180px]">
+                  {imapUsername}
+                </span>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleSelectAll}
-                disabled={emails.length === 0}
-                className="h-7 text-xs"
-              >
-                {selectedEmails.length === emails.length ? (
-                  <>
-                    <X className="h-3 w-3" />
-                    <span className="ml-1">Deselect All</span>
-                  </>
-                ) : (
-                  <>
-                    <Mail className="h-3 w-3" />
-                    <span className="ml-1">Select All</span>
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={processSelectedEmails}
-                disabled={selectedEmails.length === 0}
-                className="h-7 text-xs"
-              >
-                <span className="mr-1">Import</span>
-                {selectedEmails.length > 0 && `(${selectedEmails.length})`}
-              </Button>
+              <div className="flex items-center gap-2 ml-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={disconnectProvider}
+                  className="h-8 text-xs px-3"
+                >
+                  Disconnect
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchEmails}
+                  disabled={isLoadingEmails}
+                  className="h-8 text-xs px-3"
+                >
+                  {isLoadingEmails ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3 mr-1.5" />
+                  )}
+                  <span>Refresh</span>
+                </Button>
+              </div>
             </div>
           </div>
 
           {/* Filter controls */}
-          <div className="flex flex-col md:flex-row gap-3 my-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/3 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="space-y-3 my-3">
+            <div className="relative w-full">
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search emails..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-10"
+                className="pl-9 pr-8 w-full"
               />
               {searchQuery && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute right-0 top-0 h-full w-10 opacity-70 hover:opacity-100"
+                  className="absolute right-0 top-0 h-full w-8 opacity-70 hover:opacity-100"
                   onClick={() => setSearchQuery("")}
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-3.5 w-3.5" />
                 </Button>
               )}
             </div>
 
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="w-[180px] h-10">
-                <SelectValue placeholder="Filter by date" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-2">
+              <Select value={dateFilter} onValueChange={setDateFilter}>
+                <SelectTrigger className="w-full sm:w-[140px] h-10 text-sm">
+                  <Calendar className="mr-2 h-3.5 w-3.5 opacity-70" />
+                  <SelectValue placeholder="Filter by date" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                </SelectContent>
+              </Select>
 
-            <div className="flex flex-wrap items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="show-attachments"
-                  checked={showOnlyWithAttachments}
-                  onCheckedChange={(value) =>
-                    setShowOnlyWithAttachments(!!value)
-                  }
-                />
-                <Label htmlFor="show-attachments" className="text-sm">
-                  With attachments
-                </Label>
-              </div>
+              <div className="flex flex-grow flex-wrap items-center gap-4 bg-muted/10 px-3 py-2 rounded-md border">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="show-attachments"
+                    checked={showOnlyWithAttachments}
+                    onCheckedChange={(value) =>
+                      setShowOnlyWithAttachments(!!value)
+                    }
+                  />
+                  <Label
+                    htmlFor="show-attachments"
+                    className="text-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Paperclip className="size-3 opacity-70" />
+                    Attachments
+                  </Label>
+                </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="show-job-related"
-                  checked={showOnlyJobRelated}
-                  onCheckedChange={(value) => setShowOnlyJobRelated(!!value)}
-                />
-                <Label htmlFor="show-job-related" className="text-sm">
-                  Job related
-                </Label>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Shows emails containing job-related keywords like 'job',
-                      'candidate', 'resume', or 'cv'
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="show-job-related"
+                    checked={showOnlyJobRelated}
+                    onCheckedChange={(value) => setShowOnlyJobRelated(!!value)}
+                  />
+                  <Label
+                    htmlFor="show-job-related"
+                    className="text-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    Job related
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs max-w-xs">
+                          Shows emails with job-related keywords like 'job',
+                          'candidate', 'resume', or 'cv'
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
+                </div>
               </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 mb-2">
+            <div className="text-xs text-muted-foreground">
+              {filteredEmails.length} emails found
+              {(searchQuery ||
+                dateFilter !== "all" ||
+                showOnlyWithAttachments ||
+                showOnlyJobRelated) &&
+                " matching filters"}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleSelectAll}
+                disabled={emails.length === 0}
+                className="h-7 text-xs w-full xs:w-auto"
+              >
+                {selectedEmails.length > 0 &&
+                selectedEmails.length === filteredEmails.length ? (
+                  <>
+                    <XSquareIcon className="h-3.5 w-3.5 mr-1.5" />
+                    <span>Deselect All</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
+                    <span>Select All</span>
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="default"
+                size="sm"
+                onClick={processSelectedEmails}
+                disabled={selectedEmails.length === 0}
+                className="h-7 text-xs w-full xs:w-auto"
+              >
+                <span className="mr-1">Import</span>
+                {selectedEmails.length > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="ml-1 h-4 px-1 bg-white/20 text-white"
+                  >
+                    {selectedEmails.length}
+                  </Badge>
+                )}
+              </Button>
             </div>
           </div>
 
           {/* Progress indicator for import process */}
           {importProgress > 0 && (
             <div className="my-2">
-              <div className="flex justify-between mb-1">
+              <div className="flex justify-between mb-1.5">
                 <span className="text-xs text-muted-foreground">
                   {importProgress < 100 ? "Importing..." : "Import complete!"}
                 </span>
                 <span className="text-xs font-medium">{importProgress}%</span>
               </div>
-              <Progress value={importProgress} className="w-full" />
+              <Progress value={importProgress} className="w-full h-1.5" />
             </div>
           )}
 
           {/* Email list */}
-          <div className="border rounded-md overflow-hidden">
+          <div className="border rounded-md overflow-hidden bg-white">
             {isLoadingEmails ? (
               <div className="p-8 flex flex-col items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p>Loading emails...</p>
+                <p className="text-sm text-muted-foreground">
+                  Loading emails...
+                </p>
               </div>
             ) : emails.length === 0 ? (
               <div className="p-8 flex flex-col items-center justify-center text-center">
-                <Mail className="h-8 w-8 text-muted-foreground mb-4" />
+                <div className="bg-muted/30 rounded-full p-4 mb-3">
+                  <Mail className="h-6 w-6 text-muted-foreground/60" />
+                </div>
                 <p className="font-medium">No emails found</p>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs">
                   {searchQuery ||
                   dateFilter !== "all" ||
                   showOnlyWithAttachments ||
                   showOnlyJobRelated
-                    ? "Try changing your filters"
+                    ? "Try changing your filters to see more results"
                     : "Your inbox is empty or no job-related emails found"}
                 </p>
               </div>
             ) : (
               <div className="divide-y max-h-[400px] overflow-y-auto">
-                {emails.map((email) => (
+                {filteredEmails.map((email) => (
                   <div
                     key={email.id}
-                    className={`p-4 hover:bg-muted/40 ${
+                    className={`px-4 py-3 hover:bg-muted/30 transition-colors ${
                       selectedEmails.includes(email.id) ? "bg-primary/5" : ""
                     } ${
                       email.isProcessed || email.isImported ? "opacity-60" : ""
@@ -910,7 +1067,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                       <Checkbox
                         checked={selectedEmails.includes(email.id)}
                         onCheckedChange={() => toggleEmailSelection(email.id)}
-                        disabled={email.isProcessed || email.isImported}
+                        disabled={email.isProcessed}
                         className="mt-1"
                       />
                       <div className="flex-1 min-w-0">
@@ -925,46 +1082,50 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                             </span>
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground truncate">
+                        <div className="text-xs text-muted-foreground truncate">
                           {email.from.email}
                         </div>
-                        <div className="text-sm mt-1 font-medium">
+                        <div className="text-sm mt-1 font-medium truncate">
                           {email.subject}
                         </div>
 
                         {email.hasAttachments && email.attachments && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {email.attachments.map((attachment) => (
-                              <Badge
-                                key={attachment.id}
-                                variant={
-                                  attachment.isResume ? "default" : "outline"
-                                }
-                                className={`text-xs ${
-                                  attachment.isResume
-                                    ? "bg-primary/20 text-primary"
-                                    : ""
-                                }`}
-                              >
-                                {attachment.name.length > 30
-                                  ? `${attachment.name.substring(0, 30)}...`
-                                  : attachment.name}{" "}
-                                ({(attachment.size / 1024).toFixed(0)} KB)
-                              </Badge>
-                            ))}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {email.attachments?.map(
+                              (attachment: EmailAttachment) => (
+                                <Badge
+                                  key={attachment.id}
+                                  variant={
+                                    attachment.isResume ? "default" : "outline"
+                                  }
+                                  className={`text-xs px-1.5 py-0.5 ${
+                                    attachment.isResume
+                                      ? "bg-primary/10 text-primary border-primary/20"
+                                      : ""
+                                  }`}
+                                >
+                                  {attachment.name.length > 25
+                                    ? `${attachment.name.substring(0, 25)}...`
+                                    : attachment.name}{" "}
+                                  <span className="opacity-60 text-[10px]">
+                                    ({(attachment.size / 1024).toFixed(0)} KB)
+                                  </span>
+                                </Badge>
+                              )
+                            )}
                           </div>
                         )}
 
                         <div className="mt-2 flex items-center gap-2">
                           {email.isImported && (
-                            <div className="text-xs flex items-center text-green-500">
+                            <div className="text-xs flex items-center text-green-600 bg-green-50 px-1.5 py-0.5 rounded-sm">
                               <Check className="h-3 w-3 mr-1" />
                               Already imported
                             </div>
                           )}
 
                           {email.isProcessed && !email.isImported && (
-                            <div className="text-xs flex items-center text-green-500">
+                            <div className="text-xs flex items-center text-green-600 bg-green-50 px-1.5 py-0.5 rounded-sm">
                               <Check className="h-3 w-3 mr-1" />
                               Imported
                             </div>
@@ -978,26 +1139,18 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
             )}
           </div>
 
-          <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-            <div>
-              {emails.length} {emails.length === 1 ? "email" : "emails"} found
-              {(searchQuery ||
-                dateFilter !== "all" ||
-                showOnlyWithAttachments ||
-                showOnlyJobRelated) &&
-                " matching filters"}
-            </div>
-            <div className="flex items-center gap-1">
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
               <Info className="h-3 w-3" />
               {selectedEmails.length === 0
-                ? "Select emails to import"
+                ? "Select emails to import candidates"
                 : `${selectedEmails.length} email${
                     selectedEmails.length === 1 ? "" : "s"
                   } selected`}
             </div>
           </div>
 
-          <Separator className="my-2" />
+          <Separator className="my-3" />
 
           <Button
             onClick={processSelectedEmails}
@@ -1009,17 +1162,49 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Processing...
               </>
-            ) : (
+            ) : selectedEmails.length > 0 ? (
               <>
-                Process {selectedEmails.length} Selected Email
-                {selectedEmails.length !== 1 ? "s" : ""}
+                Process {selectedEmails.length}
+                <span className="hidden xs:inline">
+                  {" "}
+                  Selected Email{selectedEmails.length !== 1 ? "s" : ""}
+                </span>
               </>
+            ) : (
+              <>Select emails to process</>
             )}
           </Button>
-        </>
+        </div>
       )}
     </div>
   );
 };
 
 export default EmailImport;
+function onImportComplete(data: {
+  name: string;
+  email: string;
+  skills: string[];
+  experience: string;
+  education: string;
+  resumeText: string;
+  linkedIn: string;
+  location: string;
+  languages: string[];
+  jobTitle: string;
+  resumeFileName: string;
+  source: string;
+}) {
+  console.log("Candidate imported successfully:", data);
+
+  // Example: Display a success toast
+  toast.success(`Candidate ${data.name} imported successfully!`);
+
+  // Example: Save the imported candidate data to a database or state
+  // This could involve calling an API or updating a local state
+  // For example:
+  // saveCandidateToDatabase(data);
+
+  // Example: Update UI or trigger any additional actions
+  // This could involve refreshing a list of candidates or navigating to another page
+}
