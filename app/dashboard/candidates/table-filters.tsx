@@ -4,6 +4,12 @@ import { Eye } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
 export type Candidate = {
@@ -41,6 +47,68 @@ const RatingStars = ({ rating }: { rating: number }) => (
     ))}
   </div>
 );
+
+// Function to display skills with hover tooltip for additional skills
+const SkillsList = ({
+  skills,
+  limit = 3,
+}: {
+  skills: string[];
+  limit?: number;
+}) => {
+  if (!skills || skills.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  const displayedSkills = skills.slice(0, limit);
+  const extraSkills = skills.length > limit ? skills.slice(limit) : [];
+
+  return (
+    <div className="flex flex-wrap gap-1 max-w-full">
+      {displayedSkills.map((skill) => (
+        <Badge
+          key={skill}
+          variant="outline"
+          className="px-1.5 py-0 text-xs text-primary-700 bg-primary-50 border-primary-200 whitespace-nowrap"
+        >
+          {skill}
+        </Badge>
+      ))}
+
+      {extraSkills.length > 0 && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="px-1.5 py-0 text-xs cursor-default"
+              >
+                +{extraSkills.length}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              align="center"
+              className="bg-white text-foreground border shadow-md p-2"
+            >
+              <div className="flex flex-wrap gap-1 max-w-[200px]">
+                {extraSkills.map((skill) => (
+                  <Badge
+                    key={skill}
+                    variant="outline"
+                    className="px-1.5 py-0 text-xs whitespace-nowrap"
+                  >
+                    {skill}
+                  </Badge>
+                ))}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+    </div>
+  );
+};
 
 export const columns: ColumnDef<Candidate>[] = [
   {
@@ -97,49 +165,28 @@ export const columns: ColumnDef<Candidate>[] = [
     },
     size: 120,
   },
-  // {
-  //   accessorKey: "experience",
-  //   header: "Experience",
-  //   cell: ({ row }) => {
-  //     const experience = row.original.experience;
-  //     return (
-  //       <div>
-  //         {experience || <span className="text-muted-foreground">—</span>}
-  //       </div>
-  //     );
-  //   },
-  //   size: 120,
-  // },
-  // {
-  //   accessorKey: "skills",
-  //   header: "Skills",
-  //   cell: ({ row }) => {
-  //     const skills = row.original.skills || [];
-  //     if (!skills.length) {
-  //       return <span className="text-muted-foreground">—</span>;
-  //     }
-
-  //     return (
-  //       <div className="flex flex-wrap gap-1 max-w-[240px]">
-  //         {skills.slice(0, 3).map((skill) => (
-  //           <Badge
-  //             key={skill}
-  //             variant="outline"
-  //             className="px-1.5 py-0 text-xs"
-  //           >
-  //             {skill}
-  //           </Badge>
-  //         ))}
-  //         {skills.length > 3 && (
-  //           <Badge variant="outline" className="px-1.5 py-0 text-xs">
-  //             +{skills.length - 3}
-  //           </Badge>
-  //         )}
-  //       </div>
-  //     );
-  //   },
-  //   size: 240,
-  // },
+  {
+    accessorKey: "experience",
+    header: "Experience",
+    cell: ({ row }) => {
+      const experience = row.original.experience;
+      return (
+        <div>
+          {experience || <span className="text-muted-foreground">—</span>}
+        </div>
+      );
+    },
+    size: 120,
+  },
+  {
+    accessorKey: "skills",
+    header: "Skills",
+    cell: ({ row }) => {
+      const skills = row.original.skills || [];
+      return <SkillsList skills={skills} />;
+    },
+    size: 240,
+  },
   {
     accessorKey: "category",
     header: "Category",
@@ -172,9 +219,35 @@ export const columns: ColumnDef<Candidate>[] = [
             </Badge>
           ))}
           {tags.length > 2 && (
-            <Badge variant="outline" className="px-1.5 py-0 text-xs">
-              +{tags.length - 2}
-            </Badge>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="px-1.5 py-0 text-xs cursor-default"
+                  >
+                    +{tags.length - 2}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  align="center"
+                  className="bg-white text-foreground border shadow-md p-2"
+                >
+                  <div className="flex flex-wrap gap-1 max-w-[200px]">
+                    {tags.slice(2).map((tag) => (
+                      <Badge
+                        key={tag}
+                        variant="outline"
+                        className="px-1.5 py-0 text-xs"
+                      >
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
       );
@@ -212,7 +285,7 @@ export const columns: ColumnDef<Candidate>[] = [
   },
   {
     id: "actions",
-    header: "Actions",
+    header: "",
     cell: ({ row }) => (
       <Button
         variant="ghost"
@@ -221,7 +294,7 @@ export const columns: ColumnDef<Candidate>[] = [
         className="h-8 px-3 text-xs"
       >
         <Eye className="h-3.5 w-3.5 mr-1.5" />
-        Details
+        View
       </Button>
     ),
     size: 80,

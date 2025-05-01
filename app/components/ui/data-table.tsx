@@ -1,15 +1,29 @@
-"use client";
-
+// components/ui/data-table.tsx
 import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import React from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
+import * as React from "react";
+import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,99 +33,201 @@ import {
   TableRow,
 } from "~/components/ui/table";
 
-interface ExtendedColumnMeta {
-  thClass?: string;
-  tdClass?: string;
-}
-
-interface DataTableProps<TData> {
-  columns: ColumnDef<TData, any>[];
+interface DataTableProps<TData, TValue> {
+  columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  globalFilter?: string;
+  onRowSelectionChange?: (rows: { [key: string]: boolean }) => void;
 }
 
-interface DataTableProps<TData> {
-  columns: ColumnDef<TData, any>[];
-  data: TData[];
-  globalFilter?: string; // for searching
-  onGlobalFilterChange?: (value: string) => void;
-}
-
-export function DataTable<TData>({
+export function DataTable<TData, TValue>({
   columns,
   data,
-  globalFilter = "",
-}: DataTableProps<TData>) {
+  globalFilter,
+  onRowSelectionChange,
+}: DataTableProps<TData, TValue>) {
+  // State for sorting
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
+  // State for pagination
+  const [pageSize, setPageSize] = React.useState(10);
+
+  // State for row selection
+  const [rowSelection, setRowSelection] = React.useState({});
+
+  // Use memo to prevent unnecessary re-renders
+  const memoizedData = React.useMemo(() => data, [data]);
+  const memoizedColumns = React.useMemo(() => columns, [columns]);
+
+  // Create table instance
   const table = useReactTable({
-    data,
-    columns,
-    state: {
-      globalFilter,
-      sorting,
-    },
-    onSortingChange: setSorting,
-    globalFilterFn: (row, columnId, filterValue) => {
-      // basic substring match across row values
-      const value = row.getValue(columnId) as string;
-      return value
-        ?.toString()
-        .toLowerCase()
-        .includes(filterValue.toLowerCase());
-    },
+    data: memoizedData,
+    columns: memoizedColumns,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onSortingChange: setSorting,
+    onRowSelectionChange: (updater) => {
+      const newSelection =
+        typeof updater === "function" ? updater(rowSelection) : updater;
+      setRowSelection(newSelection);
+      if (onRowSelectionChange) {
+        onRowSelectionChange(newSelection);
+      }
+    },
+    state: {
+      sorting,
+      pagination: { pageSize, pageIndex: 0 },
+      rowSelection,
+      globalFilter,
+    },
+    enableRowSelection: true,
+    manualPagination: false,
   });
 
   return (
-    <div className="w-full overflow-x-auto border rounded-md">
-      <Table className="table-fixed w-full text-sm">
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  className="px-2 py-2 font-semibold cursor-pointer select-none"
-                  onClick={header.column.getToggleSortingHandler()}
-                >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                  {/* Sorting indicator */}
-                  {{
-                    asc: " ▲",
-                    desc: " ▼",
-                  }[header.column.getIsSorted() as string] ?? null}
-                </TableHead>
+    <div className="w-full flex flex-col space-y-4">
+      {/* Table with horizontal scroll container */}
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id} className="bg-muted/50">
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      key={header.id}
+                      style={{
+                        width:
+                          header.getSize() !== 150
+                            ? header.getSize()
+                            : undefined,
+                      }}
+                      className="whitespace-nowrap font-medium text-sm py-3"
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
               ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="px-2 py-2 align-top">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className={row.getIsSelected() ? "bg-primary/5" : undefined}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="py-3">
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    No results found.
                   </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Pagination Controls */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            {table.getFilteredSelectedRowModel().rows.length} of{" "}
+            {table.getFilteredRowModel().rows.length} row(s) selected
+          </span>
+
+          <div className="flex items-center gap-1 text-xs pl-2">
+            <span>Show</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(value) => setPageSize(Number(value))}
+            >
+              <SelectTrigger className="h-7 w-[70px] text-xs">
+                <SelectValue placeholder={String(pageSize)} />
+              </SelectTrigger>
+              <SelectContent>
+                {[5, 10, 20, 50, 100].map((size) => (
+                  <SelectItem
+                    key={size}
+                    value={String(size)}
+                    className="text-xs"
+                  >
+                    {size}
+                  </SelectItem>
                 ))}
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="text-center py-4">
-                No data found.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+              </SelectContent>
+            </Select>
+            <span>per page</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="text-sm whitespace-nowrap">
+            Page {table.getState().pagination.pageIndex + 1} of{" "}
+            {table.getPageCount() || 1}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => table.setPageIndex(0)}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <span className="sr-only">Go to first page</span>
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <span className="sr-only">Go to previous page</span>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              <span className="sr-only">Go to next page</span>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+              disabled={!table.getCanNextPage()}
+            >
+              <span className="sr-only">Go to last page</span>
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

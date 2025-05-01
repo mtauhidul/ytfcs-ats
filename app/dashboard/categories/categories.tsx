@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   Edit3,
   FolderIcon,
-  FolderTree,
+  FolderTreeIcon,
   Info,
   MoreHorizontal,
   Plus,
@@ -217,14 +217,11 @@ export default function CategoriesPage() {
       <Card className="w-full shadow-sm">
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4">
           <div>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className="bg-primary/10 text-primary size-6 flex items-center justify-center rounded-md font-normal"
-              >
-                <FolderTree className="size-3.5" />
-              </Badge>
-              Category Management
+            <CardTitle className="flex items-center gap-3 text-xl font-semibold">
+              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                <FolderTreeIcon className="h-4 w-4" />
+              </div>
+              <span>Category Management</span>
             </CardTitle>
             <CardDescription>
               Create, edit, and delete categories for organizing candidates

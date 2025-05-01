@@ -35,6 +35,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Toaster, toast } from "sonner";
 
+import { Link } from "react-router";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,7 +69,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { Separator } from "~/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
@@ -135,6 +135,8 @@ export default function CandidatesPage() {
         return {
           id: docSnap.id,
           name: data.name || "",
+          email: data.email || "",
+          phone: data.phone || "",
           tags: data.tags || [],
           category: data.category || "",
           rating: data.rating || 0,
@@ -144,6 +146,7 @@ export default function CandidatesPage() {
           skills: data.skills || [],
           notes: data.notes || "",
           history: data.history || [],
+          updatedAt: data.updatedAt || "",
           onEdit: (cand: Candidate) => openCandidateDetail(cand),
         } as Candidate;
       });
@@ -206,6 +209,8 @@ export default function CandidatesPage() {
       // Searching across name, tags, category, stage, etc.
       const combined = [
         cand.name,
+        cand.email || "",
+        cand.phone || "",
         cand.tags.join(" "),
         cand.category,
         stageTitle,
@@ -382,6 +387,16 @@ export default function CandidatesPage() {
     return stage ? stage.title : "Unassigned";
   };
 
+  // Handle row selection changes
+  const handleRowSelectionChange = (selection: { [key: string]: boolean }) => {
+    // Extract selected IDs from the selection object
+    const selectedIds = Object.entries(selection)
+      .filter(([_, isSelected]) => isSelected)
+      .map(([id]) => id);
+
+    setSelectedCandidateIds(selectedIds);
+  };
+
   if (loading) {
     return (
       <section className="p-6">
@@ -396,8 +411,8 @@ export default function CandidatesPage() {
   }
 
   return (
-    <section className="space-y-6 p-6">
-      <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0">
+    <section className="p-6 max-w-full">
+      <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <UserIcon className="h-6 w-6" />
@@ -412,13 +427,13 @@ export default function CandidatesPage() {
             {candidates.length} candidates
           </Badge>
           <Button variant="outline" asChild>
-            <a href="/dashboard/import">Import Candidates</a>
+            <Link to="/dashboard/import">Import Candidates</Link>
           </Button>
         </div>
       </div>
 
       {/* Searching */}
-      <div className="flex flex-col md:flex-row gap-4 items-center">
+      <div className="flex flex-col md:flex-row gap-4 items-center mb-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -490,10 +505,8 @@ export default function CandidatesPage() {
         </div>
       )}
 
-      <Separator />
-
       {/* Data Table */}
-      <div className="rounded-md border overflow-hidden">
+      <div className="w-full mb-4">
         <DataTable
           columns={columns}
           data={filteredCandidates.map((candidate) => {
@@ -505,6 +518,7 @@ export default function CandidatesPage() {
             };
           })}
           globalFilter={globalFilter}
+          onRowSelectionChange={handleRowSelectionChange}
         />
       </div>
 
@@ -574,7 +588,7 @@ export default function CandidatesPage() {
               onValueChange={setActiveTab}
               className="flex-grow flex flex-col overflow-hidden"
             >
-              <TabsList className="mb-4">
+              <TabsList className="mb-4 overflow-x-auto justify-start">
                 <TabsTrigger
                   value="details"
                   className="flex items-center gap-1"

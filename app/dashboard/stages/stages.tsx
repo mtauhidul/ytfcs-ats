@@ -16,7 +16,7 @@ import {
   CheckIcon,
   GripVertical,
   Info,
-  LayersIcon,
+  Layers2Icon,
   Loader2,
   PencilIcon,
   PlusIcon,
@@ -285,14 +285,11 @@ export default function StagesPage() {
       <Card className="w-full shadow-sm">
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4">
           <div>
-            <CardTitle className="text-xl flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className="bg-primary/10 text-primary size-6 flex items-center justify-center rounded-md font-normal"
-              >
-                <LayersIcon className="size-3.5" />
-              </Badge>
-              Workflow Stages
+            <CardTitle className="flex items-center gap-3 text-xl font-semibold">
+              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                <Layers2Icon className="h-4 w-4" />
+              </div>
+              <span>Workflow Stages</span>
             </CardTitle>
             <CardDescription>
               Define and organize your hiring pipeline stages
