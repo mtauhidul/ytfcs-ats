@@ -270,53 +270,6 @@ export default function ImportPage() {
     }
   };
 
-  // Generate mock AI response for demo purposes
-  interface MockAIResponse {
-    name: string;
-    email: string;
-    phone: string;
-    experience: string;
-    education: string;
-    skills: string[];
-    resumeText: string;
-    linkedin: string;
-    location: string;
-    languages: string[];
-    jobTitle: string;
-  }
-
-  const generateMockAIResponse = (filename: string): MockAIResponse => {
-    // Extract a mock name from the filename
-    const namePart = filename.split(".")[0].replace(/[_-]/g, " ");
-    const capitalizedName = namePart
-      .split(" ")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(" ");
-
-    return {
-      name: capitalizedName,
-      email: `${namePart.toLowerCase().replace(/\s/g, ".")}@example.com`,
-      phone: "+1 (555) 123-4567",
-      experience: "5.5 years",
-      education:
-        "Bachelor of Science, Computer Science\nStanford University, 2018",
-      skills: [
-        "JavaScript",
-        "React",
-        "Node.js",
-        "TypeScript",
-        "MongoDB",
-        "AWS",
-      ],
-      resumeText:
-        "Professional with experience in web development and software engineering...",
-      linkedin: "https://linkedin.com/in/example",
-      location: "San Francisco, California, USA",
-      languages: ["English", "Spanish"],
-      jobTitle: "Senior Frontend Developer",
-    };
-  };
-
   // Monitor parsing status from Redux state
   useEffect(() => {
     if (status === "succeeded" && parsedData) {
@@ -396,8 +349,8 @@ export default function ImportPage() {
         updatedAt: new Date().toISOString(),
         stageId: "", // Default stage
 
-        // Use skills as initial tags (up to 3)
-        tags: parsedData.skills ? [...parsedData.skills].slice(0, 3) : [],
+        // tags are initially empty
+        tags: [],
 
         // Additional fields
         resumeText: parsedData.resumeText || "",
