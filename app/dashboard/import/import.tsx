@@ -36,7 +36,10 @@ import { Textarea } from "~/components/ui/textarea";
 import { resetImport, updateParsedData } from "~/features/candidateImportSlice";
 import { db } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
+import type { ImportedCandidate } from "~/types/email";
 import EmailImport from "./email-import";
+
+// Import types
 
 // Define the parsed data interface
 interface ParsedCandidate {
@@ -91,7 +94,7 @@ export default function ImportPage() {
     }
   };
 
-  // Parse resume using OpenAI API (replacing Affinda)
+  // Parse resume using OpenAI API
   const handleParseWithAI = async () => {
     if (!file) return;
 
@@ -131,20 +134,27 @@ export default function ImportPage() {
 
       setParsingProgress(30);
 
-      // In a real implementation, you would send the file to your backend
+      // In a production environment, send the file to your backend API
+      // const response = await fetch(`${import.meta.env.VITE_API_URL}/resume/parse`, {
+      //   method: 'POST',
+      //   body: formData,
+      // });
+
+      // if (!response.ok) {
+      //   const errorData = await response.json();
+      //   throw new Error(errorData.message || 'Failed to parse resume');
+      // }
+
+      // const data = await response.json();
+      // const parsedData = data.data;
+
       // For now, we'll simulate the API call and response
-
-      // Simulate API call with a delay
       await new Promise((resolve) => setTimeout(resolve, 2000));
-
       setParsingProgress(60);
-
-      // Simulate response with mock data based on filename
       const mockResponse = generateMockAIResponse(file.name);
-
       setParsingProgress(80);
 
-      // Map OpenAI response to our format
+      // Map response to our format
       const parsedData: ParsedCandidate = {
         name: mockResponse.name || "",
         email: mockResponse.email || "",
@@ -181,7 +191,6 @@ export default function ImportPage() {
   };
 
   // Generate mock AI response for demo purposes
-  // In a real implementation, this would come from your backend
   interface MockAIResponse {
     name: string;
     email: string;
@@ -395,6 +404,36 @@ export default function ImportPage() {
     setParsingProgress(0);
   };
 
+  // Handle email import completion
+  const handleEmailImportComplete = (
+    data: ImportedCandidate | ImportedCandidate[]
+  ) => {
+    // Extract candidate information from the email import
+    if (Array.isArray(data)) {
+      toast.success(
+        `Successfully imported ${data.length} candidates from email`
+      );
+    } else {
+      // Single candidate imported
+      toast.success(`Successfully imported ${data.name} from email`);
+
+      // If the email import contained resume data, we can convert it to our format
+      if (data) {
+        const parsedCandidate: ParsedCandidate = {
+          name: data.name || "",
+          email: data.email || "",
+          skills: data.skills || [],
+          experience: data.experience || "",
+          education: data.education || "",
+          originalFilename: data.resumeFileName,
+        };
+
+        dispatch(updateParsedData(parsedCandidate));
+        setParsingProgress(100);
+      }
+    }
+  };
+
   return (
     <div className="container py-8 mx-auto">
       <Toaster position="top-right" richColors />
@@ -574,18 +613,7 @@ export default function ImportPage() {
               </TabsContent>
 
               <TabsContent value="email" className="min-h-[300px]">
-                <EmailImport
-                  onImportComplete={(data) => {
-                    // Handle the imported candidate data
-                    toast.success("Successfully imported candidate from email");
-
-                    // If data is a parsed resume, update the state
-                    if (data && data.name) {
-                      dispatch(updateParsedData(data));
-                      setParsingProgress(100);
-                    }
-                  }}
-                />
+                <EmailImport onImportComplete={handleEmailImportComplete} />
               </TabsContent>
             </Tabs>
 
