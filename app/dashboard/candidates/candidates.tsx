@@ -88,6 +88,17 @@ interface HistoryEntry {
   note: string;
 }
 
+// Communication entry interface
+interface CommunicationEntry {
+  id: string; // Unique identifier for each communication
+  date: string; // ISO timestamp
+  message: string; // The content of the message
+  type: "sent" | "received"; // Whether the message was sent to or received from the candidate
+  sender: string; // Name of person who sent/received the message
+  subject?: string; // Optional subject line
+  read?: boolean; // Whether the message has been read
+}
+
 // Constants for empty values - fixes the SelectItem empty value issue
 const UNASSIGNED_VALUE = "unassigned";
 const NONE_CATEGORY_VALUE = "none";
@@ -130,6 +141,11 @@ export default function CandidatesPage() {
   const [activeTab, setActiveTab] = useState("details");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
+  // Communications state
+  const [modalCommunications, setModalCommunications] = useState<
+    CommunicationEntry[]
+  >([]);
+
   // Track original state for change detection
   const [originalState, setOriginalState] = useState<any>(null);
 
@@ -153,6 +169,7 @@ export default function CandidatesPage() {
           skills: data.skills || [],
           notes: data.notes || "",
           history: data.history || [],
+          communications: data.communications || [], // Add communications
           updatedAt: data.updatedAt || "",
           onEdit: (cand: Candidate) => openCandidateDetail(cand),
         } as Candidate;
@@ -376,6 +393,7 @@ export default function CandidatesPage() {
     // If category is empty, set to NONE_CATEGORY_VALUE instead
     setModalCategory(cand.category || NONE_CATEGORY_VALUE);
     setModalHistory(cand.history || []);
+    setModalCommunications(cand.communications || []); // Set communications
     setModalNewHistory("");
     setModalExperience(cand.experience || "");
     setActiveTab("details");
@@ -391,6 +409,30 @@ export default function CandidatesPage() {
       category: cand.category || NONE_CATEGORY_VALUE,
       experience: cand.experience || "",
     });
+  };
+
+  // Mark a message as read
+  const markMessageAsRead = async (messageId: string) => {
+    if (!detailCandidate) return;
+
+    try {
+      // Find and update the message
+      const updatedCommunications = modalCommunications.map((msg) =>
+        msg.id === messageId ? { ...msg, read: true } : msg
+      );
+
+      // Update Firestore
+      const ref = doc(db, "candidates", detailCandidate.id);
+      await updateDoc(ref, {
+        communications: updatedCommunications,
+      });
+
+      // Update local state
+      setModalCommunications(updatedCommunications);
+    } catch (err) {
+      console.error("Error marking message as read:", err);
+      toast.error("Failed to update message status");
+    }
   };
 
   // 7. Save candidate detail changes
@@ -420,6 +462,7 @@ export default function CandidatesPage() {
         // Convert back from NONE_CATEGORY_VALUE to empty string for storage
         category: modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory,
         history: modalHistory,
+        communications: modalCommunications, // Save communications
         experience: modalExperience,
         updatedAt: new Date().toISOString(),
       };
@@ -478,6 +521,41 @@ export default function CandidatesPage() {
       toast.error("Error deleting candidate");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Record a communication to history
+  const recordCommunicationHistory = async (
+    candidateId: string,
+    type: "sent" | "received",
+    subject?: string
+  ) => {
+    try {
+      const candidate = candidates.find((c) => c.id === candidateId);
+      if (!candidate) return;
+
+      const historyEntry: HistoryEntry = {
+        date: new Date().toISOString(),
+        note:
+          type === "sent"
+            ? `Message sent to candidate${
+                subject ? ` (Subject: ${subject})` : ""
+              }`
+            : `Message received from candidate${
+                subject ? ` (Subject: ${subject})` : ""
+              }`,
+      };
+
+      const ref = doc(db, "candidates", candidateId);
+      await updateDoc(ref, {
+        history: [...(candidate.history || []), historyEntry],
+        updatedAt: new Date().toISOString(),
+      });
+
+      return historyEntry;
+    } catch (err) {
+      console.error(`Error recording ${type} communication:`, err);
+      return null;
     }
   };
 
@@ -1119,22 +1197,87 @@ export default function CandidatesPage() {
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <h3 className="font-medium">Communication History</h3>
-                      <Button size="sm">
-                        <MessageSquarePlus className="size-4 mr-2" />
-                        New Message
+                      <Button size="sm" asChild>
+                        <Link to={`/dashboard/communication`}>
+                          <MessageSquarePlus className="size-4 mr-2" />
+                          New Message
+                        </Link>
                       </Button>
                     </div>
 
-                    {/* Show placeholder if no communications */}
-                    <div className="text-center py-12 border rounded-md bg-muted/20">
-                      <MessageSquare className="size-8 mx-auto mb-2 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">
-                        No communication history yet
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Messages sent to this candidate will appear here
-                      </p>
-                    </div>
+                    {modalCommunications.length === 0 ? (
+                      <div className="text-center py-12 border rounded-md bg-muted/20">
+                        <MessageSquare className="size-8 mx-auto mb-2 text-muted-foreground/50" />
+                        <p className="text-muted-foreground">
+                          No communication history yet
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Messages sent to this candidate will appear here
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="border rounded-md overflow-hidden">
+                        <ScrollArea className="h-[350px] pr-4">
+                          <div className="space-y-3 p-4">
+                            {[...modalCommunications]
+                              .sort(
+                                (a, b) =>
+                                  new Date(b.date).getTime() -
+                                  new Date(a.date).getTime()
+                              )
+                              .map((comm) => (
+                                <div
+                                  key={comm.id}
+                                  className={`border p-3 rounded-md hover:border-primary transition-colors ${
+                                    comm.type === "received" && !comm.read
+                                      ? "bg-muted/30 border-primary/50"
+                                      : ""
+                                  }`}
+                                  onClick={() => {
+                                    if (
+                                      comm.type === "received" &&
+                                      !comm.read
+                                    ) {
+                                      markMessageAsRead(comm.id);
+                                    }
+                                  }}
+                                >
+                                  <div className="flex justify-between items-start mb-1">
+                                    <div className="flex items-center gap-2">
+                                      <Badge
+                                        variant={
+                                          comm.type === "sent"
+                                            ? "default"
+                                            : "secondary"
+                                        }
+                                        className="text-xs"
+                                      >
+                                        {comm.type === "sent"
+                                          ? "Sent"
+                                          : "Received"}
+                                      </Badge>
+                                      <span className="text-sm font-medium">
+                                        {comm.sender}
+                                      </span>
+                                    </div>
+                                    <span className="text-xs text-muted-foreground">
+                                      {new Date(comm.date).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {comm.subject && (
+                                    <p className="text-sm font-medium mb-1">
+                                      {comm.subject}
+                                    </p>
+                                  )}
+                                  <p className="text-sm mt-1 whitespace-pre-line">
+                                    {comm.message}
+                                  </p>
+                                </div>
+                              ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 

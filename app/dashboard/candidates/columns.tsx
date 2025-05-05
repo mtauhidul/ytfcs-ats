@@ -21,6 +21,15 @@ export type Candidate = {
   skills?: string[];
   notes?: string;
   history?: { date: string; note: string }[];
+  communications?: {
+    id: string;
+    date: string;
+    message: string;
+    type: "sent" | "received";
+    sender: string;
+    subject?: string;
+    read?: boolean;
+  }[];
   updatedAt?: string;
   onEdit?: (c: Candidate) => void;
 };
