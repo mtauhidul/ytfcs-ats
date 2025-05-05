@@ -1066,21 +1066,10 @@ export default function CandidatesPage() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="history" className="py-2 min-h-[400px]">
+                <TabsContent value="history" className="py-0 min-h-[400px]">
                   <Card>
-                    <CardHeader className="pb-2">
-                      <h3 className="text-sm font-medium">
-                        Add New History Entry
-                      </h3>
-                    </CardHeader>
                     <CardContent>
-                      <Textarea
-                        placeholder="Add a new history entry..."
-                        value={modalNewHistory}
-                        onChange={(e) => setModalNewHistory(e.target.value)}
-                        className="resize-none"
-                      />
-                      <p className="text-xs text-muted-foreground mt-2">
+                      <p className="text-xs text-muted-foreground">
                         Note: The system automatically tracks changes to
                         candidate information
                       </p>
@@ -1102,18 +1091,22 @@ export default function CandidatesPage() {
                         </p>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        {[...modalHistory].reverse().map((entry, idx) => (
-                          <div
-                            key={idx}
-                            className="border-l-2 border-muted pl-3 py-2 hover:border-primary transition-colors"
-                          >
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(entry.date).toLocaleString()}
-                            </p>
-                            <p className="text-sm mt-1">{entry.note}</p>
+                      <div className="border rounded-md overflow-hidden">
+                        <ScrollArea className="h-[350px] pr-4">
+                          <div className="space-y-3 p-4">
+                            {[...modalHistory].reverse().map((entry, idx) => (
+                              <div
+                                key={idx}
+                                className="border-l-2 border-muted pl-3 py-2 hover:border-primary transition-colors"
+                              >
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(entry.date).toLocaleString()}
+                                </p>
+                                <p className="text-sm mt-1">{entry.note}</p>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        </ScrollArea>
                       </div>
                     )}
                   </div>
