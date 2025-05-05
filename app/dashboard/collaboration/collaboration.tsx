@@ -580,6 +580,26 @@ export default function CollaborationPage() {
     setIsViewFeedbackOpen(true);
   };
 
+  // Handle delete feedback
+  const handleDeleteFeedback = async (feedbackId: string | undefined) => {
+    if (!feedbackId) {
+      toast.error("Feedback ID is missing");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await deleteDoc(doc(db, "feedback", feedbackId));
+      toast.success("Feedback deleted successfully");
+      setIsViewFeedbackOpen(false);
+      setIsSubmitting(false);
+    } catch (error) {
+      console.error("Error deleting feedback:", error);
+      toast.error("Error deleting feedback");
+      setIsSubmitting(false);
+    }
+  };
+
   // Helper to format date
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -1559,7 +1579,25 @@ export default function CollaborationPage() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex justify-between items-center gap-4 ">
+            {/* Button for deleting feedback */}
+            <Button
+              variant="destructive"
+              onClick={() => handleDeleteFeedback(selectedFeedback?.id)}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Feedback
+                </>
+              )}
+            </Button>
             <Button onClick={() => setIsViewFeedbackOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
