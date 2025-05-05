@@ -2,7 +2,7 @@
 import { API_URL } from "./config";
 
 // Get the API key from environment variables
-const API_KEY = import.meta.env.VITE_EMAIL_API_KEY;
+const API_KEY = import.meta.env.VITE_API_KEY;
 
 // Helper function to create headers with API key
 const getHeaders = () => ({
