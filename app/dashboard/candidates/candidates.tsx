@@ -82,6 +82,12 @@ interface Stage {
   color?: string;
 }
 
+// History entry interface
+interface HistoryEntry {
+  date: string;
+  note: string;
+}
+
 // Constants for empty values - fixes the SelectItem empty value issue
 const UNASSIGNED_VALUE = "unassigned";
 const NONE_CATEGORY_VALUE = "none";
@@ -118,13 +124,14 @@ export default function CandidatesPage() {
   const [modalStageId, setModalStageId] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
   const [modalCategory, setModalCategory] = useState("");
-  const [modalHistory, setModalHistory] = useState<
-    { date: string; note: string }[]
-  >([]);
+  const [modalHistory, setModalHistory] = useState<HistoryEntry[]>([]);
   const [modalNewHistory, setModalNewHistory] = useState("");
   const [modalExperience, setModalExperience] = useState("");
   const [activeTab, setActiveTab] = useState("details");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // Track original state for change detection
+  const [originalState, setOriginalState] = useState<any>(null);
 
   // 1. Real-time Firestore candidates
   useEffect(() => {
@@ -225,6 +232,137 @@ export default function CandidatesPage() {
     });
   }, [candidates, globalFilter, stages]);
 
+  // Helper function to detect changes between current and original state
+  const detectChanges = () => {
+    if (!originalState || !detailCandidate) return {};
+
+    const changes: Record<string, { from: any; to: any }> = {};
+
+    // Check for stage changes
+    const origStageId =
+      originalState.stageId === UNASSIGNED_VALUE ? "" : originalState.stageId;
+    const newStageId = modalStageId === UNASSIGNED_VALUE ? "" : modalStageId;
+    if (origStageId !== newStageId) {
+      const oldStage =
+        stages.find((s) => s.id === origStageId)?.title || "Unassigned";
+      const newStage =
+        stages.find((s) => s.id === newStageId)?.title || "Unassigned";
+      changes.stage = { from: oldStage, to: newStage };
+    }
+
+    // Check for rating changes
+    if (originalState.rating !== modalRating) {
+      changes.rating = { from: originalState.rating, to: modalRating };
+    }
+
+    // Check for category changes
+    const origCategory =
+      originalState.category === NONE_CATEGORY_VALUE
+        ? ""
+        : originalState.category;
+    const newCategory =
+      modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory;
+    if (origCategory !== newCategory) {
+      changes.category = {
+        from: origCategory || "None",
+        to: newCategory || "None",
+      };
+    }
+
+    // Check for tags changes - handle array comparison
+    if (JSON.stringify(originalState.tags) !== JSON.stringify(modalTags)) {
+      changes.tags = {
+        from:
+          originalState.tags.length > 0
+            ? originalState.tags.join(", ")
+            : "None",
+        to: modalTags.length > 0 ? modalTags.join(", ") : "None",
+      };
+    }
+
+    // Check for skills changes
+    if (JSON.stringify(originalState.skills) !== JSON.stringify(modalSkills)) {
+      changes.skills = {
+        from:
+          originalState.skills.length > 0
+            ? originalState.skills.join(", ")
+            : "None",
+        to: modalSkills.length > 0 ? modalSkills.join(", ") : "None",
+      };
+    }
+
+    // Check for experience changes
+    if (originalState.experience !== modalExperience) {
+      changes.experience = {
+        from: originalState.experience || "None",
+        to: modalExperience || "None",
+      };
+    }
+
+    // Check for education changes
+    if (originalState.education !== modalEducation) {
+      changes.education = {
+        from: originalState.education || "None",
+        to: modalEducation || "None",
+      };
+    }
+
+    // Check for notes changes (only track that they changed, not the content)
+    if (originalState.notes !== modalNotes) {
+      changes.notes = { from: "Previous notes", to: "Updated notes" };
+    }
+
+    return changes;
+  };
+
+  // Generate history entries from detected changes
+  const generateHistoryEntries = (
+    changes: Record<string, { from: any; to: any }>
+  ) => {
+    const entries: HistoryEntry[] = [];
+    const timestamp = new Date().toISOString();
+
+    Object.entries(changes).forEach(([field, { from, to }]) => {
+      let note = "";
+
+      switch (field) {
+        case "stage":
+          note = `Stage changed from "${from}" to "${to}"`;
+          break;
+        case "rating":
+          note = `Rating changed from ${from} to ${to} stars`;
+          break;
+        case "category":
+          note = `Category changed from "${from}" to "${to}"`;
+          break;
+        case "tags":
+          note = `Tags updated from [${from}] to [${to}]`;
+          break;
+        case "skills":
+          note = `Skills updated from [${from}] to [${to}]`;
+          break;
+        case "experience":
+          note = `Experience updated from "${from}" to "${to}"`;
+          break;
+        case "education":
+          note = `Education information updated`;
+          break;
+        case "notes":
+          note = `Notes were updated`;
+          break;
+        default:
+          note = `${field} was updated`;
+      }
+
+      entries.push({
+        date: timestamp,
+        note: note,
+      });
+    });
+
+    return entries;
+  };
+
   // 6. Open candidate detail
   const openCandidateDetail = (cand: Candidate) => {
     setDetailCandidate(cand);
@@ -241,6 +379,18 @@ export default function CandidatesPage() {
     setModalNewHistory("");
     setModalExperience(cand.experience || "");
     setActiveTab("details");
+
+    // Store the original state for change tracking
+    setOriginalState({
+      skills: [...(cand.skills || [])],
+      education: cand.education || "",
+      notes: cand.notes || "",
+      rating: cand.rating || 0,
+      stageId: cand.stageId || UNASSIGNED_VALUE,
+      tags: [...(cand.tags || [])],
+      category: cand.category || NONE_CATEGORY_VALUE,
+      experience: cand.experience || "",
+    });
   };
 
   // 7. Save candidate detail changes
@@ -250,6 +400,13 @@ export default function CandidatesPage() {
     try {
       setIsSubmitting(true);
       const saveLoading = toast.loading("Saving changes...");
+
+      // Detect changes for history
+      const changes = detectChanges();
+      const hasChanges = Object.keys(changes).length > 0;
+
+      // Generate history entries for the changes
+      const changeHistoryEntries = generateHistoryEntries(changes);
 
       const ref = doc(db, "candidates", detailCandidate.id);
       const updatedData = {
@@ -267,18 +424,31 @@ export default function CandidatesPage() {
         updatedAt: new Date().toISOString(),
       };
 
-      // If user typed a new history note
+      // Add any automatically generated history entries
+      if (changeHistoryEntries.length > 0) {
+        updatedData.history = [...modalHistory, ...changeHistoryEntries];
+      }
+
+      // If user typed a new history note, add it as well
       if (modalNewHistory.trim()) {
         const newEntry = {
           date: new Date().toISOString(),
           note: modalNewHistory.trim(),
         };
-        updatedData.history = [...modalHistory, newEntry];
+        updatedData.history = [...updatedData.history, newEntry];
       }
 
       await updateDoc(ref, updatedData);
       toast.dismiss(saveLoading);
-      toast.success("Candidate updated successfully");
+
+      if (hasChanges) {
+        toast.success(
+          `Candidate updated with ${changeHistoryEntries.length} changes tracked`
+        );
+      } else {
+        toast.success("Candidate updated successfully");
+      }
+
       closeDetail();
     } catch (err) {
       console.error("Error saving candidate detail:", err);
@@ -323,18 +493,38 @@ export default function CandidatesPage() {
 
       for (const id of selectedCandidateIds) {
         const candidateRef = doc(db, "candidates", id);
+        const candidate = candidates.find((c) => c.id === id);
+
+        if (!candidate) continue;
+
+        // Create history entry for this action
+        const historyEntry: HistoryEntry = {
+          date: new Date().toISOString(),
+          note: "",
+        };
 
         if (action === "stage" && bulkStageId) {
+          const oldStage =
+            stages.find((s) => s.id === candidate.stageId)?.title ||
+            "Unassigned";
+          const newStage =
+            stages.find((s) => s.id === bulkStageId)?.title || "Unassigned";
+
+          historyEntry.note = `Stage changed from "${oldStage}" to "${newStage}" via bulk update`;
+
           await updateDoc(candidateRef, {
             stageId: bulkStageId,
+            history: [...(candidate.history || []), historyEntry],
             updatedAt: new Date().toISOString(),
           });
         } else if (action === "tag" && bulkTag) {
-          const candidate = candidates.find((c) => c.id === id);
           const currentTags = candidate?.tags || [];
           if (!currentTags.includes(bulkTag)) {
+            historyEntry.note = `Tag "${bulkTag}" added via bulk update`;
+
             await updateDoc(candidateRef, {
               tags: [...currentTags, bulkTag],
+              history: [...(candidate.history || []), historyEntry],
               updatedAt: new Date().toISOString(),
             });
           }
@@ -363,6 +553,7 @@ export default function CandidatesPage() {
 
   const closeDetail = () => {
     setDetailCandidate(null);
+    setOriginalState(null);
   };
 
   // Reset rating
@@ -889,6 +1080,10 @@ export default function CandidatesPage() {
                         onChange={(e) => setModalNewHistory(e.target.value)}
                         className="resize-none"
                       />
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Note: The system automatically tracks changes to
+                        candidate information
+                      </p>
                     </CardContent>
                   </Card>
 
@@ -902,7 +1097,8 @@ export default function CandidatesPage() {
                         <AlertCircle className="mb-2 h-6 w-6 opacity-40" />
                         <p className="italic">No history entries yet</p>
                         <p className="text-xs mt-1">
-                          Add your first entry in the form above
+                          History will be automatically tracked when you make
+                          changes
                         </p>
                       </div>
                     ) : (
