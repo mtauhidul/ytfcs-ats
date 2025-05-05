@@ -12,6 +12,7 @@ import {
   Mail,
   RefreshCw,
   Upload,
+  UploadCloud,
   Zap,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
@@ -516,16 +517,10 @@ export default function ImportPage() {
               }
               className="space-y-4"
             >
-              <TabsList className="grid grid-cols-3 w-full">
-                <TabsTrigger value="file" className="text-sm">
-                  Upload File
-                </TabsTrigger>
-                <TabsTrigger
-                  value="ai"
-                  className="flex items-center gap-1.5 text-sm"
-                >
-                  <Zap className="size-3.5" />
-                  <span>AI Parse</span>
+              <TabsList className="grid grid-cols-2 w-full">
+                <TabsTrigger value="file" className="text-sm ">
+                  <UploadCloud className="size-3.5" />
+                  Upload
                 </TabsTrigger>
                 <TabsTrigger
                   value="email"
