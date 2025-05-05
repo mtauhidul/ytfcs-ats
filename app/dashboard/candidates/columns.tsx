@@ -198,15 +198,28 @@ export const columns: ColumnDef<Candidate>[] = [
       const updatedAt = row.original.updatedAt;
       if (!updatedAt) return <span className="text-muted-foreground">—</span>;
 
-      // Format date to be readable
-      const date = new Date(updatedAt);
-      const formatted = new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }).format(date);
+      try {
+        // Format date to be readable - with error handling
+        const date = new Date(updatedAt);
 
-      return <span className="text-sm text-muted-foreground">{formatted}</span>;
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+          return <span className="text-muted-foreground">Invalid date</span>;
+        }
+
+        const formatted = new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }).format(date);
+
+        return (
+          <span className="text-sm text-muted-foreground">{formatted}</span>
+        );
+      } catch (error) {
+        console.error("Error formatting date:", error);
+        return <span className="text-muted-foreground">Invalid date</span>;
+      }
     },
     size: 120,
   },
