@@ -7,6 +7,7 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type PaginationState,
   type SortingState,
 } from "@tanstack/react-table";
 import {
@@ -50,7 +51,10 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
   // State for pagination
-  const [pageSize, setPageSize] = React.useState(10);
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  });
 
   // State for row selection
   const [rowSelection, setRowSelection] = React.useState({});
@@ -68,6 +72,7 @@ export function DataTable<TData, TValue>({
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
     onRowSelectionChange: (updater) => {
       const newSelection =
         typeof updater === "function" ? updater(rowSelection) : updater;
@@ -78,7 +83,7 @@ export function DataTable<TData, TValue>({
     },
     state: {
       sorting,
-      pagination: { pageSize, pageIndex: 0 },
+      pagination,
       rowSelection,
       globalFilter,
     },
@@ -161,11 +166,13 @@ export function DataTable<TData, TValue>({
           <div className="flex items-center gap-1 text-xs pl-2">
             <span>Show</span>
             <Select
-              value={String(pageSize)}
-              onValueChange={(value) => setPageSize(Number(value))}
+              value={String(pagination.pageSize)}
+              onValueChange={(value) => {
+                table.setPageSize(Number(value));
+              }}
             >
               <SelectTrigger className="h-7 w-[70px] text-xs">
-                <SelectValue placeholder={String(pageSize)} />
+                <SelectValue placeholder={String(pagination.pageSize)} />
               </SelectTrigger>
               <SelectContent>
                 {[5, 10, 20, 50, 100].map((size) => (
