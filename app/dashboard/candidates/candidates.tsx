@@ -1699,48 +1699,89 @@ export default function CandidatesPage() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="history" className="py-0 min-h-[400px]">
-                  <Card>
-                    <CardContent>
-                      <p className="text-xs text-muted-foreground">
-                        Note: The system automatically tracks changes to
-                        candidate information
-                      </p>
-                    </CardContent>
-                  </Card>
+                <TabsContent value="history" className="py-2 min-h-[400px]">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Shield className="text-primary/70 size-4" />
+                        <h3 className="font-medium">History Timeline</h3>
+                      </div>
+                    </div>
 
-                  <div className="mt-6">
-                    <h3 className="text-sm font-medium mb-3">
-                      History Timeline
-                    </h3>
+                    <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2 mb-2">
+                      <AlertCircle className="size-4 text-blue-500/70" />
+                      <p className="text-xs text-muted-foreground">
+                        The system automatically tracks changes to candidate
+                        information
+                      </p>
+                    </div>
 
                     {modalHistory.length === 0 ? (
-                      <div className="text-sm text-muted-foreground py-10 flex flex-col items-center border rounded-md">
-                        <AlertCircle className="mb-2 h-6 w-6 opacity-40" />
-                        <p className="italic">No history entries yet</p>
-                        <p className="text-xs mt-1">
-                          History will be automatically tracked when you make
-                          changes
+                      <div className="text-center py-10 border-dashed border rounded-md bg-muted/5">
+                        <AlertCircle className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+                        <p className="text-muted-foreground text-sm">
+                          No history entries yet
                         </p>
                       </div>
                     ) : (
-                      <div className="border rounded-md overflow-hidden">
-                        <ScrollArea className="h-[350px] pr-4">
-                          <div className="space-y-3 p-4">
-                            {[...modalHistory].reverse().map((entry, idx) => (
+                      <ScrollArea className="h-[300px] pr-4">
+                        <div className="space-y-2.5 pb-1">
+                          {[...modalHistory].reverse().map((entry, idx) => {
+                            // Determine icon and color based on content
+                            let Icon = AlertCircle;
+                            let iconColor = "text-blue-500";
+
+                            if (entry.note.includes("Stage changed")) {
+                              Icon = TagIcon;
+                              iconColor = "text-violet-500";
+                            } else if (entry.note.includes("Rating changed")) {
+                              Icon = AlertCircle;
+                              iconColor = "text-amber-500";
+                            } else if (entry.note.includes("Tags updated")) {
+                              Icon = TagIcon;
+                              iconColor = "text-emerald-500";
+                            } else if (
+                              entry.note.includes("uploaded") ||
+                              entry.note.includes("Document")
+                            ) {
+                              Icon = FileText;
+                              iconColor = "text-red-500";
+                            } else if (
+                              entry.note.includes("Notes were updated")
+                            ) {
+                              Icon = MessageCircle;
+                              iconColor = "text-sky-500";
+                            }
+
+                            return (
                               <div
                                 key={idx}
-                                className="border-l-2 border-muted pl-3 py-2 hover:border-primary transition-colors"
+                                className="border rounded-md bg-background overflow-hidden hover:shadow-sm transition-all"
                               >
-                                <p className="text-xs text-muted-foreground">
-                                  {new Date(entry.date).toLocaleString()}
-                                </p>
-                                <p className="text-sm mt-1">{entry.note}</p>
+                                <div className="flex items-center border-b border-muted/30 px-3 py-1.5 bg-muted/5">
+                                  <Icon
+                                    className={`size-3.5 mr-2 ${iconColor}`}
+                                  />
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(entry.date).toLocaleString(
+                                      undefined,
+                                      {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      }
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="p-2.5">
+                                  <p className="text-sm">{entry.note}</p>
+                                </div>
                               </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </div>
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
                     )}
                   </div>
                 </TabsContent>
