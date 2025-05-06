@@ -130,6 +130,7 @@ export default function CandidatesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedbackList, setFeedbackList] = useState<FeedbackEntry[]>([]);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
+  const [isLoadingCommunications, setIsLoadingCommunications] = useState(false);
 
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
@@ -319,6 +320,51 @@ export default function CandidatesPage() {
     return () => unsubscribe();
   }, []);
 
+  // Real-time Firestore communications
+  const fetchCandidateMessages = async (candidateId: string) => {
+    if (!candidateId) return;
+
+    try {
+      setIsLoadingCommunications(true);
+
+      // Simplified query that doesn't require a composite index
+      // Just fetch messages by recipientId without ordering
+      const messagesQuery = query(
+        collection(db, "messages"),
+        where("recipientId", "==", candidateId)
+      );
+
+      const messagesSnapshot = await getDocs(messagesQuery);
+
+      // Map the documents to our CommunicationEntry interface
+      const communicationEntries = messagesSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          date: data.sentAt || "",
+          message: data.body || "",
+          type: "sent", // All messages from collection are sent messages
+          sender: "HR Team", // Default sender
+          subject: data.subject || "",
+          read: true, // Messages from our system are always marked as read
+        } as CommunicationEntry;
+      });
+
+      // Sort manually in memory (client-side) instead of using Firestore's orderBy
+      communicationEntries.sort((a, b) => {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+
+      // Update the communications state
+      setModalCommunications(communicationEntries);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      toast.error("Failed to load communication history");
+    } finally {
+      setIsLoadingCommunications(false);
+    }
+  };
+
   // 5. Filter (search) logic
   const filteredCandidates = useMemo(() => {
     const f = globalFilter.toLowerCase();
@@ -494,7 +540,12 @@ export default function CandidatesPage() {
     setModalTags(cand.tags || []);
     setModalCategory(cand.category || NONE_CATEGORY_VALUE);
     setModalHistory(cand.history || []);
+
+    // Initialize with any existing communications from the candidate object
     setModalCommunications(cand.communications || []);
+
+    // Fetch additional messages from the messages collection
+    fetchCandidateMessages(cand.id);
 
     // Documents should already be prepared from the data fetch
     setModalDocuments(cand.documents || []);
@@ -1801,7 +1852,14 @@ export default function CandidatesPage() {
                       </Button>
                     </div>
 
-                    {modalCommunications.length === 0 ? (
+                    {isLoadingCommunications ? (
+                      <div className="flex flex-col items-center justify-center h-[350px] border rounded-md">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary/60 mb-2" />
+                        <p className="text-sm text-muted-foreground">
+                          Loading messages...
+                        </p>
+                      </div>
+                    ) : modalCommunications.length === 0 ? (
                       <div className="text-center py-12 border rounded-md bg-muted/20">
                         <MessageSquare className="size-8 mx-auto mb-2 text-muted-foreground/50" />
                         <p className="text-muted-foreground">
@@ -1812,64 +1870,67 @@ export default function CandidatesPage() {
                         </p>
                       </div>
                     ) : (
-                      <div className="border rounded-md overflow-hidden">
-                        <ScrollArea className="h-[350px] pr-4">
-                          <div className="space-y-3 p-4">
-                            {[...modalCommunications]
-                              .sort(
-                                (a, b) =>
-                                  new Date(b.date).getTime() -
-                                  new Date(a.date).getTime()
-                              )
-                              .map((comm) => (
-                                <div
-                                  key={comm.id}
-                                  className={`border p-3 rounded-md hover:border-primary transition-colors ${
-                                    comm.type === "received" && !comm.read
-                                      ? "bg-muted/30 border-primary/50"
-                                      : ""
-                                  }`}
-                                  onClick={() => {
-                                    if (
-                                      comm.type === "received" &&
-                                      !comm.read
-                                    ) {
-                                      markMessageAsRead(comm.id);
-                                    }
-                                  }}
-                                >
-                                  <div className="flex justify-between items-start mb-1">
-                                    <div className="flex items-center gap-2">
-                                      <Badge
-                                        variant={
-                                          comm.type === "sent"
-                                            ? "default"
-                                            : "secondary"
-                                        }
-                                        className="text-xs"
-                                      >
-                                        {comm.type === "sent"
-                                          ? "Sent"
-                                          : "Received"}
-                                      </Badge>
-                                      <span className="text-sm font-medium">
-                                        {comm.sender}
-                                      </span>
-                                    </div>
-                                    <span className="text-xs text-muted-foreground">
-                                      {new Date(comm.date).toLocaleString()}
+                      <div className="border rounded-md overflow-hidden bg-background">
+                        <ScrollArea className="h-[350px]">
+                          <div className="space-y-1 p-3">
+                            {modalCommunications.map((comm) => (
+                              <div
+                                key={comm.id}
+                                className={`border p-3 rounded-md hover:border-primary/40 transition-colors ${
+                                  comm.type === "received" && !comm.read
+                                    ? "bg-muted/30 border-primary/50"
+                                    : "bg-card"
+                                }`}
+                                onClick={() => {
+                                  if (comm.type === "received" && !comm.read) {
+                                    markMessageAsRead(comm.id);
+                                  }
+                                }}
+                              >
+                                <div className="flex justify-between items-start mb-1">
+                                  <div className="flex items-center gap-2">
+                                    <Badge
+                                      variant={
+                                        comm.type === "sent"
+                                          ? "default"
+                                          : "secondary"
+                                      }
+                                      className="text-xs py-0 h-5"
+                                    >
+                                      {comm.type === "sent"
+                                        ? "Sent"
+                                        : "Received"}
+                                    </Badge>
+                                    <span className="text-sm font-medium">
+                                      {comm.type === "sent"
+                                        ? "HR Team"
+                                        : detailCandidate?.name}
                                     </span>
                                   </div>
-                                  {comm.subject && (
-                                    <p className="text-sm font-medium mb-1">
-                                      {comm.subject}
-                                    </p>
-                                  )}
-                                  <p className="text-sm mt-1 whitespace-pre-line">
-                                    {comm.message}
-                                  </p>
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(comm.date).toLocaleString(
+                                      undefined,
+                                      {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      }
+                                    )}
+                                  </span>
                                 </div>
-                              ))}
+                                {comm.subject && (
+                                  <p className="text-sm font-medium mb-1">
+                                    {comm.subject}
+                                  </p>
+                                )}
+                                <p className="text-sm mt-1 whitespace-pre-line text-muted-foreground">
+                                  {comm.message.length > 120
+                                    ? `${comm.message.substring(0, 120)}...`
+                                    : comm.message}
+                                </p>
+                              </div>
+                            ))}
                           </div>
                         </ScrollArea>
                       </div>
