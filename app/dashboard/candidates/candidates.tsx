@@ -6,10 +6,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import {
   deleteObject,
@@ -105,6 +107,18 @@ interface CommunicationEntry {
   read?: boolean; // Whether the message has been read
 }
 
+interface FeedbackEntry {
+  id: string;
+  candidateId: string;
+  teamMemberId: string;
+  teamMemberName: string;
+  rating: number;
+  recommendation: string;
+  strengths: string;
+  weaknesses: string;
+  createdAt: string;
+}
+
 // Constants for empty values - fixes the SelectItem empty value issue
 const UNASSIGNED_VALUE = "unassigned";
 const NONE_CATEGORY_VALUE = "none";
@@ -114,6 +128,8 @@ export default function CandidatesPage() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedbackList, setFeedbackList] = useState<FeedbackEntry[]>([]);
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
 
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
@@ -170,7 +186,47 @@ export default function CandidatesPage() {
   // Track original state for change detection
   const [originalState, setOriginalState] = useState<any>(null);
 
-  // 1. Real-time Firestore candidates
+  // 1. Fetch Feedbacks - real-time
+  const fetchCandidateFeedback = async (candidateId: string) => {
+    if (!candidateId) return;
+
+    try {
+      setIsFeedbackLoading(true);
+
+      // Create a query to get feedback for this specific candidate
+      const q = query(
+        collection(db, "feedback"),
+        where("candidateId", "==", candidateId)
+      );
+
+      // Get the documents
+      const querySnapshot = await getDocs(q);
+
+      // Map the documents to our FeedbackEntry interface
+      const feedbackEntries = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          candidateId: data.candidateId || "",
+          teamMemberId: data.teamMemberId || "",
+          teamMemberName: data.teamMemberName || "",
+          rating: data.rating || 0,
+          recommendation: data.recommendation || "",
+          strengths: data.strengths || "",
+          weaknesses: data.weaknesses || "",
+          createdAt: data.createdAt || new Date().toISOString(),
+        } as FeedbackEntry;
+      });
+
+      setFeedbackList(feedbackEntries);
+    } catch (error) {
+      console.error("Error fetching feedback:", error);
+      toast.error("Failed to load feedback");
+    } finally {
+      setIsFeedbackLoading(false);
+    }
+  };
+
   // In your first useEffect for fetching candidates
   useEffect(() => {
     const q = query(collection(db, "candidates"));
@@ -447,6 +503,9 @@ export default function CandidatesPage() {
     if (cand.documents && cand.documents.length > 0) {
       loadDocumentUrls(cand.documents);
     }
+
+    // Fetch feedback for this candidate
+    fetchCandidateFeedback(cand.id);
 
     setModalNewHistory("");
     setModalExperience(cand.experience || "");
@@ -1778,25 +1837,119 @@ export default function CandidatesPage() {
                 </TabsContent>
 
                 <TabsContent value="feedback" className="py-2 min-h-[400px]">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center mb-2">
                       <h3 className="font-medium">Interview Feedback</h3>
-                      <Button size="sm">
-                        <Clipboard className="size-4 mr-2" />
-                        Add Feedback
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        asChild
+                        className="h-8"
+                      >
+                        <Link
+                          to={`/dashboard/feedback/new?candidateId=${detailCandidate?.id}`}
+                        >
+                          <Clipboard className="size-4 mr-1" />
+                          Add Feedback
+                        </Link>
                       </Button>
                     </div>
 
-                    {/* Show placeholder if no feedback */}
-                    <div className="text-center py-12 border rounded-md bg-muted/20">
-                      <ClipboardCheck className="size-8 mx-auto mb-2 text-muted-foreground/50" />
-                      <p className="text-muted-foreground">
-                        No feedback submitted yet
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Team feedback for this candidate will appear here
-                      </p>
-                    </div>
+                    {isFeedbackLoading ? (
+                      <div className="flex items-center justify-center h-40">
+                        <Loader2 className="h-7 w-7 animate-spin text-primary/60" />
+                      </div>
+                    ) : feedbackList.length === 0 ? (
+                      <div className="text-center py-8 border border-dashed rounded-md bg-muted/10">
+                        <ClipboardCheck className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+                        <p className="text-muted-foreground text-sm">
+                          No feedback submitted yet
+                        </p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-[350px] pr-4">
+                        <div className="space-y-3 pb-2">
+                          {feedbackList.map((feedback) => (
+                            <Card
+                              key={feedback.id}
+                              className="overflow-hidden shadow-sm border-muted/80 hover:border-primary/50 transition-colors"
+                            >
+                              <div className="p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <UserIcon className="size-4 text-muted-foreground" />
+                                    <span className="text-sm font-medium">
+                                      {feedback.teamMemberName}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {new Date(
+                                        feedback.createdAt
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge
+                                      variant={
+                                        feedback.recommendation === "consider"
+                                          ? "outline"
+                                          : feedback.recommendation === "reject"
+                                          ? "destructive"
+                                          : "default"
+                                      }
+                                      className="text-xs font-medium py-0 h-5"
+                                    >
+                                      {feedback.recommendation
+                                        .charAt(0)
+                                        .toUpperCase() +
+                                        feedback.recommendation.slice(1)}
+                                    </Badge>
+                                    <div className="flex">
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <svg
+                                          key={star}
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          className={`h-3.5 w-3.5 ${
+                                            star <= feedback.rating
+                                              ? "fill-amber-400 text-amber-400"
+                                              : "text-gray-300"
+                                          }`}
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                        </svg>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                  {feedback.strengths && (
+                                    <div className="bg-muted/10 p-2 rounded border border-muted/40">
+                                      <div className="text-xs font-medium text-emerald-600 mb-1">
+                                        Strengths
+                                      </div>
+                                      <p className="text-xs">
+                                        {feedback.strengths}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {feedback.weaknesses && (
+                                    <div className="bg-muted/10 p-2 rounded border border-muted/40">
+                                      <div className="text-xs font-medium text-amber-600 mb-1">
+                                        Areas for Improvement
+                                      </div>
+                                      <p className="text-xs">
+                                        {feedback.weaknesses}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
                   </div>
                 </TabsContent>
 
