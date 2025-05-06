@@ -1887,9 +1887,7 @@ export default function CandidatesPage() {
                         asChild
                         className="h-8"
                       >
-                        <Link
-                          to={`/dashboard/feedback/new?candidateId=${detailCandidate?.id}`}
-                        >
+                        <Link to={`/dashboard/collaboration`}>
                           <Clipboard className="size-4 mr-1" />
                           Add Feedback
                         </Link>
