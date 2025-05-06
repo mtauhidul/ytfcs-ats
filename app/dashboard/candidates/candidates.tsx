@@ -12,6 +12,12 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytesResumable,
+} from "firebase/storage";
+import {
   AlertCircle,
   Clipboard,
   ClipboardCheck,
@@ -28,11 +34,10 @@ import {
   TagIcon,
   Trash2,
   Upload,
-  UploadCloud,
   UserIcon,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import { Link } from "react-router";
@@ -61,6 +66,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { Progress } from "~/components/ui/progress";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import {
   Select,
@@ -71,9 +77,9 @@ import {
 } from "~/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
-import { db } from "~/lib/firebase";
+import { db, storage } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
-import { columns, type Candidate } from "./columns";
+import { columns, type Candidate, type CandidateDocument } from "./columns";
 
 interface Stage {
   id: string;
@@ -146,15 +152,50 @@ export default function CandidatesPage() {
     CommunicationEntry[]
   >([]);
 
+  // Documents state
+  const [modalDocuments, setModalDocuments] = useState<CandidateDocument[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showDocumentDeleteDialog, setShowDocumentDeleteDialog] =
+    useState(false);
+  const [documentToDelete, setDocumentToDelete] =
+    useState<CandidateDocument | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Document preview
+  const [previewDocument, setPreviewDocument] =
+    useState<CandidateDocument | null>(null);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+
   // Track original state for change detection
   const [originalState, setOriginalState] = useState<any>(null);
 
   // 1. Real-time Firestore candidates
+  // In your first useEffect for fetching candidates
   useEffect(() => {
     const q = query(collection(db, "candidates"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
+
+        // Create documents array that includes the resume if it exists
+        let documents = data.documents || [];
+
+        // If resumeFileURL exists and documents array is empty, add the resume
+        if (data.resumeFileURL && documents.length === 0) {
+          const resumeDoc: CandidateDocument = {
+            id: docSnap.id + "-resume",
+            name: data.originalFilename || "Resume.pdf",
+            type: data.fileType || "application/pdf",
+            size: data.fileSize || 0,
+            uploadDate:
+              data.updatedAt || data.createdAt || new Date().toISOString(),
+            path: data.resumeFileURL,
+            url: data.resumeFileURL,
+          };
+          documents = [resumeDoc];
+        }
+
         return {
           id: docSnap.id,
           name: data.name || "",
@@ -169,7 +210,13 @@ export default function CandidatesPage() {
           skills: data.skills || [],
           notes: data.notes || "",
           history: data.history || [],
-          communications: data.communications || [], // Add communications
+          communications: data.communications || [],
+          documents: documents, // Use our constructed documents array
+          resumeFileURL: data.resumeFileURL,
+          originalFilename: data.originalFilename,
+          fileType: data.fileType,
+          fileSize: data.fileSize,
+          createdAt: data.createdAt,
           updatedAt: data.updatedAt || "",
           onEdit: (cand: Candidate) => openCandidateDetail(cand),
         } as Candidate;
@@ -387,18 +434,25 @@ export default function CandidatesPage() {
     setModalEducation(cand.education || "");
     setModalNotes(cand.notes || "");
     setModalRating(cand.rating || 0);
-    // If stageId is empty, set to UNASSIGNED_VALUE instead
     setModalStageId(cand.stageId || UNASSIGNED_VALUE);
     setModalTags(cand.tags || []);
-    // If category is empty, set to NONE_CATEGORY_VALUE instead
     setModalCategory(cand.category || NONE_CATEGORY_VALUE);
     setModalHistory(cand.history || []);
-    setModalCommunications(cand.communications || []); // Set communications
+    setModalCommunications(cand.communications || []);
+
+    // Documents should already be prepared from the data fetch
+    setModalDocuments(cand.documents || []);
+
+    // Load document URLs if needed
+    if (cand.documents && cand.documents.length > 0) {
+      loadDocumentUrls(cand.documents);
+    }
+
     setModalNewHistory("");
     setModalExperience(cand.experience || "");
     setActiveTab("details");
 
-    // Store the original state for change tracking
+    // Store original state for change tracking
     setOriginalState({
       skills: [...(cand.skills || [])],
       education: cand.education || "",
@@ -409,6 +463,29 @@ export default function CandidatesPage() {
       category: cand.category || NONE_CATEGORY_VALUE,
       experience: cand.experience || "",
     });
+  };
+
+  // Load the download URLs for documents
+  const loadDocumentUrls = async (documents: CandidateDocument[]) => {
+    if (!documents.length) return;
+
+    const updatedDocs = await Promise.all(
+      documents.map(async (doc) => {
+        if (!doc.url) {
+          try {
+            const storageRef = ref(storage, doc.path);
+            const url = await getDownloadURL(storageRef);
+            return { ...doc, url };
+          } catch (error) {
+            console.error(`Error loading URL for ${doc.name}:`, error);
+            return doc;
+          }
+        }
+        return doc;
+      })
+    );
+
+    setModalDocuments(updatedDocs);
   };
 
   // Mark a message as read
@@ -462,7 +539,8 @@ export default function CandidatesPage() {
         // Convert back from NONE_CATEGORY_VALUE to empty string for storage
         category: modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory,
         history: modalHistory,
-        communications: modalCommunications, // Save communications
+        communications: modalCommunications,
+        documents: modalDocuments, // Save documents
         experience: modalExperience,
         updatedAt: new Date().toISOString(),
       };
@@ -509,8 +587,20 @@ export default function CandidatesPage() {
       setIsSubmitting(true);
       const deleteLoading = toast.loading("Deleting candidate...");
 
-      const ref = doc(db, "candidates", detailCandidate.id);
-      await deleteDoc(ref);
+      // Delete all associated documents from storage first
+      if (detailCandidate.documents && detailCandidate.documents.length > 0) {
+        for (const document of detailCandidate.documents) {
+          const storageRef = ref(storage, document.path);
+          await deleteObject(storageRef).catch((error) => {
+            console.error(`Error deleting document ${document.name}:`, error);
+            // Continue with deletion even if some files fail to delete
+          });
+        }
+      }
+
+      // Delete the candidate record from Firestore
+      const candidateRef = doc(db, "candidates", detailCandidate.id);
+      await deleteDoc(candidateRef);
 
       toast.dismiss(deleteLoading);
       toast.success("Candidate deleted successfully");
@@ -522,6 +612,270 @@ export default function CandidatesPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Handle file upload
+  // Handle file upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files.length || !detailCandidate) return;
+
+    try {
+      setIsUploading(true);
+      setUploadProgress(0);
+
+      const file = e.target.files[0];
+      const fileId = crypto.randomUUID();
+      const fileName = file.name;
+      const fileType = file.type || getFileExtension(fileName);
+      const filePath = `candidates/${detailCandidate.id}/documents/${fileId}-${fileName}`;
+
+      // Create a reference to the file location in Firebase Storage
+      const storageRef = ref(storage, filePath);
+
+      // Upload file with progress monitoring
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on(
+        "state_changed",
+        (snapshot) => {
+          const progress = Math.round(
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+          );
+          setUploadProgress(progress);
+        },
+        (error) => {
+          console.error("Upload error:", error);
+          toast.error("File upload failed");
+          setIsUploading(false);
+        },
+        async () => {
+          // Upload completed successfully
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+          // Create new document record
+          const newDocument: CandidateDocument = {
+            id: fileId,
+            name: fileName,
+            type: fileType,
+            size: file.size,
+            uploadDate: new Date().toISOString(),
+            path: filePath,
+            url: downloadURL,
+          };
+
+          // Add to documents array
+          const updatedDocuments = [...modalDocuments, newDocument];
+          setModalDocuments(updatedDocuments);
+
+          // Prepare the update data
+          const updateData: any = {
+            documents: updatedDocuments,
+            updatedAt: new Date().toISOString(),
+          };
+
+          // If this is a resume file (PDF or has 'resume' in the name), also update the legacy fields
+          const isResume =
+            fileType.includes("pdf") ||
+            fileName.toLowerCase().includes("resume") ||
+            fileName.toLowerCase().includes("cv");
+
+          if (
+            isResume &&
+            (modalDocuments.length === 0 ||
+              (modalDocuments.length === 1 &&
+                modalDocuments[0].id.includes("-resume")))
+          ) {
+            updateData.resumeFileURL = downloadURL;
+            updateData.originalFilename = fileName;
+            updateData.fileType = fileType;
+            updateData.fileSize = file.size;
+          }
+
+          // Update Firestore with the new document
+          const candidateRef = doc(db, "candidates", detailCandidate.id);
+          await updateDoc(candidateRef, updateData);
+
+          // Add history entry for the document upload
+          const historyEntry: HistoryEntry = {
+            date: new Date().toISOString(),
+            note: `Document "${fileName}" was uploaded`,
+          };
+
+          const updatedHistory = [...modalHistory, historyEntry];
+          setModalHistory(updatedHistory);
+
+          await updateDoc(candidateRef, {
+            history: updatedHistory,
+          });
+
+          toast.success("Document uploaded successfully");
+          setIsUploading(false);
+
+          // Reset the file input
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+        }
+      );
+    } catch (error) {
+      console.error("Error in file upload process:", error);
+      toast.error("File upload process failed");
+      setIsUploading(false);
+    }
+  };
+
+  // Handle document download
+  const handleDocumentDownload = async (candidateDoc: CandidateDocument) => {
+    try {
+      // If we already have the URL, use it, otherwise get it
+      let downloadURL = candidateDoc.url;
+      if (!downloadURL) {
+        const storageRef = ref(storage, candidateDoc.path);
+        downloadURL = await getDownloadURL(storageRef);
+      }
+
+      // Create a temporary link and trigger download
+      const link = globalThis.document.createElement("a");
+      link.href = downloadURL;
+      link.download = candidateDoc.name;
+      globalThis.document.body.appendChild(link);
+      link.click();
+      globalThis.document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error downloading document:", error);
+      toast.error("Failed to download document");
+    }
+  };
+
+  // Handle document preview
+  const handleDocumentPreview = (document: CandidateDocument) => {
+    setPreviewDocument(document);
+    setShowPreviewDialog(true);
+  };
+
+  // Handle document deletion
+  const confirmDeleteDocument = (document: CandidateDocument) => {
+    setDocumentToDelete(document);
+    setShowDocumentDeleteDialog(true);
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!documentToDelete || !detailCandidate) return;
+
+    try {
+      setIsSubmitting(true);
+      const deleteLoading = toast.loading("Deleting document...");
+
+      // Delete from Firebase Storage
+      if (documentToDelete.path) {
+        try {
+          const storageRef = ref(storage, documentToDelete.path);
+          await deleteObject(storageRef);
+        } catch (error) {
+          console.error("Error deleting file from storage:", error);
+          // Continue with deletion even if storage deletion fails
+        }
+      }
+
+      // Update documents array to remove the deleted document
+      const updatedDocuments = modalDocuments.filter(
+        (doc) => doc.id !== documentToDelete.id
+      );
+      setModalDocuments(updatedDocuments);
+
+      // Prepare update data
+      const updateData: any = {
+        documents: updatedDocuments,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // If deleting a resume file (based on ID), also clear the legacy fields
+      if (documentToDelete.id.includes("-resume")) {
+        updateData.resumeFileURL = "";
+        updateData.originalFilename = "";
+        updateData.fileType = "";
+        updateData.fileSize = 0;
+      }
+
+      // Update Firestore
+      const candidateRef = doc(db, "candidates", detailCandidate.id);
+      await updateDoc(candidateRef, updateData);
+
+      // Add history entry for the document deletion
+      const historyEntry: HistoryEntry = {
+        date: new Date().toISOString(),
+        note: `Document "${documentToDelete.name}" was deleted`,
+      };
+
+      const updatedHistory = [...modalHistory, historyEntry];
+      setModalHistory(updatedHistory);
+
+      await updateDoc(candidateRef, {
+        history: updatedHistory,
+      });
+
+      toast.dismiss(deleteLoading);
+      toast.success("Document deleted successfully");
+      setShowDocumentDeleteDialog(false);
+      setDocumentToDelete(null);
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      toast.error("Failed to delete document");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle download all documents
+  const handleDownloadAllDocuments = async () => {
+    if (!modalDocuments.length || !detailCandidate) return;
+
+    const downloadLoading = toast.loading(
+      "Preparing documents for download..."
+    );
+
+    try {
+      // Process each document
+      for (const document of modalDocuments) {
+        let downloadURL = document.url;
+        if (!downloadURL) {
+          const storageRef = ref(storage, document.path);
+          downloadURL = await getDownloadURL(storageRef);
+        }
+
+        // Open each document in a new tab
+        window.open(downloadURL, "_blank");
+      }
+
+      toast.dismiss(downloadLoading);
+      toast.success(`${modalDocuments.length} documents ready for download`);
+    } catch (error) {
+      console.error("Error downloading documents:", error);
+      toast.dismiss(downloadLoading);
+      toast.error("Failed to download some documents");
+    }
+  };
+
+  // Trigger file input click
+  const triggerFileUpload = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // Helper function to get file extension from filename
+  const getFileExtension = (filename: string): string => {
+    const parts = filename.split(".");
+    return parts.length > 1 ? `.${parts[parts.length - 1].toLowerCase()}` : "";
+  };
+
+  // Helper function to format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   // Record a communication to history
@@ -607,6 +961,19 @@ export default function CandidatesPage() {
             });
           }
         } else if (action === "delete") {
+          // Delete any documents from storage before deleting the candidate
+          if (candidate.documents && candidate.documents.length > 0) {
+            for (const document of candidate.documents) {
+              const storageRef = ref(storage, document.path);
+              await deleteObject(storageRef).catch((error) => {
+                console.error(
+                  `Error deleting document ${document.name}:`,
+                  error
+                );
+                // Continue deletion even if document deletion fails
+              });
+            }
+          }
           await deleteDoc(candidateRef);
         }
       }
@@ -664,6 +1031,25 @@ export default function CandidatesPage() {
       .map(([id]) => id);
 
     setSelectedCandidateIds(selectedIds);
+  };
+
+  // Get icon for file type
+  const getFileIcon = (fileType: string) => {
+    if (fileType.includes("pdf")) {
+      return <FileText className="size-5 text-red-500" />;
+    } else if (fileType.includes("word") || fileType.includes("doc")) {
+      return <FileText className="size-5 text-blue-500" />;
+    } else if (
+      fileType.includes("excel") ||
+      fileType.includes("sheet") ||
+      fileType.includes("xls")
+    ) {
+      return <FileText className="size-5 text-green-500" />;
+    } else if (fileType.includes("image")) {
+      return <FileText className="size-5 text-purple-500" />;
+    } else {
+      return <FileText className="size-5 text-gray-500" />;
+    }
   };
 
   if (loading) {
@@ -791,6 +1177,14 @@ export default function CandidatesPage() {
         />
       </div>
 
+      {/* Hidden file input for document upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        className="hidden"
+      />
+
       {/* Candidate Detail Modal */}
       {detailCandidate && (
         <div
@@ -900,6 +1294,108 @@ export default function CandidatesPage() {
               </TabsList>
 
               <ScrollArea className="flex-grow">
+                {/* Document Preview Dialog */}
+                <Dialog
+                  open={showPreviewDialog}
+                  onOpenChange={setShowPreviewDialog}
+                >
+                  <DialogContent className="max-w-4xl w-full max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                      <DialogTitle>{previewDocument?.name}</DialogTitle>
+                      <DialogDescription>
+                        {previewDocument && (
+                          <span className="text-xs">
+                            {formatFileSize(previewDocument.size)} • Uploaded{" "}
+                            {new Date(
+                              previewDocument.uploadDate
+                            ).toLocaleDateString()}
+                          </span>
+                        )}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex-grow flex items-center justify-center overflow-auto border rounded-md bg-muted/20 p-2 min-h-[400px]">
+                      {previewDocument?.url ? (
+                        previewDocument.type.includes("pdf") ? (
+                          <iframe
+                            src={`${previewDocument.url}#toolbar=0`}
+                            className="w-full h-full min-h-[400px]"
+                            title={previewDocument.name}
+                          />
+                        ) : previewDocument.type.includes("image") ? (
+                          <img
+                            src={previewDocument.url}
+                            alt={previewDocument.name}
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        ) : (
+                          <div className="text-center p-8">
+                            <FileText className="size-12 mx-auto mb-4 text-muted-foreground" />
+                            <p>Preview not available for this file type</p>
+                            <Button
+                              onClick={() =>
+                                handleDocumentDownload(previewDocument)
+                              }
+                              className="mt-4"
+                            >
+                              <Download className="size-4 mr-2" />
+                              Download to View
+                            </Button>
+                          </div>
+                        )
+                      ) : (
+                        <div className="flex flex-col items-center">
+                          <Loader2 className="size-8 animate-spin mb-4" />
+                          <p>Loading document...</p>
+                        </div>
+                      )}
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleDocumentDownload(previewDocument!)}
+                      >
+                        <Download className="size-4 mr-2" />
+                        Download
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Document Delete Confirmation Dialog */}
+                <AlertDialog
+                  open={showDocumentDeleteDialog}
+                  onOpenChange={setShowDocumentDeleteDialog}
+                >
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently
+                        delete the document
+                        <strong> {documentToDelete?.name}</strong>.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isSubmitting}>
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDeleteDocument}
+                        disabled={isSubmitting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          "Delete"
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <TabsContent value="details" className="py-2 min-h-[400px]">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
@@ -1309,53 +1805,109 @@ export default function CandidatesPage() {
                     <div className="flex justify-between items-center">
                       <h3 className="font-medium">Candidate Documents</h3>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleDownloadAllDocuments}
+                          disabled={!modalDocuments.length}
+                        >
                           <Download className="size-4 mr-2" />
                           Download All
                         </Button>
-                        <Button size="sm">
-                          <Upload className="size-4 mr-2" />
-                          Upload
+                        <Button
+                          size="sm"
+                          onClick={triggerFileUpload}
+                          disabled={isUploading}
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="size-4 mr-2 animate-spin" />
+                              Uploading...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="size-4 mr-2" />
+                              Upload
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Resume document */}
-                      <div className="border rounded-md p-4 flex flex-col">
-                        <div className="flex items-center mb-2">
-                          <FileText className="size-5 mr-2 text-muted-foreground" />
-                          <span className="font-medium truncate flex-1">
-                            Resume.pdf
-                          </span>
+                    {/* Upload progress bar */}
+                    {isUploading && (
+                      <div className="mb-4">
+                        <div className="flex justify-between mb-1 text-xs">
+                          <span>Uploading...</span>
+                          <span>{uploadProgress}%</span>
                         </div>
-                        <div className="text-xs text-muted-foreground mb-3">
-                          Uploaded on {new Date().toLocaleDateString()}
-                        </div>
-                        <div className="flex justify-between mt-auto pt-2">
-                          <Button size="sm" variant="ghost">
-                            <Eye className="size-4 mr-1" />
-                            View
-                          </Button>
-                          <Button size="sm" variant="ghost">
-                            <Download className="size-4 mr-1" />
-                            Download
-                          </Button>
-                        </div>
+                        <Progress value={uploadProgress} />
                       </div>
+                    )}
 
-                      {/* Placeholder for additional documents */}
-                      <div className="border border-dashed rounded-md p-4 flex flex-col items-center justify-center text-center py-8 text-muted-foreground">
-                        <UploadCloud className="size-8 mb-2 opacity-40" />
-                        <p className="text-sm">
-                          Drag & drop additional documents
+                    {/* Document list or empty state */}
+                    {modalDocuments.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {modalDocuments.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="border rounded-md p-4 flex flex-col hover:border-primary transition-colors"
+                          >
+                            <div className="flex items-center mb-2">
+                              {getFileIcon(doc.type)}
+                              <span className="font-medium truncate flex-1 ml-2">
+                                {doc.name}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mb-3">
+                              <div>Size: {formatFileSize(doc.size)}</div>
+                              <div>
+                                Uploaded:{" "}
+                                {new Date(doc.uploadDate).toLocaleDateString()}
+                              </div>
+                            </div>
+                            <div className="flex justify-between mt-auto pt-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDocumentPreview(doc)}
+                              >
+                                <Eye className="size-4 mr-1" />
+                                View
+                              </Button>
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleDocumentDownload(doc)}
+                                >
+                                  <Download className="size-4 mr-1" />
+                                  Download
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={() => confirmDeleteDocument(doc)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="border rounded-lg p-6 flex flex-col items-center justify-center text-center py-16">
+                        <FileText className="size-10 text-muted-foreground/50 mb-4" />
+                        <h3 className="text-lg font-medium mb-1">
+                          No documents uploaded yet
+                        </h3>
+                        <p className="text-muted-foreground">
+                          Documents will appear here once uploaded
                         </p>
-                        <p className="text-xs mt-1">or</p>
-                        <Button size="sm" variant="outline" className="mt-2">
-                          Browse Files
-                        </Button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </TabsContent>
               </ScrollArea>

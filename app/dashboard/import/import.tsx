@@ -35,8 +35,9 @@ import { Progress } from "~/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { resetImport, updateParsedData } from "~/features/candidateImportSlice";
-import { db } from "~/lib/firebase";
+import { db, storage } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
 import type { ImportedCandidate } from "~/types/email";
 import EmailImport from "./email-import";
@@ -334,6 +335,12 @@ export default function ImportPage() {
     try {
       setSaveStatus("saving");
 
+      // Upload file to Firebase Storage if available
+      let resumeFileURL = null;
+      if (file) {
+        resumeFileURL = await uploadFileToStorage(file);
+      }
+
       // Create candidate object with all required fields
       const candidateData = {
         ...parsedData,
@@ -363,6 +370,12 @@ export default function ImportPage() {
         // Source tracking
         source: "resume_upload",
         importMethod: "ai_parser",
+
+        // Resume file URL - new field
+        resumeFileURL: resumeFileURL,
+        originalFilename: file ? file.name : parsedData.originalFilename,
+        fileType: file ? file.type : parsedData.fileType,
+        fileSize: file ? file.size : parsedData.fileSize,
       };
 
       // Add document to Firestore
@@ -478,6 +491,33 @@ export default function ImportPage() {
         dispatch(updateParsedData(parsedCandidate));
         setParsingProgress(100);
       }
+    }
+  };
+
+  const uploadFileToStorage = async (file: File): Promise<string | null> => {
+    if (!file) return null;
+
+    try {
+      // Create a unique filename based on original name and timestamp
+      const timestamp = new Date().getTime();
+      const fileExtension = file.name.split(".").pop();
+      const uniqueFilename = `resumes/${timestamp}_${file.name}`;
+
+      // Create a reference to the file location in Firebase Storage
+      const storageRef = ref(storage, uniqueFilename);
+
+      // Upload the file
+      const snapshot = await uploadBytes(storageRef, file);
+
+      // Get the download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+
+      console.log("File uploaded successfully:", downloadURL);
+      return downloadURL;
+    } catch (error) {
+      console.error("Error uploading file to Firebase Storage:", error);
+      toast.error("Failed to upload resume file");
+      return null;
     }
   };
 

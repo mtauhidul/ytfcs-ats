@@ -6,7 +6,18 @@ import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn } from "~/lib/utils";
 
-export type Candidate = {
+// Document interface
+export interface CandidateDocument {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  uploadDate: string;
+  path?: string; // Make path optional if not always present
+  url?: string;
+}
+
+export interface Candidate {
   id: string;
   name: string;
   email?: string;
@@ -20,6 +31,13 @@ export type Candidate = {
   education?: string;
   skills?: string[];
   notes?: string;
+  documents: CandidateDocument[];
+  // Legacy resume fields
+  resumeFileURL?: string;
+  originalFilename?: string;
+  fileType?: string;
+  fileSize?: number;
+  createdAt?: string;
   history?: { date: string; note: string }[];
   communications?: {
     id: string;
@@ -32,7 +50,7 @@ export type Candidate = {
   }[];
   updatedAt?: string;
   onEdit?: (c: Candidate) => void;
-};
+}
 
 const RatingStars = ({ rating }: { rating: number }) => (
   <div className="flex justify-start">

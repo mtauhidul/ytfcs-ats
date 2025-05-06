@@ -1,6 +1,7 @@
 // app/dashboard/import/email-import.tsx
 
 import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage"; // Add Firebase Storage imports
 import {
   Calendar,
   Check,
@@ -38,7 +39,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import { db } from "~/lib/firebase";
+import { db, storage } from "~/lib/firebase"; // Add storage import
 
 // Email provider types
 export type EmailProvider = "gmail" | "outlook" | "other";
@@ -82,11 +83,31 @@ interface EmailImportProps {
   onImportComplete: (data: any) => void;
 }
 
+// Updated imported candidate interface to include file URL
+export interface ImportedCandidate {
+  name: string;
+  email: string;
+  skills?: string[];
+  experience?: string;
+  education?: string;
+  resumeText?: string;
+  linkedIn?: string;
+  location?: string;
+  languages?: string[];
+  jobTitle?: string;
+  resumeFileName?: string | null;
+  originalFilename?: string | null;
+  resumeFileURL?: string | null; // Allow null
+  fileType?: string | null; // Allows both string and null
+  fileSize?: number | null; // Allow null
+  source?: string;
+}
+
 // Default API endpoint for email operations
 const API_ENDPOINT = import.meta.env.VITE_API_URL || "";
 
 // Email import hook
-export const useEmailImport = () => {
+export const useEmailImport = (onImportComplete?: (data: any) => void) => {
   // Connection states
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -112,6 +133,39 @@ export const useEmailImport = () => {
   const [imapPort, setImapPort] = useState("993");
   const [imapUsername, setImapUsername] = useState("");
   const [imapPassword, setImapPassword] = useState("");
+
+  // Function to upload attachment to Firebase Storage
+  const uploadAttachmentToStorage = async (
+    emailId: string,
+    attachment: EmailAttachment,
+    fileBuffer: ArrayBuffer
+  ): Promise<string | null> => {
+    if (!attachment || !fileBuffer) return null;
+
+    try {
+      // Create a unique filename
+      const timestamp = new Date().getTime();
+      const filename = `email-attachments/${emailId}/${timestamp}_${attachment.name}`;
+
+      // Create a storage reference
+      const storageRef = ref(storage, filename);
+
+      // Create a Blob from the buffer
+      const fileBlob = new Blob([fileBuffer], { type: attachment.contentType });
+
+      // Upload the file
+      const snapshot = await uploadBytes(storageRef, fileBlob);
+
+      // Get the download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+
+      console.log("Email attachment uploaded successfully:", downloadURL);
+      return downloadURL;
+    } catch (error) {
+      console.error("Error uploading email attachment:", error);
+      return null;
+    }
+  };
 
   // Check for existing connection on mount
   useEffect(() => {
@@ -343,6 +397,7 @@ export const useEmailImport = () => {
     }
   };
 
+  // Updated to process and store email attachments
   const processSelectedEmails = async () => {
     if (selectedEmails.length === 0) {
       toast.error("No emails selected");
@@ -418,8 +473,8 @@ export const useEmailImport = () => {
             Math.round((completed / selectedEmailObjects.length) * 80)
           );
 
-          // Prepare candidate data
-          const candidateData = {
+          // Initialize candidate data without file attachment info
+          let candidateData = {
             name: email.from.name,
             email: email.from.email,
             source: "email_import",
@@ -433,7 +488,73 @@ export const useEmailImport = () => {
                 note: `Imported from email with subject: "${email.subject}"`,
               },
             ],
+            originalFilename: null as string | null,
+            fileType: null as string | null,
+            fileSize: null as number | null,
+            resumeFileURL: null as string | null, // Added property
           };
+
+          // If the email has attachments that are resumes, try to download and store them
+          if (email.hasAttachments && email.attachments) {
+            const resumeAttachments = email.attachments.filter(
+              (att) => att.isResume
+            );
+            if (resumeAttachments.length > 0) {
+              // Just use the first resume attachment for simplicity
+              const resumeAttachment = resumeAttachments[0];
+
+              try {
+                // Download attachment
+                const attachmentResponse = await fetch(
+                  `${
+                    import.meta.env.VITE_API_URL || ""
+                  }/email/download-attachment`,
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "x-api-key": import.meta.env.VITE_API_KEY || "",
+                    },
+                    body: JSON.stringify({
+                      ...emailCredentials,
+                      emailId: email.id,
+                      attachmentId: resumeAttachment.id,
+                    }),
+                  }
+                );
+
+                if (attachmentResponse.ok) {
+                  const attachmentData = await attachmentResponse.json();
+
+                  if (attachmentData.success && attachmentData.data) {
+                    // Convert base64 to ArrayBuffer
+                    const base64Content = attachmentData.data.content;
+                    const binaryContent = atob(base64Content);
+                    const bytes = new Uint8Array(binaryContent.length);
+                    for (let i = 0; i < binaryContent.length; i++) {
+                      bytes[i] = binaryContent.charCodeAt(i);
+                    }
+
+                    // Upload to Firebase Storage
+                    const resumeFileURL = await uploadAttachmentToStorage(
+                      email.id,
+                      resumeAttachment,
+                      bytes.buffer
+                    );
+
+                    // Add the file URL to candidate data
+                    candidateData.resumeFileURL = resumeFileURL;
+                    candidateData.originalFilename = resumeAttachment.name;
+                    candidateData.fileType = resumeAttachment.contentType;
+                    candidateData.fileSize = resumeAttachment.size;
+                  }
+                }
+              } catch (error) {
+                console.error("Error processing attachment:", error);
+                // Continue with import even if attachment processing fails
+              }
+            }
+          }
 
           // Store imported candidates in Firestore
           try {
@@ -477,9 +598,7 @@ export const useEmailImport = () => {
     }
   };
 
-  // Add this function to process email attachments in the useEmailImport hook
-
-  // Process email attachment (resume)
+  // Updated to download and store attachment
   const processEmailAttachment = async (
     emailId: string,
     attachmentId: string
@@ -492,7 +611,71 @@ export const useEmailImport = () => {
     try {
       const processingToast = toast.loading("Processing attachment...");
 
-      // Make API call to process the attachment
+      // First, download the actual attachment file
+      const attachmentResponse = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/download-attachment`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_API_KEY || "",
+          },
+          body: JSON.stringify({
+            ...emailCredentials,
+            emailId,
+            attachmentId,
+          }),
+        }
+      );
+
+      if (!attachmentResponse.ok) {
+        throw new Error("Failed to download attachment");
+      }
+
+      // Get attachment data
+      const attachmentData = await attachmentResponse.json();
+      let resumeFileURL = null;
+      let fileMetadata = {
+        filename: "",
+        contentType: "",
+        size: 0,
+      };
+
+      // If we have the attachment content, upload it to Firebase Storage
+      if (attachmentData.success && attachmentData.data) {
+        // Convert base64 to ArrayBuffer
+        const base64Content = attachmentData.data.content;
+        const binaryContent = atob(base64Content);
+        const bytes = new Uint8Array(binaryContent.length);
+        for (let i = 0; i < binaryContent.length; i++) {
+          bytes[i] = binaryContent.charCodeAt(i);
+        }
+
+        // Store file metadata
+        fileMetadata = {
+          filename: attachmentData.data.filename,
+          contentType: attachmentData.data.contentType,
+          size: bytes.length,
+        };
+
+        // Get attachment info
+        const attachment = {
+          id: attachmentId,
+          name: attachmentData.data.filename,
+          contentType: attachmentData.data.contentType,
+          size: bytes.length,
+          isResume: true,
+        };
+
+        // Upload to Firebase Storage
+        resumeFileURL = await uploadAttachmentToStorage(
+          emailId,
+          attachment,
+          bytes.buffer
+        );
+      }
+
+      // Make API call to process the attachment for parsing
       const response = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/email/parse-attachment`,
         {
@@ -521,8 +704,17 @@ export const useEmailImport = () => {
         throw new Error("Invalid response from attachment parsing API");
       }
 
-      // Return the parsed data
-      return result.data;
+      // Add resumeFileURL to the parsed data
+      const parsedData = {
+        ...result.data,
+        resumeFileURL: resumeFileURL,
+        originalFilename: fileMetadata.filename,
+        fileType: fileMetadata.contentType,
+        fileSize: fileMetadata.size,
+      };
+
+      // Return the parsed data with the file URL
+      return parsedData;
     } catch (error) {
       console.error("Error processing email attachment:", error);
       toast.error(
@@ -565,6 +757,9 @@ export const useEmailImport = () => {
         languages: parsedData.languages || [],
         jobTitle: parsedData.jobTitle || "",
         resumeFileName: attachment.name,
+        resumeFileURL: parsedData.resumeFileURL, // Include the file URL
+        fileType: parsedData.fileType,
+        fileSize: parsedData.fileSize,
         source: "email_attachment",
       });
     }
@@ -644,6 +839,7 @@ export const useEmailImport = () => {
     toggleEmailSelection,
     toggleSelectAll,
     processSelectedEmails,
+    handleProcessAttachment,
   };
 };
 
@@ -681,7 +877,8 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     toggleSelectAll,
     processSelectedEmails,
     filteredEmails, // Ensure filteredEmails is destructured here
-  } = useEmailImport();
+    handleProcessAttachment, // Add this function to component props
+  } = useEmailImport(onImportComplete);
 
   return (
     <div className="space-y-4">
@@ -1100,9 +1297,13 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                                   }
                                   className={`text-xs px-1.5 py-0.5 ${
                                     attachment.isResume
-                                      ? "bg-primary/10 text-primary border-primary/20"
+                                      ? "bg-primary/10 text-primary border-primary/20 cursor-pointer"
                                       : ""
                                   }`}
+                                  onClick={() =>
+                                    attachment.isResume &&
+                                    handleProcessAttachment(email, attachment)
+                                  }
                                 >
                                   {attachment.name.length > 25
                                     ? `${attachment.name.substring(0, 25)}...`
@@ -1181,30 +1382,3 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
 };
 
 export default EmailImport;
-function onImportComplete(data: {
-  name: string;
-  email: string;
-  skills: string[];
-  experience: string;
-  education: string;
-  resumeText: string;
-  linkedIn: string;
-  location: string;
-  languages: string[];
-  jobTitle: string;
-  resumeFileName: string;
-  source: string;
-}) {
-  console.log("Candidate imported successfully:", data);
-
-  // Example: Display a success toast
-  toast.success(`Candidate ${data.name} imported successfully!`);
-
-  // Example: Save the imported candidate data to a database or state
-  // This could involve calling an API or updating a local state
-  // For example:
-  // saveCandidateToDatabase(data);
-
-  // Example: Update UI or trigger any additional actions
-  // This could involve refreshing a list of candidates or navigating to another page
-}
