@@ -8,6 +8,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import {
@@ -25,9 +26,13 @@ import {
   MoreHorizontal,
   Pencil,
   Phone,
+  Plus,
   RefreshCw,
+  Save,
   Search,
   SearchIcon,
+  Settings,
+  SettingsIcon,
   Trash2,
   X,
 } from "lucide-react";
@@ -113,6 +118,20 @@ interface MessageForm {
   type: "email" | "sms";
 }
 
+interface EmailVariable {
+  key: string;
+  name: string;
+  value: string;
+  description: string;
+}
+
+interface EmailSettings {
+  id: string;
+  companyName: string;
+  variables: EmailVariable[];
+  updatedAt?: string;
+}
+
 export default function CommunicationPage() {
   // State for data
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
@@ -123,6 +142,7 @@ export default function CommunicationPage() {
     templates: true,
     candidates: true,
     messages: true,
+    settings: true,
   });
 
   // Get the current user from auth context
@@ -167,6 +187,35 @@ export default function CommunicationPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("compose");
   const [viewMessageDialog, setViewMessageDialog] = useState(false);
+
+  // State for email settings
+  const [emailSettings, setEmailSettings] = useState<EmailSettings>({
+    id: "email-settings",
+    companyName: "Your Company",
+    variables: [
+      {
+        key: "company_name",
+        name: "Company Name",
+        value: "Your Company",
+        description: "The name of your company",
+      },
+      {
+        key: "job_title",
+        name: "Job Title",
+        value: "Open Position",
+        description: "Default job title for communications",
+      },
+    ],
+  });
+  const [newVariableKey, setNewVariableKey] = useState("");
+  const [newVariableName, setNewVariableName] = useState("");
+  const [newVariableValue, setNewVariableValue] = useState("");
+  const [newVariableDescription, setNewVariableDescription] = useState("");
+  const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
+  const [isEditVariableOpen, setIsEditVariableOpen] = useState(false);
+  const [editingVariable, setEditingVariable] = useState<EmailVariable | null>(
+    null
+  );
 
   // Fetch email templates
   useEffect(() => {
@@ -235,6 +284,52 @@ export default function CommunicationPage() {
         }))
       );
     });
+    return () => unsubscribe();
+  }, []);
+
+  // Update the email settings fetching effect:
+  useEffect(() => {
+    const settingsDocRef = doc(db, "settings", "email-settings");
+
+    // Use onSnapshot for real-time updates
+    const unsubscribe = onSnapshot(settingsDocRef, async (docSnap) => {
+      try {
+        if (docSnap.exists()) {
+          setEmailSettings(docSnap.data() as EmailSettings);
+        } else {
+          // Create default settings if none exist
+          const defaultSettings = {
+            id: "email-settings",
+            companyName: "Your Company",
+            variables: [
+              {
+                key: "company_name",
+                name: "Company Name",
+                value: "Your Company",
+                description: "The name of your company",
+              },
+              {
+                key: "job_title",
+                name: "Job Title",
+                value: "Open Position",
+                description: "Default job title for communications",
+              },
+            ],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          await setDoc(settingsDocRef, defaultSettings);
+          setEmailSettings(defaultSettings);
+        }
+        setLoading((prev) => ({ ...prev, settings: false }));
+      } catch (error) {
+        console.error("Error fetching email settings:", error);
+        toast.error("Failed to load email settings");
+        setLoading((prev) => ({ ...prev, settings: false }));
+      }
+    });
+
     return () => unsubscribe();
   }, []);
 
@@ -349,27 +444,42 @@ export default function CommunicationPage() {
         return;
       }
 
-      // Create a message record (modify the status to 'sending')
+      // Replace variables in subject and body before sending
+      const replacedSubject = replaceTemplateVariables(
+        messageForm.subject,
+        messageForm.recipientId,
+        emailSettings
+      );
+
+      const replacedBody = replaceTemplateVariables(
+        messageForm.body,
+        messageForm.recipientId,
+        emailSettings
+      );
+
+      // Create a message record with replaced content
       const messageData = {
         ...messageForm,
         candidateId: messageForm.recipientId,
         candidateName: recipient.name || "",
-        status: "sending", // Change to 'sending' instead of 'sent'
+        subject: replacedSubject,
+        body: replacedBody,
+        status: "sending" as const,
         sentAt: new Date().toISOString(),
       };
 
-      // Save the message to firestore first
+      // Save the message to firestore
       const docRef = await addDoc(collection(db, "messages"), messageData);
 
-      // Actually send the email via backend
+      // Send the email with replaced content
       try {
         await emailService.sendCandidateEmail({
           messageId: docRef.id,
           candidateId: messageForm.recipientId,
           candidateName: recipient.name,
           candidateEmail: recipient.email,
-          subject: messageForm.subject,
-          body: messageForm.body,
+          subject: replacedSubject, // Use replaced subject
+          body: replacedBody, // Use replaced body
           type: messageForm.type,
           senderName: user?.name || "Hiring Team",
         });
@@ -405,7 +515,7 @@ export default function CommunicationPage() {
           toast.error("Failed to send email. Message saved as draft.");
         }
 
-        throw emailError; // Re-throw to be caught by the outer catch
+        throw emailError;
       }
 
       // Reset form
@@ -419,7 +529,6 @@ export default function CommunicationPage() {
       toast.success(`Message sent to ${recipient.name} successfully`);
     } catch (error) {
       console.error("Error sending message:", error);
-      // Only show the generic error if it wasn't already handled in the inner catch
       if (
         !(error instanceof Error && error.message.includes("rate limit")) &&
         !(error instanceof Error && error.message.includes("authentication"))
@@ -444,6 +553,132 @@ export default function CommunicationPage() {
     }
   };
 
+  const handleAddVariable = async () => {
+    if (!newVariableKey || !newVariableName || !newVariableValue) {
+      toast.error("Please fill out all variable fields");
+      return;
+    }
+
+    // Check if key already exists
+    const keyExists = emailSettings.variables.some(
+      (v) => v.key === newVariableKey
+    );
+    if (keyExists) {
+      toast.error(`Variable with key '${newVariableKey}' already exists`);
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const newVar: EmailVariable = {
+        key: newVariableKey,
+        name: newVariableName,
+        value: newVariableValue,
+        description: newVariableDescription,
+      };
+
+      const updatedSettings = {
+        ...emailSettings,
+        variables: [...emailSettings.variables, newVar],
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Save to Firestore immediately
+      await setDoc(doc(db, "settings", "email-settings"), updatedSettings);
+
+      // Update local state
+      setEmailSettings(updatedSettings);
+
+      // Reset form
+      setNewVariableKey("");
+      setNewVariableName("");
+      setNewVariableValue("");
+      setNewVariableDescription("");
+      setIsAddVariableOpen(false);
+
+      toast.success(`Added variable: ${newVariableName}`);
+    } catch (error) {
+      console.error("Error adding variable:", error);
+      toast.error("Failed to add variable");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditVariable = async () => {
+    if (!editingVariable) return;
+
+    try {
+      setIsSubmitting(true);
+
+      const updatedVariables = emailSettings.variables.map((v) =>
+        v.key === editingVariable.key ? editingVariable : v
+      );
+
+      const updatedSettings = {
+        ...emailSettings,
+        variables: updatedVariables,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Save to Firestore immediately
+      await setDoc(doc(db, "settings", "email-settings"), updatedSettings);
+
+      // Update local state
+      setEmailSettings(updatedSettings);
+
+      setEditingVariable(null);
+      setIsEditVariableOpen(false);
+      toast.success(`Updated variable: ${editingVariable.name}`);
+    } catch (error) {
+      console.error("Error updating variable:", error);
+      toast.error("Failed to update variable");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteVariable = async (key: string) => {
+    // Don't allow deleting core variables
+    if (key === "company_name" || key === "job_title") {
+      toast.error("Cannot delete core system variables");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const updatedVariables = emailSettings.variables.filter(
+        (v) => v.key !== key
+      );
+
+      const updatedSettings = {
+        ...emailSettings,
+        variables: updatedVariables,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Save to Firestore immediately
+      await setDoc(doc(db, "settings", "email-settings"), updatedSettings);
+
+      // Update local state
+      setEmailSettings(updatedSettings);
+
+      toast.success("Variable deleted");
+    } catch (error) {
+      console.error("Error deleting variable:", error);
+      toast.error("Failed to delete variable");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const startEditVariable = (variable: EmailVariable) => {
+    setEditingVariable(variable);
+    setIsEditVariableOpen(true);
+  };
+
   // HELPER FUNCTIONS
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -456,14 +691,28 @@ export default function CommunicationPage() {
     }).format(date);
   };
 
-  const replaceTemplateVariables = (text: string, candidateId: string) => {
+  const replaceTemplateVariables = (
+    text: string,
+    candidateId: string,
+    settings = emailSettings
+  ) => {
     const candidate = candidates.find((c) => c.id === candidateId);
     if (!candidate) return text;
 
-    return text
-      .replace(/{{candidate_name}}/g, candidate.name)
-      .replace(/{{job_title}}/g, "Open Position") // Would come from jobs collection
-      .replace(/{{company_name}}/g, "Your Company"); // Would come from settings
+    let replacedText = text;
+
+    // Replace candidate name
+    replacedText = replacedText.replace(/{{candidate_name}}/g, candidate.name);
+
+    // Replace all custom variables from settings
+    if (settings && settings.variables) {
+      settings.variables.forEach((variable) => {
+        const regex = new RegExp(`{{${variable.key}}}`, "g");
+        replacedText = replacedText.replace(regex, variable.value);
+      });
+    }
+
+    return replacedText;
   };
 
   // Filter candidates based on search query and stage
@@ -518,6 +767,10 @@ export default function CommunicationPage() {
           <TabsTrigger value="templates" className="flex items-center gap-1.5">
             <Copy className="size-4" />
             <span>Email Templates</span>
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-1.5">
+            <Settings className="size-4" />
+            <span>Email Settings</span>
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-1.5">
             <Clock className="size-4" />
@@ -671,12 +924,43 @@ export default function CommunicationPage() {
                 />
                 <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
                   <div>
-                    Use variables:{" "}
-                    <span className="font-mono">{"{{candidate_name}}"}</span>,{" "}
-                    <span className="font-mono">{"{{job_title}}"}</span>,{" "}
-                    <span className="font-mono">{"{{company_name}}"}</span>
+                    Available variables:{" "}
+                    <span
+                      className="font-mono cursor-pointer text-primary hover:underline"
+                      onClick={() => setActiveTab("settings")}
+                    >
+                      Click to manage
+                    </span>
                   </div>
                   <div>{messageForm.body.length} characters</div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <span
+                    className="font-mono bg-muted text-xs px-1.5 py-0.5 rounded cursor-pointer hover:bg-primary/10"
+                    onClick={() =>
+                      setMessageForm({
+                        ...messageForm,
+                        body: messageForm.body + " {{candidate_name}}",
+                      })
+                    }
+                  >
+                    {"{{candidate_name}}"}
+                  </span>
+                  {emailSettings.variables.map((variable) => (
+                    <span
+                      key={variable.key}
+                      className="font-mono bg-muted text-xs px-1.5 py-0.5 rounded cursor-pointer hover:bg-primary/10"
+                      onClick={() =>
+                        setMessageForm({
+                          ...messageForm,
+                          body: messageForm.body + ` {{${variable.key}}}`,
+                        })
+                      }
+                      title={variable.description}
+                    >
+                      {`{{${variable.key}}}`}
+                    </span>
+                  ))}
                 </div>
               </div>
 
@@ -932,20 +1216,26 @@ export default function CommunicationPage() {
 
                 <div className="pt-2 text-xs text-muted-foreground">
                   <p className="mb-1 font-medium">Available variables:</p>
-                  <ul className="list-disc list-inside">
-                    <li>
-                      <span className="font-mono">{"{{candidate_name}}"}</span>{" "}
-                      - The candidate's full name
-                    </li>
-                    <li>
-                      <span className="font-mono">{"{{job_title}}"}</span> -
-                      Position title
-                    </li>
-                    <li>
-                      <span className="font-mono">{"{{company_name}}"}</span> -
-                      Your company name
-                    </li>
-                  </ul>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    <span className="font-mono bg-muted px-1.5 py-0.5 rounded">
+                      {"{{candidate_name}}"}
+                    </span>
+                    {emailSettings.variables.map((variable) => (
+                      <span
+                        key={variable.key}
+                        className="font-mono bg-muted px-1.5 py-0.5 rounded"
+                        title={variable.description}
+                      >
+                        {`{{${variable.key}}}`}
+                      </span>
+                    ))}
+                  </div>
+                  <p
+                    className="mt-2 text-primary hover:underline cursor-pointer"
+                    onClick={() => setActiveTab("settings")}
+                  >
+                    Manage variables in Email Settings
+                  </p>
                 </div>
               </CardContent>
               <CardFooter className="flex justify-between">
@@ -1156,6 +1446,149 @@ export default function CommunicationPage() {
               )}
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="settings">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <SettingsIcon className="size-5" />
+                Email Variables Settings
+              </CardTitle>
+              <CardDescription>
+                Manage email variables for use in templates and messages
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {loading.settings ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span>Loading email settings...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-lg font-medium">
+                        Manage Template Variables
+                      </h3>
+                      <Button
+                        onClick={() => setIsAddVariableOpen(true)}
+                        size="sm"
+                        className="gap-1"
+                      >
+                        <Plus className="size-3.5" />
+                        Add Variable
+                      </Button>
+                    </div>
+
+                    {/* Add overflow-x-auto to create horizontal scrolling when needed */}
+                    <div className="overflow-x-auto">
+                      <div className="border rounded-md overflow-hidden min-w-full">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="bg-muted/50">
+                              <th className="text-left p-3 font-medium">
+                                Name
+                              </th>
+                              <th className="text-left p-3 font-medium">
+                                Variable
+                              </th>
+                              <th className="text-left p-3 font-medium">
+                                Value
+                              </th>
+                              <th className="text-left p-3 font-medium">
+                                Description
+                              </th>
+                              <th className="text-right p-3 font-medium w-[100px]">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {emailSettings.variables.map((variable) => (
+                              <tr
+                                key={variable.key}
+                                className="border-t hover:bg-muted/10"
+                              >
+                                <td className="p-3 font-medium whitespace-nowrap">
+                                  {variable.name}
+                                </td>
+                                <td className="p-3 whitespace-nowrap">
+                                  <code className="font-mono bg-muted/30 px-1.5 py-0.5 rounded text-sm">
+                                    {`{{${variable.key}}}`}
+                                  </code>
+                                </td>
+                                <td className="p-3 max-w-[200px] truncate">
+                                  {variable.value}
+                                </td>
+                                <td className="p-3 text-muted-foreground text-sm max-w-[250px] truncate">
+                                  {variable.description}
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() =>
+                                        startEditVariable(variable)
+                                      }
+                                      className="size-8"
+                                      disabled={isSubmitting}
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() =>
+                                        handleDeleteVariable(variable.key)
+                                      }
+                                      className="size-8 text-destructive hover:text-destructive"
+                                      disabled={
+                                        isSubmitting ||
+                                        variable.key === "company_name" ||
+                                        variable.key === "job_title"
+                                      }
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="bg-muted/20 p-4 rounded-md border flex items-start gap-3">
+                      <InfoIcon className="size-5 mt-0.5 text-muted-foreground" />
+                      <div className="text-sm">
+                        <p className="font-medium mb-1">
+                          Using variables in emails
+                        </p>
+                        <p className="text-muted-foreground">
+                          Variables can be added to email templates and messages
+                          by inserting the variable code (e.g.,{" "}
+                          <code className="bg-muted/50 px-1 rounded">
+                            {"{{company_name}}"}
+                          </code>
+                          ). When the email is sent, these variables will be
+                          replaced with their actual values. The{" "}
+                          <code className="bg-muted/50 px-1 rounded">
+                            {"{{candidate_name}}"}
+                          </code>{" "}
+                          variable is always available and is replaced with the
+                          recipient's name.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="history">
@@ -1449,6 +1882,219 @@ export default function CommunicationPage() {
             >
               <MessageSquarePlus className="mr-2 h-4 w-4" />
               New Message
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Variable Dialog */}
+      <Dialog open={isAddVariableOpen} onOpenChange={setIsAddVariableOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Variable</DialogTitle>
+            <DialogDescription>
+              Create a new variable for use in your email templates and messages
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="variable-key" className="text-sm font-medium">
+                  Variable Key*
+                </Label>
+                <Input
+                  id="variable-key"
+                  value={newVariableKey}
+                  onChange={(e) =>
+                    setNewVariableKey(
+                      e.target.value.replace(/\s+/g, "_").toLowerCase()
+                    )
+                  }
+                  placeholder="e.g. interview_location"
+                  className="mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Used in templates as {"{{"}
+                  {newVariableKey ? newVariableKey : "variable_key"}
+                  {"}}"}
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="variable-name" className="text-sm font-medium">
+                  Display Name*
+                </Label>
+                <Input
+                  id="variable-name"
+                  value={newVariableName}
+                  onChange={(e) => setNewVariableName(e.target.value)}
+                  placeholder="e.g. Interview Location"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="variable-value" className="text-sm font-medium">
+                Default Value*
+              </Label>
+              <Input
+                id="variable-value"
+                value={newVariableValue}
+                onChange={(e) => setNewVariableValue(e.target.value)}
+                placeholder="e.g. Our office at 123 Main St"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label
+                htmlFor="variable-description"
+                className="text-sm font-medium"
+              >
+                Description
+              </Label>
+              <Textarea
+                id="variable-description"
+                value={newVariableDescription}
+                onChange={(e) => setNewVariableDescription(e.target.value)}
+                placeholder="Optional description of what this variable is used for"
+                className="mt-1"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsAddVariableOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddVariable}
+              disabled={
+                !newVariableKey || !newVariableName || !newVariableValue
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Variable
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Variable Dialog */}
+      <Dialog open={isEditVariableOpen} onOpenChange={setIsEditVariableOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Variable</DialogTitle>
+            <DialogDescription>
+              Update the variable for use in your email templates
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingVariable && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label
+                    htmlFor="edit-variable-key"
+                    className="text-sm font-medium"
+                  >
+                    Variable Key
+                  </Label>
+                  <Input
+                    id="edit-variable-key"
+                    value={editingVariable.key}
+                    readOnly
+                    disabled
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Used in templates as {"{{"}
+                    {editingVariable.key}
+                    {"}}"}
+                  </p>
+                </div>
+                <div>
+                  <Label
+                    htmlFor="edit-variable-name"
+                    className="text-sm font-medium"
+                  >
+                    Display Name*
+                  </Label>
+                  <Input
+                    id="edit-variable-name"
+                    value={editingVariable.name}
+                    onChange={(e) =>
+                      setEditingVariable({
+                        ...editingVariable,
+                        name: e.target.value,
+                      })
+                    }
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label
+                  htmlFor="edit-variable-value"
+                  className="text-sm font-medium"
+                >
+                  Default Value*
+                </Label>
+                <Input
+                  id="edit-variable-value"
+                  value={editingVariable.value}
+                  onChange={(e) =>
+                    setEditingVariable({
+                      ...editingVariable,
+                      value: e.target.value,
+                    })
+                  }
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label
+                  htmlFor="edit-variable-description"
+                  className="text-sm font-medium"
+                >
+                  Description
+                </Label>
+                <Textarea
+                  id="edit-variable-description"
+                  value={editingVariable.description}
+                  onChange={(e) =>
+                    setEditingVariable({
+                      ...editingVariable,
+                      description: e.target.value,
+                    })
+                  }
+                  className="mt-1"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditVariableOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEditVariable}
+              disabled={
+                !editingVariable ||
+                !editingVariable.name ||
+                !editingVariable.value
+              }
+            >
+              <Save className="mr-2 h-4 w-4" />
+              Update Variable
             </Button>
           </DialogFooter>
         </DialogContent>
