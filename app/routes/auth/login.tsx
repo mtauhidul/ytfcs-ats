@@ -1,8 +1,8 @@
 // app/routes/auth/login.tsx
 import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
-import { KeyRound, Loader2, Mail } from "lucide-react";
+import { Home, KeyRound, Loader2, Mail } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -178,7 +178,7 @@ export default function LoginPage() {
                   )}
                 </div>
               </CardContent>
-              <CardFooter>
+              <CardFooter className="flex flex-col gap-4">
                 <Button
                   className="w-full"
                   type="submit"
@@ -196,6 +196,13 @@ export default function LoginPage() {
                     </>
                   )}
                 </Button>
+                <Link
+                  to="/"
+                  className="text-xs text-muted-foreground text-center flex items-center justify-center hover:text-primary"
+                >
+                  <Home className="mr-2 h-4 w-4" />
+                  Back to home
+                </Link>
               </CardFooter>
             </form>
           </TabsContent>
@@ -265,6 +272,13 @@ export default function LoginPage() {
                   </Button>{" "}
                   to sign in first.
                 </p>
+                <Link
+                  to="/"
+                  className="text-xs text-muted-foreground text-center flex items-center justify-center hover:text-primary"
+                >
+                  <Home className="mr-2 h-4 w-4" />
+                  Back to home
+                </Link>
               </CardFooter>
             </form>
           </TabsContent>
