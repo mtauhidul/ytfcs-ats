@@ -46,8 +46,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Initial auth state listener
-  // In AuthProvider.tsx, update the Firebase auth state change logic:
+  // Helper function to check if user has password auth method
+  const checkUserHasPassword = (firebaseUser: any): boolean => {
+    return firebaseUser.providerData.some(
+      (provider: any) => provider.providerId === "password"
+    );
+  };
 
   // Initial auth state listener
   useEffect(() => {
@@ -74,6 +78,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           if (!querySnapshot.empty) {
             const teamMemberData = querySnapshot.docs[0].data();
 
+            // Check if user has password provider
+            const hasPassword = checkUserHasPassword(firebaseUser);
+
             // Create combined user object
             const authUser: AuthUser = {
               uid: firebaseUser.uid,
@@ -82,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               role: teamMemberData.role || "Team Member",
               photoUrl:
                 teamMemberData.photoUrl || firebaseUser.photoURL || undefined,
+              hasPassword, // Include the hasPassword property
             };
 
             setUser(authUser);

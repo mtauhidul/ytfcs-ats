@@ -174,6 +174,9 @@ export default function CollaborationPage() {
   // Get the current user from auth context
   const { user } = useAuth();
 
+  // Check if current user is admin
+  const isAdmin = user?.role === "Admin";
+
   // Fetch data
   useEffect(() => {
     // Fetch Candidates
@@ -214,8 +217,8 @@ export default function CollaborationPage() {
     // Fetch Team Members
     const teamQuery = query(collection(db, "teamMembers"), orderBy("name"));
     const teamUnsubscribe = onSnapshot(teamQuery, (snapshot) => {
-      if (snapshot.docs.length === 0) {
-        // If no team members, create default ones
+      if (snapshot.docs.length === 0 && isAdmin) {
+        // If no team members and user is admin, create default ones
         createDefaultTeamMembers();
       } else {
         setTeamMembers(
@@ -252,10 +255,15 @@ export default function CollaborationPage() {
       teamUnsubscribe();
       feedbackUnsubscribe();
     };
-  }, []);
+  }, [isAdmin]);
 
-  // Create default team members if none exist
+  // Create default team members if none exist (admin only)
   const createDefaultTeamMembers = async () => {
+    if (!isAdmin) {
+      console.warn("Only admins can create team members");
+      return;
+    }
+
     try {
       const defaultMembers = [
         {
@@ -285,6 +293,7 @@ export default function CollaborationPage() {
       toast.success("Default team members created");
     } catch (error) {
       console.error("Error creating default team members:", error);
+      toast.error("Failed to create default team members");
     }
   };
 
@@ -340,13 +349,13 @@ export default function CollaborationPage() {
         ? getTeamMemberName(teamMemberId)
         : "Unassigned";
 
-      // ADD THIS NEW CODE: Send email notification
+      // Send email notification
       try {
         await emailService.sendAssignmentNotification({
           candidateId,
           teamMemberId,
           candidateName,
-          assignerName: user?.name || "A team member", // Use logged-in user's name
+          assignerName: user?.name || "A team member",
           candidateEmail: candidates.find((c) => c.id === candidateId)?.email,
           teamMemberEmail: teamMembers.find((t) => t.id === teamMemberId)
             ?.email,
@@ -424,8 +433,13 @@ export default function CollaborationPage() {
     }
   };
 
-  // Handle team member creation
+  // Handle team member creation (admin only)
   const handleAddTeamMember = async () => {
+    if (!isAdmin) {
+      toast.error("Only administrators can add team members");
+      return;
+    }
+
     if (!newTeamMember.name || !newTeamMember.email) {
       toast.error("Please provide name and email");
       return;
@@ -440,7 +454,7 @@ export default function CollaborationPage() {
         createdAt: new Date().toISOString(),
       });
 
-      // ADD THIS NEW CODE: Send invitation email
+      // Send invitation email
       try {
         await emailService.sendTeamMemberNotification({
           type: "invitation",
@@ -485,8 +499,13 @@ export default function CollaborationPage() {
     }
   };
 
-  // Handle team member update
+  // Handle team member update (admin only)
   const handleUpdateTeamMember = async () => {
+    if (!isAdmin) {
+      toast.error("Only administrators can edit team members");
+      return;
+    }
+
     if (
       !editingTeamMember ||
       !editingTeamMember.name ||
@@ -512,7 +531,7 @@ export default function CollaborationPage() {
         updatedAt: new Date().toISOString(),
       });
 
-      // ADD THIS NEW CODE: Only send update email if role changed
+      // Only send update email if role changed
       if (originalTeamMember?.role !== editingTeamMember.role) {
         try {
           await emailService.sendTeamMemberNotification({
@@ -552,8 +571,13 @@ export default function CollaborationPage() {
     }
   };
 
-  // Handle team member deletion
+  // Handle team member deletion (admin only)
   const handleDeleteTeamMember = async (id: string) => {
+    if (!isAdmin) {
+      toast.error("Only administrators can delete team members");
+      return;
+    }
+
     // Check if team member is assigned to any candidates
     const assignedCandidates = candidates.filter((c) => c.assignedTo === id);
 
@@ -736,7 +760,7 @@ export default function CollaborationPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* ASSIGNMENTS TAB */}
+        {/* ASSIGNMENTS TAB - No changes needed */}
         <TabsContent value="assignments" className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
@@ -996,7 +1020,7 @@ export default function CollaborationPage() {
           </Card>
         </TabsContent>
 
-        {/* FEEDBACK TAB */}
+        {/* FEEDBACK TAB - No changes needed */}
         <TabsContent value="feedback" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Feedback Form Card */}
@@ -1204,7 +1228,7 @@ export default function CollaborationPage() {
               </CardFooter>
             </Card>
 
-            {/* Feedback History Card */}
+            {/* Feedback History Card - No changes needed */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1345,7 +1369,7 @@ export default function CollaborationPage() {
           </div>
         </TabsContent>
 
-        {/* TEAM TAB */}
+        {/* TEAM TAB - MODIFIED for admin-only access */}
         <TabsContent value="team" className="space-y-6">
           <Card>
             <CardHeader className="pb-3">
@@ -1356,13 +1380,17 @@ export default function CollaborationPage() {
                     Team Members
                   </CardTitle>
                   <CardDescription>
-                    Manage team members with access to the ATS
+                    {isAdmin
+                      ? "Manage team members with access to the ATS"
+                      : "View team members with access to the ATS"}
                   </CardDescription>
                 </div>
-                <Button onClick={() => setIsNewTeamMemberOpen(true)}>
-                  <UserPlus className="size-4 mr-2" />
-                  Add Team Member
-                </Button>
+                {isAdmin && (
+                  <Button onClick={() => setIsNewTeamMemberOpen(true)}>
+                    <UserPlus className="size-4 mr-2" />
+                    Add Team Member
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -1372,9 +1400,11 @@ export default function CollaborationPage() {
                   <p className="text-muted-foreground font-medium">
                     No team members yet
                   </p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">
-                    Click "Add Team Member" to get started
-                  </p>
+                  {isAdmin && (
+                    <p className="text-sm text-muted-foreground/70 mt-1">
+                      Click "Add Team Member" to get started
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="border rounded-md overflow-x-auto">
@@ -1390,7 +1420,11 @@ export default function CollaborationPage() {
                         <th className="text-left p-3 font-medium">
                           Feedback Given
                         </th>
-                        <th className="text-right p-3 font-medium">Actions</th>
+                        {isAdmin && (
+                          <th className="text-right p-3 font-medium">
+                            Actions
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -1461,49 +1495,51 @@ export default function CollaborationPage() {
                               </span>
                             )}
                           </td>
-                          <td className="p-3 text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                  <span className="sr-only">Open menu</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setEditingTeamMember(member);
-                                    setIsEditTeamMemberOpen(true);
-                                  }}
-                                >
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() =>
-                                    handleDeleteTeamMember(member.id)
-                                  }
-                                  disabled={
-                                    candidates.some(
-                                      (c) => c.assignedTo === member.id
-                                    ) ||
-                                    feedbackRecords.some(
-                                      (f) => f.teamMemberId === member.id
-                                    )
-                                  }
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
+                          {isAdmin && (
+                            <td className="p-3 text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">Open menu</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setEditingTeamMember(member);
+                                      setIsEditTeamMemberOpen(true);
+                                    }}
+                                  >
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() =>
+                                      handleDeleteTeamMember(member.id)
+                                    }
+                                    disabled={
+                                      candidates.some(
+                                        (c) => c.assignedTo === member.id
+                                      ) ||
+                                      feedbackRecords.some(
+                                        (f) => f.teamMemberId === member.id
+                                      )
+                                    }
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -1522,6 +1558,7 @@ export default function CollaborationPage() {
         </TabsContent>
       </Tabs>
 
+      {/* Rest of the dialogs remain unchanged */}
       {/* View Feedback Dialog */}
       <Dialog open={isViewFeedbackOpen} onOpenChange={setIsViewFeedbackOpen}>
         <DialogContent className="max-w-md">
@@ -1603,165 +1640,66 @@ export default function CollaborationPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New Team Member Dialog */}
-      <Dialog open={isNewTeamMemberOpen} onOpenChange={setIsNewTeamMemberOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Team Member</DialogTitle>
-            <DialogDescription>
-              Add a new member to your hiring team
-            </DialogDescription>
-          </DialogHeader>
+      {/* New Team Member Dialog - ADMIN ONLY */}
+      {isAdmin && (
+        <Dialog
+          open={isNewTeamMemberOpen}
+          onOpenChange={setIsNewTeamMemberOpen}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Team Member</DialogTitle>
+              <DialogDescription>
+                Add a new member to your hiring team
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div>
-              <Label htmlFor="name" className="text-sm font-medium">
-                Name
-              </Label>
-              <Input
-                id="name"
-                value={newTeamMember.name}
-                onChange={(e) =>
-                  setNewTeamMember({ ...newTeamMember, name: e.target.value })
-                }
-                placeholder="Full name"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="email" className="text-sm font-medium">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={newTeamMember.email}
-                onChange={(e) =>
-                  setNewTeamMember({ ...newTeamMember, email: e.target.value })
-                }
-                placeholder="Email address"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="role" className="text-sm font-medium">
-                Role
-              </Label>
-              <Select
-                value={newTeamMember.role}
-                onValueChange={(value) =>
-                  setNewTeamMember({ ...newTeamMember, role: value })
-                }
-              >
-                <SelectTrigger id="role" className="mt-1">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Hiring Manager">Hiring Manager</SelectItem>
-                  <SelectItem value="Recruiter">Recruiter</SelectItem>
-                  <SelectItem value="Interviewer">Interviewer</SelectItem>
-                  <SelectItem value="Team Member">Team Member</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsNewTeamMemberOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAddTeamMember}
-              disabled={
-                !newTeamMember.name || !newTeamMember.email || isSubmitting
-              }
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                <>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Add Member
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Team Member Dialog */}
-      <Dialog
-        open={isEditTeamMemberOpen}
-        onOpenChange={setIsEditTeamMemberOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Team Member</DialogTitle>
-            <DialogDescription>
-              Update team member information
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingTeamMember && (
             <div className="grid gap-4 py-4">
               <div>
-                <Label htmlFor="edit-name" className="text-sm font-medium">
+                <Label htmlFor="name" className="text-sm font-medium">
                   Name
                 </Label>
                 <Input
-                  id="edit-name"
-                  value={editingTeamMember.name}
+                  id="name"
+                  value={newTeamMember.name}
                   onChange={(e) =>
-                    setEditingTeamMember({
-                      ...editingTeamMember,
-                      name: e.target.value,
-                    })
+                    setNewTeamMember({ ...newTeamMember, name: e.target.value })
                   }
+                  placeholder="Full name"
                   className="mt-1"
                 />
               </div>
 
               <div>
-                <Label htmlFor="edit-email" className="text-sm font-medium">
+                <Label htmlFor="email" className="text-sm font-medium">
                   Email
                 </Label>
                 <Input
-                  id="edit-email"
+                  id="email"
                   type="email"
-                  value={editingTeamMember.email}
+                  value={newTeamMember.email}
                   onChange={(e) =>
-                    setEditingTeamMember({
-                      ...editingTeamMember,
+                    setNewTeamMember({
+                      ...newTeamMember,
                       email: e.target.value,
                     })
                   }
+                  placeholder="Email address"
                   className="mt-1"
                 />
               </div>
 
               <div>
-                <Label htmlFor="edit-role" className="text-sm font-medium">
+                <Label htmlFor="role" className="text-sm font-medium">
                   Role
                 </Label>
                 <Select
-                  value={editingTeamMember.role}
+                  value={newTeamMember.role}
                   onValueChange={(value) =>
-                    setEditingTeamMember({
-                      ...editingTeamMember,
-                      role: value,
-                    })
+                    setNewTeamMember({ ...newTeamMember, role: value })
                   }
                 >
-                  <SelectTrigger id="edit-role" className="mt-1">
+                  <SelectTrigger id="role" className="mt-1">
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1776,35 +1714,146 @@ export default function CollaborationPage() {
                 </Select>
               </div>
             </div>
-          )}
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsEditTeamMemberOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpdateTeamMember}
-              disabled={
-                !editingTeamMember?.name ||
-                !editingTeamMember?.email ||
-                isSubmitting
-              }
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsNewTeamMemberOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddTeamMember}
+                disabled={
+                  !newTeamMember.name || !newTeamMember.email || isSubmitting
+                }
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Add Member
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Edit Team Member Dialog - ADMIN ONLY */}
+      {isAdmin && (
+        <Dialog
+          open={isEditTeamMemberOpen}
+          onOpenChange={setIsEditTeamMemberOpen}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Team Member</DialogTitle>
+              <DialogDescription>
+                Update team member information
+              </DialogDescription>
+            </DialogHeader>
+
+            {editingTeamMember && (
+              <div className="grid gap-4 py-4">
+                <div>
+                  <Label htmlFor="edit-name" className="text-sm font-medium">
+                    Name
+                  </Label>
+                  <Input
+                    id="edit-name"
+                    value={editingTeamMember.name}
+                    onChange={(e) =>
+                      setEditingTeamMember({
+                        ...editingTeamMember,
+                        name: e.target.value,
+                      })
+                    }
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-email" className="text-sm font-medium">
+                    Email
+                  </Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={editingTeamMember.email}
+                    onChange={(e) =>
+                      setEditingTeamMember({
+                        ...editingTeamMember,
+                        email: e.target.value,
+                      })
+                    }
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-role" className="text-sm font-medium">
+                    Role
+                  </Label>
+                  <Select
+                    value={editingTeamMember.role}
+                    onValueChange={(value) =>
+                      setEditingTeamMember({
+                        ...editingTeamMember,
+                        role: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="edit-role" className="mt-1">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Admin">Admin</SelectItem>
+                      <SelectItem value="Hiring Manager">
+                        Hiring Manager
+                      </SelectItem>
+                      <SelectItem value="Recruiter">Recruiter</SelectItem>
+                      <SelectItem value="Interviewer">Interviewer</SelectItem>
+                      <SelectItem value="Team Member">Team Member</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsEditTeamMemberOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateTeamMember}
+                disabled={
+                  !editingTeamMember?.name ||
+                  !editingTeamMember?.email ||
+                  isSubmitting
+                }
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
