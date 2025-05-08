@@ -8,6 +8,7 @@ import {
   useReactTable,
   type ColumnDef,
   type PaginationState,
+  type RowSelectionState,
   type SortingState,
 } from "@tanstack/react-table";
 import {
@@ -38,7 +39,9 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   globalFilter?: string;
-  onRowSelectionChange?: (rows: { [key: string]: boolean }) => void;
+  onRowSelectionChange?: (rows: RowSelectionState) => void;
+  rowSelection?: RowSelectionState;
+  getRowId?: (row: TData) => string;
 }
 
 export function DataTable<TData, TValue>({
@@ -46,6 +49,8 @@ export function DataTable<TData, TValue>({
   data,
   globalFilter,
   onRowSelectionChange,
+  rowSelection: externalRowSelection,
+  getRowId,
 }: DataTableProps<TData, TValue>) {
   // State for sorting
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -56,8 +61,15 @@ export function DataTable<TData, TValue>({
     pageSize: 10,
   });
 
-  // State for row selection
-  const [rowSelection, setRowSelection] = React.useState({});
+  // State for row selection (internal)
+  const [internalRowSelection, setInternalRowSelection] =
+    React.useState<RowSelectionState>({});
+
+  // Use external state if provided, otherwise use internal state
+  const rowSelection =
+    externalRowSelection !== undefined
+      ? externalRowSelection
+      : internalRowSelection;
 
   // Use memo to prevent unnecessary re-renders
   const memoizedData = React.useMemo(() => data, [data]);
@@ -76,7 +88,11 @@ export function DataTable<TData, TValue>({
     onRowSelectionChange: (updater) => {
       const newSelection =
         typeof updater === "function" ? updater(rowSelection) : updater;
-      setRowSelection(newSelection);
+
+      if (externalRowSelection === undefined) {
+        setInternalRowSelection(newSelection);
+      }
+
       if (onRowSelectionChange) {
         onRowSelectionChange(newSelection);
       }
@@ -89,6 +105,7 @@ export function DataTable<TData, TValue>({
     },
     enableRowSelection: true,
     manualPagination: false,
+    getRowId: getRowId, // Add this line to use the custom row ID function
   });
 
   return (

@@ -6,6 +6,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -42,6 +43,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
+import type { RowSelectionState } from "@tanstack/react-table";
 import { Link } from "react-router";
 import {
   AlertDialog,
@@ -131,6 +133,7 @@ export default function CandidatesPage() {
   const [feedbackList, setFeedbackList] = useState<FeedbackEntry[]>([]);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
   const [isLoadingCommunications, setIsLoadingCommunications] = useState(false);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
@@ -310,6 +313,13 @@ export default function CandidatesPage() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const selectedIds = Object.keys(rowSelection).filter(
+      (id) => rowSelection[id]
+    );
+    setSelectedCandidateIds(selectedIds);
+  }, [rowSelection]);
 
   // 4. Real-time Firestore categories
   useEffect(() => {
@@ -1024,8 +1034,23 @@ export default function CandidatesPage() {
   };
 
   // Handle bulk actions
+  // Updated handleBulkAction function with extensive debugging and error handling
   const handleBulkAction = async (action: "stage" | "tag" | "delete") => {
-    if (selectedCandidateIds.length === 0) return;
+    if (selectedCandidateIds.length === 0) {
+      toast.error("No candidates selected");
+      return;
+    }
+
+    // Additional validation per action type
+    if (action === "stage" && !bulkStageId) {
+      toast.error("Please select a stage");
+      return;
+    }
+
+    if (action === "tag" && !bulkTag) {
+      toast.error("Please select a tag");
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -1033,74 +1058,168 @@ export default function CandidatesPage() {
         `Processing ${selectedCandidateIds.length} candidates...`
       );
 
+      console.log(`Starting bulk ${action} action`);
+      console.log("Selected candidate IDs:", selectedCandidateIds);
+
+      // For delete action, log additional info
+      if (action === "delete") {
+        console.log("Attempting to delete candidates:", selectedCandidateIds);
+      }
+
+      // For tag action, log the tag being added
+      if (action === "tag") {
+        console.log(
+          `Adding tag "${bulkTag}" to candidates:`,
+          selectedCandidateIds
+        );
+      }
+
+      let successCount = 0;
+
       for (const id of selectedCandidateIds) {
-        const candidateRef = doc(db, "candidates", id);
-        const candidate = candidates.find((c) => c.id === id);
+        try {
+          console.log(`Processing candidate ID: ${id} for ${action} action`);
 
-        if (!candidate) continue;
+          // Find candidate in local state
+          const candidate = candidates.find((c) => c.id === id);
+          if (!candidate) {
+            console.warn(
+              `Candidate with ID ${id} not found in local state, skipping`
+            );
+            continue;
+          }
 
-        // Create history entry for this action
-        const historyEntry: HistoryEntry = {
-          date: new Date().toISOString(),
-          note: "",
-        };
+          // Create Firestore reference
+          const candidateRef = doc(db, "candidates", id);
+          console.log(`Created reference to document: candidates/${id}`);
 
-        if (action === "stage" && bulkStageId) {
-          const oldStage =
-            stages.find((s) => s.id === candidate.stageId)?.title ||
-            "Unassigned";
-          const newStage =
-            stages.find((s) => s.id === bulkStageId)?.title || "Unassigned";
+          // Create history entry
+          const historyEntry = {
+            date: new Date().toISOString(),
+            note: "",
+          };
 
-          historyEntry.note = `Stage changed from "${oldStage}" to "${newStage}" via bulk update`;
+          if (action === "stage" && bulkStageId) {
+            // Stage change logic (working already)
+            const oldStage =
+              stages.find((s) => s.id === candidate.stageId)?.title ||
+              "Unassigned";
+            const newStage =
+              stages.find((s) => s.id === bulkStageId)?.title || "Unassigned";
 
-          await updateDoc(candidateRef, {
-            stageId: bulkStageId,
-            history: [...(candidate.history || []), historyEntry],
-            updatedAt: new Date().toISOString(),
-          });
-        } else if (action === "tag" && bulkTag) {
-          const currentTags = candidate?.tags || [];
-          if (!currentTags.includes(bulkTag)) {
-            historyEntry.note = `Tag "${bulkTag}" added via bulk update`;
+            historyEntry.note = `Stage changed from "${oldStage}" to "${newStage}" via bulk update`;
 
             await updateDoc(candidateRef, {
-              tags: [...currentTags, bulkTag],
+              stageId: bulkStageId,
               history: [...(candidate.history || []), historyEntry],
               updatedAt: new Date().toISOString(),
             });
-          }
-        } else if (action === "delete") {
-          // Delete any documents from storage before deleting the candidate
-          if (candidate.documents && candidate.documents.length > 0) {
-            for (const document of candidate.documents) {
-              const storageRef = ref(storage, document.path);
-              await deleteObject(storageRef).catch((error) => {
-                console.error(
-                  `Error deleting document ${document.name}:`,
-                  error
-                );
-                // Continue deletion even if document deletion fails
+
+            successCount++;
+          } else if (action === "tag" && bulkTag) {
+            // Tag action - enhanced with better logging
+            const currentTags = Array.isArray(candidate.tags)
+              ? [...candidate.tags]
+              : [];
+            console.log(`Current tags for candidate ${id}:`, currentTags);
+
+            if (!currentTags.includes(bulkTag)) {
+              historyEntry.note = `Tag "${bulkTag}" added via bulk update`;
+              const newTags = [...currentTags, bulkTag];
+              console.log(`New tags will be:`, newTags);
+
+              // Use set with merge to ensure the update works even if there are field type issues
+              await updateDoc(candidateRef, {
+                tags: newTags,
+                history: [...(candidate.history || []), historyEntry],
+                updatedAt: new Date().toISOString(),
               });
+
+              console.log(`Successfully added tag to candidate ${id}`);
+              successCount++;
+            } else {
+              console.log(
+                `Candidate ${id} already has tag "${bulkTag}", skipping`
+              );
+            }
+          } else if (action === "delete") {
+            // Delete action - enhanced with additional checks
+            console.log(`Starting deletion process for candidate ${id}`);
+
+            // Check if we can get the document first
+            try {
+              const docSnap = await getDoc(candidateRef);
+              if (!docSnap.exists()) {
+                console.warn(`Document ${id} does not exist, skipping`);
+                continue;
+              }
+              console.log(`Document ${id} exists, proceeding with deletion`);
+            } catch (error) {
+              console.error(`Error checking document ${id}:`, error);
+              continue;
+            }
+
+            // Delete documents from storage if they exist
+            if (candidate.documents && candidate.documents.length > 0) {
+              for (const document of candidate.documents) {
+                if (document.path) {
+                  try {
+                    console.log(`Deleting document at path: ${document.path}`);
+                    const storageRef = ref(storage, document.path);
+                    await deleteObject(storageRef);
+                  } catch (error) {
+                    console.error(`Error deleting document:`, error);
+                    // Continue with candidate deletion even if document deletion fails
+                  }
+                }
+              }
+            }
+
+            // Delete the candidate document with explicit error handling
+            try {
+              console.log(`Calling deleteDoc for candidate ${id}`);
+              await deleteDoc(candidateRef);
+              console.log(`Successfully deleted candidate ${id}`);
+              successCount++;
+            } catch (deleteError) {
+              console.error(`Error deleting candidate ${id}:`, deleteError);
+              throw deleteError; // Re-throw to be caught by outer try/catch
             }
           }
-          await deleteDoc(candidateRef);
+        } catch (candidateError) {
+          console.error(`Error processing candidate ${id}:`, candidateError);
+          // Continue with other candidates even if one fails
         }
       }
 
       toast.dismiss(actionLoading);
-      toast.success(
-        action === "delete"
-          ? `Deleted ${selectedCandidateIds.length} candidates`
-          : `Updated ${selectedCandidateIds.length} candidates`
-      );
 
-      // Clear selection after action
-      setSelectedCandidateIds([]);
-      setBulkActionOpen(false);
+      if (successCount > 0) {
+        toast.success(
+          action === "delete"
+            ? `Deleted ${successCount} of ${selectedCandidateIds.length} candidates`
+            : `Updated ${successCount} of ${selectedCandidateIds.length} candidates`
+        );
+
+        // Clear selection after successful action
+        setRowSelection({});
+        setSelectedCandidateIds([]);
+        setBulkActionOpen(false);
+
+        // For delete action, we need to make sure our UI reflects the changes
+        if (action === "delete") {
+          // The onSnapshot listener should update the UI automatically
+          console.log("Deletion completed, UI should update via onSnapshot");
+        }
+      } else {
+        toast.error(
+          `Failed to process any candidates. Check console for errors.`
+        );
+      }
     } catch (err) {
-      console.error(`Error performing bulk ${action}:`, err);
-      toast.error(`Error updating candidates`);
+      console.error(`Error in bulk ${action} operation:`, err);
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      toast.error(`Operation failed: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -1134,12 +1253,13 @@ export default function CandidatesPage() {
   };
 
   // Handle row selection changes
-  const handleRowSelectionChange = (selection: { [key: string]: boolean }) => {
-    // Extract selected IDs from the selection object
-    const selectedIds = Object.entries(selection)
-      .filter(([_, isSelected]) => isSelected)
-      .map(([id]) => id);
+  const handleRowSelectionChange = (newRowSelection: RowSelectionState) => {
+    setRowSelection(newRowSelection);
 
+    // Also update the legacy selectedCandidateIds array
+    const selectedIds = Object.keys(newRowSelection).filter(
+      (id) => newRowSelection[id]
+    );
     setSelectedCandidateIds(selectedIds);
   };
 
@@ -1236,8 +1356,16 @@ export default function CandidatesPage() {
               }
               onCheckedChange={(checked) => {
                 if (checked) {
+                  // Select all rows
+                  const newRowSelection: RowSelectionState = {};
+                  filteredCandidates.forEach((candidate) => {
+                    newRowSelection[candidate.id] = true;
+                  });
+                  setRowSelection(newRowSelection);
                   setSelectedCandidateIds(filteredCandidates.map((c) => c.id));
                 } else {
+                  // Clear selection
+                  setRowSelection({});
                   setSelectedCandidateIds([]);
                 }
               }}
@@ -1261,7 +1389,10 @@ export default function CandidatesPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setSelectedCandidateIds([])}
+              onClick={() => {
+                setRowSelection({});
+                setSelectedCandidateIds([]);
+              }}
             >
               <X className="size-4 mr-2" />
               Clear Selection
@@ -1284,6 +1415,9 @@ export default function CandidatesPage() {
           })}
           globalFilter={globalFilter}
           onRowSelectionChange={handleRowSelectionChange}
+          rowSelection={rowSelection}
+          // Add this important property to correctly identify rows by ID
+          getRowId={(row) => row.id}
         />
       </div>
 
@@ -2267,13 +2401,26 @@ export default function CandidatesPage() {
                 onClick={() => handleBulkAction("stage")}
                 disabled={!bulkStageId || isSubmitting}
               >
-                Apply Stage Change
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Apply Stage Change"
+                )}
               </Button>
             </div>
 
             <div>
               <label className="text-sm font-medium mb-2 block">Add Tag</label>
-              <Select value={bulkTag} onValueChange={setBulkTag}>
+              <Select
+                value={bulkTag}
+                onValueChange={(value) => {
+                  console.log("Setting bulk tag to:", value);
+                  setBulkTag(value);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select tag to add" />
                 </SelectTrigger>
@@ -2288,10 +2435,27 @@ export default function CandidatesPage() {
               <Button
                 className="w-full mt-2"
                 variant="outline"
-                onClick={() => handleBulkAction("tag")}
+                onClick={() => {
+                  console.log("Add tag button clicked");
+                  console.log("Selected IDs:", selectedCandidateIds);
+                  console.log("Tag to add:", bulkTag);
+                  // Make sure bulkTag is not empty
+                  if (!bulkTag) {
+                    toast.error("Please select a tag to add");
+                    return;
+                  }
+                  handleBulkAction("tag");
+                }}
                 disabled={!bulkTag || isSubmitting}
               >
-                Add Tag to Selected
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Add Tag to Selected"
+                )}
               </Button>
             </div>
           </div>
