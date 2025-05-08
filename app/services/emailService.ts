@@ -13,14 +13,11 @@ const getHeaders = () => ({
 export const emailService = {
   // Send notification when candidate is assigned to team member
   sendAssignmentNotification: async (data: { [key: string]: any }) => {
-    const response = await fetch(
-      `${API_URL}/api/email/notifications/assignment`,
-      {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify(data),
-      }
-    );
+    const response = await fetch(`${API_URL}/email/notifications/assignment`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
 
     if (!response.ok) {
       throw new Error("Failed to send assignment notification");
@@ -31,14 +28,11 @@ export const emailService = {
 
   // Send invitation or update to team member
   sendTeamMemberNotification: async (data: { [key: string]: any }) => {
-    const response = await fetch(
-      `${API_URL}/api/email/notifications/team-member`,
-      {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify(data),
-      }
-    );
+    const response = await fetch(`${API_URL}/email/notifications/team-member`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
 
     if (!response.ok) {
       throw new Error("Failed to send team member notification");
@@ -49,7 +43,7 @@ export const emailService = {
 
   // Send communication to candidate
   sendCandidateEmail: async (data: { [key: string]: any }) => {
-    const response = await fetch(`${API_URL}/api/email/communications/send`, {
+    const response = await fetch(`${API_URL}/email/communications/send`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -64,7 +58,7 @@ export const emailService = {
 
   // Import candidates from email
   importCandidatesFromEmail: async (credentials: { [key: string]: any }) => {
-    const response = await fetch(`${API_URL}/api/email/import/candidates`, {
+    const response = await fetch(`${API_URL}/email/import/candidates`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify(credentials),
