@@ -982,7 +982,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   className="mt-1"
                 />
                 {provider !== "other" && (
-                  <div className="flex items-start gap-1.5 text-xs text-muted-foreground mt-2 bg-amber-50 text-amber-800 p-2 rounded-md border border-amber-200">
+                  <div className="flex items-start gap-1.5 text-xs mt-2 bg-amber-50 text-amber-800 p-2 rounded-md border border-amber-200">
                     <Shield className="size-3.5 mt-0.5 flex-shrink-0" />
                     <div>
                       For Gmail, use an app password.{" "}
