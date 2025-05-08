@@ -32,7 +32,7 @@ const ACTION_CODE_SETTINGS = {
   url:
     typeof window !== "undefined"
       ? `${window.location.origin}/auth/confirm`
-      : "http://localhost:3000/auth/confirm",
+      : `${import.meta.env.VITE_AUTH_URL}/confirm`,
   handleCodeInApp: true,
 };
 
