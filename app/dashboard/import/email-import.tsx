@@ -1,7 +1,7 @@
 // app/dashboard/import/email-import.tsx
 
-import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage"; // Add Firebase Storage imports
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import {
   Calendar,
   Check,
@@ -39,7 +39,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import { db, storage } from "~/lib/firebase"; // Add storage import
+import { db, storage } from "~/lib/firebase";
 
 // Email provider types
 export type EmailProvider = "gmail" | "outlook" | "other";
@@ -97,14 +97,11 @@ export interface ImportedCandidate {
   jobTitle?: string;
   resumeFileName?: string | null;
   originalFilename?: string | null;
-  resumeFileURL?: string | null; // Allow null
-  fileType?: string | null; // Allows both string and null
-  fileSize?: number | null; // Allow null
+  resumeFileURL?: string | null;
+  fileType?: string | null;
+  fileSize?: number | null;
   source?: string;
 }
-
-// Default API endpoint for email operations
-const API_ENDPOINT = import.meta.env.VITE_API_URL || "";
 
 // Email import hook
 export const useEmailImport = (onImportComplete?: (data: any) => void) => {
@@ -238,7 +235,9 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
-          errorData.error || "Failed to connect to email provider"
+          errorData.error ||
+            errorData.message ||
+            "Failed to connect to email provider"
         );
       }
 
@@ -316,7 +315,9 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to fetch emails");
+        throw new Error(
+          errorData.error || errorData.message || "Failed to fetch emails"
+        );
       }
 
       setImportProgress(50);
@@ -331,7 +332,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
       if (emailAddresses.length > 0) {
         // Chunk the email addresses to avoid Firestore "in" query limits
-        const chunkSize = 10; // Firestore allows up to 10 values in 'in' queries
+        const chunkSize = 10;
         const emailChunks = [];
 
         for (let i = 0; i < emailAddresses.length; i += chunkSize) {
@@ -397,7 +398,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     }
   };
 
-  // Updated to process and store email attachments
+  // FIXED: Don't process and save directly, just prepare data for review
   const processSelectedEmails = async () => {
     if (selectedEmails.length === 0) {
       toast.error("No emails selected");
@@ -410,182 +411,64 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     );
 
     try {
-      // Make API call to process selected emails
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/inbox/process`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY || "",
-          },
-          body: JSON.stringify({
-            ...emailCredentials,
-            emailIds: selectedEmails,
-          }),
-        }
+      // Get selected email objects
+      const selectedEmailObjects = emails.filter((email) =>
+        selectedEmails.includes(email.id)
       );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to process emails");
+      if (selectedEmailObjects.length === 0) {
+        throw new Error("No emails selected");
       }
 
-      const result = await response.json();
-      setImportProgress(80);
+      // For simplicity, let's process the first email only
+      // For multiple emails, you'd need to decide how to handle them
+      const emailToProcess = selectedEmailObjects[0];
 
-      // Handle success
-      if (result.success && result.processed) {
-        // If API successfully processed the emails
-        setImportProgress(100);
-        toast.dismiss(processingToast);
-        toast.success(`Processed ${selectedEmails.length} emails successfully`);
+      setImportProgress(30);
 
-        // Mark processed emails
-        setEmails((prevEmails) =>
-          prevEmails.map((email) =>
-            selectedEmails.includes(email.id)
-              ? { ...email, isProcessed: true, isImported: false }
-              : email
-          )
+      // Check if the email has resume attachments
+      let resumeAttachment = null;
+      if (emailToProcess.hasAttachments && emailToProcess.attachments) {
+        resumeAttachment = emailToProcess.attachments.find(
+          (att) => att.isResume
         );
+      }
 
-        // Clear selection
-        setSelectedEmails([]);
-
-        // If candidates were returned, pass them to onImportComplete
-        if (result.candidates) {
-          console.log("Candidates processed:", result.candidates);
-        }
+      if (resumeAttachment) {
+        // If there's a resume attachment, call the attachment processor
+        await handleProcessAttachment(emailToProcess, resumeAttachment);
       } else {
-        // If API failed to process, fallback to local processing
-        // Get selected email objects
-        const selectedEmailObjects = emails.filter((email) =>
-          selectedEmails.includes(email.id)
-        );
+        // If no resume attachment, just create basic candidate data
+        const candidateData = {
+          name: emailToProcess.from.name,
+          email: emailToProcess.from.email,
+          source: "email_import",
+          resumeFileName: null,
+          skills: [],
+          experience: "",
+          education: "",
+        };
 
-        // Track progress for visual feedback
-        let completed = 0;
-
-        // For each selected email
-        for (const email of selectedEmailObjects) {
-          setImportProgress(
-            Math.round((completed / selectedEmailObjects.length) * 80)
-          );
-
-          // Initialize candidate data without file attachment info
-          let candidateData = {
-            name: email.from.name,
-            email: email.from.email,
-            source: "email_import",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            notes: `Imported from email: ${email.subject}`,
-            stageId: "", // Default stage
-            history: [
-              {
-                date: new Date().toISOString(),
-                note: `Imported from email with subject: "${email.subject}"`,
-              },
-            ],
-            originalFilename: null as string | null,
-            fileType: null as string | null,
-            fileSize: null as number | null,
-            resumeFileURL: null as string | null, // Added property
-          };
-
-          // If the email has attachments that are resumes, try to download and store them
-          if (email.hasAttachments && email.attachments) {
-            const resumeAttachments = email.attachments.filter(
-              (att) => att.isResume
-            );
-            if (resumeAttachments.length > 0) {
-              // Just use the first resume attachment for simplicity
-              const resumeAttachment = resumeAttachments[0];
-
-              try {
-                // Download attachment
-                const attachmentResponse = await fetch(
-                  `${
-                    import.meta.env.VITE_API_URL || ""
-                  }/email/download-attachment`,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "x-api-key": import.meta.env.VITE_API_KEY || "",
-                    },
-                    body: JSON.stringify({
-                      ...emailCredentials,
-                      emailId: email.id,
-                      attachmentId: resumeAttachment.id,
-                    }),
-                  }
-                );
-
-                if (attachmentResponse.ok) {
-                  const attachmentData = await attachmentResponse.json();
-
-                  if (attachmentData.success && attachmentData.data) {
-                    // Convert base64 to ArrayBuffer
-                    const base64Content = attachmentData.data.content;
-                    const binaryContent = atob(base64Content);
-                    const bytes = new Uint8Array(binaryContent.length);
-                    for (let i = 0; i < binaryContent.length; i++) {
-                      bytes[i] = binaryContent.charCodeAt(i);
-                    }
-
-                    // Upload to Firebase Storage
-                    const resumeFileURL = await uploadAttachmentToStorage(
-                      email.id,
-                      resumeAttachment,
-                      bytes.buffer
-                    );
-
-                    // Add the file URL to candidate data
-                    candidateData.resumeFileURL = resumeFileURL;
-                    candidateData.originalFilename = resumeAttachment.name;
-                    candidateData.fileType = resumeAttachment.contentType;
-                    candidateData.fileSize = resumeAttachment.size;
-                  }
-                }
-              } catch (error) {
-                console.error("Error processing attachment:", error);
-                // Continue with import even if attachment processing fails
-              }
-            }
-          }
-
-          // Store imported candidates in Firestore
-          try {
-            await addDoc(collection(db, "candidates"), candidateData);
-            completed++;
-          } catch (error) {
-            console.error("Error adding candidate to Firestore:", error);
-            toast.error(
-              error instanceof Error
-                ? error.message
-                : "Failed to add candidate to Firestore"
-            );
-          }
+        // Call onImportComplete to show in UI instead of saving directly
+        if (onImportComplete) {
+          onImportComplete(candidateData);
         }
-
-        setImportProgress(100);
-        toast.dismiss(processingToast);
-        toast.success(`Processed ${selectedEmails.length} emails successfully`);
-
-        // Mark processed emails
-        setEmails((prevEmails) =>
-          prevEmails.map((email) =>
-            selectedEmails.includes(email.id)
-              ? { ...email, isProcessed: true, isImported: false }
-              : email
-          )
-        );
-
-        // Clear selection
-        setSelectedEmails([]);
       }
+
+      setImportProgress(100);
+      toast.dismiss(processingToast);
+
+      // Mark as processed in UI
+      setEmails((prevEmails) =>
+        prevEmails.map((email) =>
+          email.id === emailToProcess.id
+            ? { ...email, isProcessed: true }
+            : email
+        )
+      );
+
+      // Clear selection
+      setSelectedEmails([]);
     } catch (error) {
       console.error("Error processing emails:", error);
       toast.dismiss(processingToast);
@@ -593,12 +476,11 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
         error instanceof Error ? error.message : "Failed to process emails"
       );
     } finally {
-      // Reset progress after a delay
       setTimeout(() => setImportProgress(0), 2000);
     }
   };
 
-  // Updated to download and store attachment
+  // FIXED: Process email attachment and show in UI instead of saving directly
   const processEmailAttachment = async (
     emailId: string,
     attachmentId: string
@@ -609,8 +491,6 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     }
 
     try {
-      const processingToast = toast.loading("Processing attachment...");
-
       // First, download the actual attachment file
       const attachmentResponse = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/email/download-attachment`,
@@ -629,7 +509,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       );
 
       if (!attachmentResponse.ok) {
-        throw new Error("Failed to download attachment");
+        const errorData = await attachmentResponse.json();
+        throw new Error(
+          errorData.error ||
+            errorData.message ||
+            "Failed to download attachment"
+        );
       }
 
       // Get attachment data
@@ -655,7 +540,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
         fileMetadata = {
           filename: attachmentData.data.filename,
           contentType: attachmentData.data.contentType,
-          size: bytes.length,
+          size: attachmentData.data.size || bytes.length,
         };
 
         // Get attachment info
@@ -694,11 +579,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to process attachment");
+        throw new Error(
+          errorData.error || errorData.message || "Failed to process attachment"
+        );
       }
 
       const result = await response.json();
-      toast.dismiss(processingToast);
 
       if (!result.success || !result.data) {
         throw new Error("Invalid response from attachment parsing API");
@@ -717,14 +603,11 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       return parsedData;
     } catch (error) {
       console.error("Error processing email attachment:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to process attachment"
-      );
-      return null;
+      throw error;
     }
   };
 
-  // Add this handler to the email item component to process individual attachments
+  // FIXED: Process individual attachments and show in UI instead of saving directly
   const handleProcessAttachment = async (
     email: EmailMessage,
     attachment: EmailAttachment
@@ -734,34 +617,52 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       return;
     }
 
-    const parsedData = await processEmailAttachment(email.id, attachment.id);
+    const processingToast = toast.loading("Processing attachment...");
 
-    if (parsedData && onImportComplete) {
-      // Mark this email as processed
-      setEmails((prevEmails) =>
-        prevEmails.map((e) =>
-          e.id === email.id ? { ...e, isProcessed: true } : e
-        )
+    try {
+      const parsedData = await processEmailAttachment(email.id, attachment.id);
+
+      if (parsedData && onImportComplete) {
+        // Mark this email as processed
+        setEmails((prevEmails) =>
+          prevEmails.map((e) =>
+            e.id === email.id ? { ...e, isProcessed: true } : e
+          )
+        );
+
+        // Pass the parsed data to the parent component with source info
+        onImportComplete({
+          name: parsedData.name || email.from.name,
+          email: parsedData.email || email.from.email,
+          phone: parsedData.phone || "",
+          skills: parsedData.skills || [],
+          experience: parsedData.experience || "",
+          education: parsedData.education || "",
+          resumeText: parsedData.resumeText || "",
+          linkedIn: parsedData.linkedIn || "",
+          location: parsedData.location || "",
+          languages: parsedData.languages || [],
+          jobTitle: parsedData.jobTitle || "",
+          resumeFileName: attachment.name,
+          resumeFileURL: parsedData.resumeFileURL,
+          originalFilename: parsedData.originalFilename,
+          fileType: parsedData.fileType,
+          fileSize: parsedData.fileSize,
+          source: "email_attachment",
+        });
+
+        // Dismiss the loading toast after successful processing
+        toast.dismiss(processingToast);
+        toast.success("Attachment processed successfully!");
+      } else {
+        toast.dismiss(processingToast);
+        toast.error("Failed to process attachment");
+      }
+    } catch (error) {
+      toast.dismiss(processingToast);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to process attachment"
       );
-
-      // Pass the parsed data to the parent component
-      onImportComplete({
-        name: parsedData.name || email.from.name,
-        email: parsedData.email || email.from.email,
-        skills: parsedData.skills || [],
-        experience: parsedData.experience || "",
-        education: parsedData.education || "",
-        resumeText: parsedData.resumeText || "",
-        linkedIn: parsedData.linkedIn || "",
-        location: parsedData.location || "",
-        languages: parsedData.languages || [],
-        jobTitle: parsedData.jobTitle || "",
-        resumeFileName: attachment.name,
-        resumeFileURL: parsedData.resumeFileURL, // Include the file URL
-        fileType: parsedData.fileType,
-        fileSize: parsedData.fileSize,
-        source: "email_attachment",
-      });
     }
   };
 
@@ -813,7 +714,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     provider,
     setProvider,
     emails: filteredEmails,
-    filteredEmails, // Add filteredEmails explicitly to the return object
+    filteredEmails,
     isLoadingEmails,
     selectedEmails,
     searchQuery,
@@ -876,8 +777,8 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     toggleEmailSelection,
     toggleSelectAll,
     processSelectedEmails,
-    filteredEmails, // Ensure filteredEmails is destructured here
-    handleProcessAttachment, // Add this function to component props
+    filteredEmails,
+    handleProcessAttachment,
   } = useEmailImport(onImportComplete);
 
   return (

@@ -59,6 +59,7 @@ interface ParsedCandidate {
   originalFilename?: string;
   fileType?: string;
   fileSize?: number;
+  resumeFileURL?: string | null;
 }
 
 export default function ImportPage() {
@@ -129,7 +130,6 @@ export default function ImportPage() {
   };
 
   // Parse resume using AI
-  // Updated handleParseWithAI function with better error handling for OpenAI API issues
   const handleParseWithAI = async () => {
     if (!file) return;
 
@@ -372,7 +372,7 @@ export default function ImportPage() {
         importMethod: "ai_parser",
 
         // Resume file URL - new field
-        resumeFileURL: resumeFileURL,
+        resumeFileURL: resumeFileURL || (parsedData as any).resumeFileURL,
         originalFilename: file ? file.name : parsedData.originalFilename,
         fileType: file ? file.type : parsedData.fileType,
         fileSize: file ? file.size : parsedData.fileSize,
@@ -464,33 +464,80 @@ export default function ImportPage() {
     setParsingProgress(0);
   };
 
-  // Handle email import completion
-  const handleEmailImportComplete = (
-    data: ImportedCandidate | ImportedCandidate[]
+  // Handle email import completion - FIXED VERSION
+  const handleEmailImportComplete = async (
+    data: ImportedCandidate | ImportedCandidate[] | any
   ) => {
-    // Extract candidate information from the email import
     if (Array.isArray(data)) {
+      // Handle multiple candidates import
       toast.success(
         `Successfully imported ${data.length} candidates from email`
       );
-    } else {
-      // Single candidate imported
-      toast.success(`Successfully imported ${data.name} from email`);
 
-      // If the email import contained resume data, we can convert it to our format
-      if (data) {
-        const parsedCandidate: ParsedCandidate = {
-          name: data.name || "",
-          email: data.email || "",
-          skills: data.skills || [],
-          experience: data.experience || "",
-          education: data.education || "",
-          originalFilename: data.resumeFileName,
-        };
-
-        dispatch(updateParsedData(parsedCandidate));
-        setParsingProgress(100);
+      // Instead of saving directly, show the first candidate for review
+      if (data.length > 0) {
+        const firstCandidate = data[0];
+        // Parse the first candidate for display
+        handleSingleEmailImport(firstCandidate);
       }
+    } else {
+      // Handle single candidate import
+      handleSingleEmailImport(data);
+    }
+  };
+
+  // Helper function to handle single email import
+  const handleSingleEmailImport = (data: any) => {
+    // If this is already parsed data from an email attachment
+    if (data.source === "email_attachment") {
+      const parsedCandidate: ParsedCandidate = {
+        name: data.name || "",
+        email: data.email || "",
+        phone: data.phone || "",
+        skills: data.skills || [],
+        experience: data.experience || "",
+        education: data.education || "",
+        resumeText: data.resumeText || "",
+        linkedIn: data.linkedIn || "",
+        location: data.location || "",
+        languages: data.languages || [],
+        jobTitle: data.jobTitle || "",
+        originalFilename: data.resumeFileName || data.originalFilename,
+        resumeFileURL: data.resumeFileURL,
+        fileType: data.fileType,
+        fileSize: data.fileSize,
+      };
+
+      // Dispatch to Redux to show in the UI
+      dispatch(updateParsedData(parsedCandidate));
+      setParsingProgress(100);
+
+      // Switch to email tab to show parsed data
+      setActiveTab("email");
+
+      // Show success message
+      toast.success("Resume parsed successfully from email attachment");
+    } else {
+      // Handle regular email import (without parsed resume data)
+      const candidateData: ParsedCandidate = {
+        name: data.name || "",
+        email: data.email || "",
+        phone: data.phone || "",
+        skills: data.skills || [],
+        experience: data.experience || "",
+        education: data.education || "",
+        originalFilename: data.resumeFileName,
+        resumeFileURL: data.resumeFileURL,
+      };
+
+      // Dispatch to Redux to show in the UI for review
+      dispatch(updateParsedData(candidateData));
+      setParsingProgress(100);
+
+      // Switch to email tab
+      setActiveTab("email");
+
+      toast.success("Import prepared for review. Please check and save.");
     }
   };
 
@@ -669,120 +716,6 @@ export default function ImportPage() {
                     )}
                   </Button>
                 )}
-              </TabsContent>
-
-              <TabsContent value="ai" className="min-h-[300px] space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-4 text-blue-800">
-                  <h3 className="text-sm font-medium flex items-center gap-1.5 mb-1">
-                    <Zap className="size-4" />
-                    AI-Powered Resume Parsing
-                  </h3>
-                  <p className="text-xs">
-                    Our AI system extracts candidate information from resumes
-                    with high accuracy. Upload a resume file to get started.
-                  </p>
-                </div>
-
-                <div
-                  className={`border-2 border-dashed 
-                    ${
-                      dragActive
-                        ? "border-primary bg-primary/5"
-                        : file
-                        ? "border-green-300 bg-green-50/40"
-                        : "border-muted-foreground/20"
-                    } 
-                    rounded-lg p-6 flex flex-col items-center justify-center gap-3 transition-colors`}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  onDrop={handleDrop}
-                >
-                  <div
-                    className={`${
-                      file ? "bg-green-100" : "bg-muted/50"
-                    } p-3 rounded-full`}
-                  >
-                    {file ? (
-                      <Check className="size-6 text-green-600" />
-                    ) : (
-                      <Upload className="size-6 text-muted-foreground" />
-                    )}
-                  </div>
-
-                  <div className="text-center">
-                    {file ? (
-                      <>
-                        <p className="font-medium mb-1 text-sm text-green-700">
-                          File ready for AI parsing
-                        </p>
-                        <p className="text-sm mb-1">{file.name}</p>
-                        <p className="text-xs text-muted-foreground mb-2">
-                          {(file.size / (1024 * 1024)).toFixed(2)} MB ·{" "}
-                          {file.type.split("/")[1].toUpperCase()}
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-medium mb-1 text-sm">
-                          Upload resume for AI parsing
-                        </p>
-                        <p className="text-xs text-muted-foreground mb-3">
-                          PDF, DOC, or DOCX (max 10MB)
-                        </p>
-                      </>
-                    )}
-
-                    <div className="relative">
-                      {file ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full text-sm"
-                          onClick={() => setFile(null)}
-                        >
-                          <RefreshCw className="mr-1.5 size-3.5" />
-                          Change File
-                        </Button>
-                      ) : (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-sm"
-                          >
-                            Select File
-                          </Button>
-                          <Input
-                            id="aiResumeFile"
-                            type="file"
-                            accept=".pdf,.doc,.docx"
-                            onChange={handleFileChange}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                          />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleParseWithAI}
-                  disabled={!file || isAiParsing}
-                  className="w-full"
-                >
-                  {isAiParsing ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="size-4 animate-spin" />
-                      AI Processing...
-                    </div>
-                  ) : (
-                    <>
-                      <Zap className="mr-2 size-4" />
-                      Parse with AI
-                    </>
-                  )}
-                </Button>
               </TabsContent>
 
               <TabsContent value="email" className="min-h-[300px]">
