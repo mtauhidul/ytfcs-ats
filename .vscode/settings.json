@@ -1,4 +1,11 @@
 {
-  "cSpell.words": ["firestore", "sonner"],
+  "cSpell.words": [
+    "AFFINDA",
+    "firebaseapp",
+    "firestore",
+    "signup",
+    "sonner",
+    "VITE"
+  ],
   "postman.settings.dotenv-detection-notification-visibility": false
 }
