@@ -143,6 +143,8 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     totalImported: 0,
   });
 
+  const [isTogglingAutomation, setIsTogglingAutomation] = useState(false);
+
   // Add this helper function to format education data properly
 
   interface EducationObject {
@@ -408,12 +410,15 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     toast.success("Automation status refreshed");
   };
 
-  // ENHANCED toggleAutomation with immediate status update
+  // Updated toggleAutomation function with loader
   const toggleAutomation = async (enabled: boolean) => {
     if (!isConnected || !emailCredentials) {
       toast.error("Please connect to an email account first");
       return;
     }
+
+    // Start loading state
+    setIsTogglingAutomation(true);
 
     try {
       // Check if account exists in automation system
@@ -476,6 +481,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
         }
       }
 
+      // Update local state only after successful API response
       setAutomationEnabled(enabled);
 
       // Start or stop polling based on automation status
@@ -496,6 +502,9 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     } catch (error) {
       console.error("Error toggling automation:", error);
       toast.error("Failed to update automation settings");
+    } finally {
+      // Stop loading state
+      setIsTogglingAutomation(false);
     }
   };
 
@@ -1127,6 +1136,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     automationEnabled,
     automationStats,
     toggleAutomation,
+    isTogglingAutomation,
     // NEW RETURNS
     refreshAutomationStatus,
     isStatusLoading,
@@ -1173,6 +1183,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     automationEnabled,
     automationStats,
     toggleAutomation,
+    isTogglingAutomation,
     // NEW ADDITIONS
     refreshAutomationStatus,
     isStatusLoading,
@@ -1393,15 +1404,30 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
 
                 <div className="flex items-center gap-1">
                   <div className="flex items-center gap-1.5 bg-background border rounded px-2 py-1">
-                    <Label htmlFor="automation-toggle" className="text-xs">
+                    <Label
+                      htmlFor="automation-toggle"
+                      className={`text-xs transition-opacity ${
+                        isTogglingAutomation ? "opacity-50" : "opacity-100"
+                      }`}
+                    >
                       Auto
                     </Label>
-                    <Switch
-                      id="automation-toggle"
-                      checked={automationEnabled}
-                      onCheckedChange={toggleAutomation}
-                      className="scale-75"
-                    />
+                    <div className="relative">
+                      <Switch
+                        id="automation-toggle"
+                        checked={automationEnabled}
+                        onCheckedChange={toggleAutomation}
+                        disabled={isTogglingAutomation}
+                        className={`scale-75 transition-opacity ${
+                          isTogglingAutomation ? "opacity-50" : "opacity-100"
+                        }`}
+                      />
+                      {isTogglingAutomation && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <Button
                     variant="outline"
