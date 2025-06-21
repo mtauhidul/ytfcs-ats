@@ -1,8 +1,9 @@
-// app/dashboard/import/email-import.tsx
+// app/dashboard/import/email-import.tsx (Enhanced version - minimal changes)
 
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import {
+  Bot, // ADD THIS IMPORT
   Calendar,
   Check,
   CheckSquare,
@@ -32,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { Separator } from "~/components/ui/separator";
+import { Switch } from "~/components/ui/switch"; // ADD THIS IMPORT
 import {
   Tooltip,
   TooltipContent,
@@ -112,6 +113,10 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
   const [emailCredentials, setEmailCredentials] = useState<EmailConfig | null>(
     null
   );
+  const [statusUpdateInterval, setStatusUpdateInterval] =
+    useState<NodeJS.Timeout | null>(null);
+  const [isStatusLoading, setIsStatusLoading] = useState(false);
+  const [lastStatusUpdate, setLastStatusUpdate] = useState<Date | null>(null);
 
   // Email data states
   const [emails, setEmails] = useState<EmailMessage[]>([]);
@@ -130,6 +135,167 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
   const [imapPort, setImapPort] = useState("993");
   const [imapUsername, setImapUsername] = useState("");
   const [imapPassword, setImapPassword] = useState("");
+
+  // ADD AUTOMATION STATES
+  const [automationEnabled, setAutomationEnabled] = useState(false);
+  const [automationStats, setAutomationStats] = useState({
+    lastChecked: null as string | null,
+    totalImported: 0,
+  });
+
+  // Add this helper function to format education data properly
+
+  interface EducationObject {
+    degree?: string;
+    qualification?: string;
+    title?: string;
+    institution?: string;
+    school?: string;
+    university?: string;
+    college?: string;
+    year?: string | number;
+    graduationYear?: string | number;
+    endYear?: string | number;
+    completionYear?: string | number;
+    field?: string;
+    major?: string;
+    fieldOfStudy?: string;
+    specialization?: string;
+    [key: string]: any;
+  }
+
+  type EducationInput =
+    | string
+    | EducationObject
+    | (string | EducationObject)[]
+    | null
+    | undefined;
+
+  const formatEducationData = (education: EducationInput): string => {
+    if (!education) return "";
+
+    // If it's already a string, return it
+    if (typeof education === "string") {
+      return education;
+    }
+
+    // If it's an array of objects or strings
+    if (Array.isArray(education)) {
+      return education
+        .map((edu) => {
+          if (typeof edu === "object" && edu !== null) {
+            // Extract properties from education object
+            const degree = edu.degree || edu.qualification || edu.title || "";
+            const school =
+              edu.institution ||
+              edu.school ||
+              edu.university ||
+              edu.college ||
+              "";
+            const year =
+              edu.year ||
+              edu.graduationYear ||
+              edu.endYear ||
+              edu.completionYear ||
+              "";
+            const field =
+              edu.field ||
+              edu.major ||
+              edu.fieldOfStudy ||
+              edu.specialization ||
+              "";
+
+            // Build readable education string
+            let eduString = "";
+            if (degree) {
+              eduString += degree;
+              if (field) eduString += ` in ${field}`;
+            } else if (field) {
+              eduString += field;
+            }
+
+            if (school) {
+              eduString += eduString ? ` - ${school}` : school;
+            }
+
+            if (year) {
+              eduString += ` (${year})`;
+            }
+
+            return eduString || JSON.stringify(edu); // Fallback if no readable format
+          }
+          return String(edu);
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    // If it's a single object
+    if (typeof education === "object" && education !== null) {
+      const degree =
+        education.degree || education.qualification || education.title || "";
+      const school =
+        education.institution ||
+        education.school ||
+        education.university ||
+        education.college ||
+        "";
+      const year =
+        education.year ||
+        education.graduationYear ||
+        education.endYear ||
+        education.completionYear ||
+        "";
+      const field =
+        education.field ||
+        education.major ||
+        education.fieldOfStudy ||
+        education.specialization ||
+        "";
+
+      let eduString = "";
+      if (degree) {
+        eduString += degree;
+        if (field) eduString += ` in ${field}`;
+      } else if (field) {
+        eduString += field;
+      }
+
+      if (school) {
+        eduString += eduString ? ` - ${school}` : school;
+      }
+
+      if (year) {
+        eduString += ` (${year})`;
+      }
+
+      return eduString || JSON.stringify(education); // Fallback
+    }
+
+    // Fallback for any other type
+    return String(education);
+  };
+
+  // Add this helper function to ensure proper date formatting
+  interface EnsureValidDate {
+    (dateValue: string | Date | number | null | undefined): string;
+  }
+
+  const ensureValidDate: EnsureValidDate = (dateValue) => {
+    if (!dateValue) return new Date().toISOString();
+
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) {
+        console.warn("Invalid date provided:", dateValue);
+        return new Date().toISOString();
+      }
+      return date.toISOString();
+    } catch (error) {
+      console.warn("Error parsing date:", dateValue, error);
+      return new Date().toISOString();
+    }
+  };
 
   // Function to upload attachment to Firebase Storage
   const uploadAttachmentToStorage = async (
@@ -164,6 +330,175 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     }
   };
 
+  // ADD AUTOMATION FUNCTIONS
+  // ENHANCED automation status check with loading state
+  const checkAutomationStatus = async (showLoading = false) => {
+    if (!isConnected || !emailCredentials) return;
+
+    if (showLoading) setIsStatusLoading(true);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
+        {
+          headers: { "x-api-key": import.meta.env.VITE_API_KEY || "" },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const currentAccount = data.data?.find(
+          (account: any) => account.username === emailCredentials.username
+        );
+
+        if (currentAccount) {
+          // Update automation status
+          setAutomationEnabled(currentAccount.automationEnabled);
+
+          // Update stats with proper number conversion
+          setAutomationStats({
+            lastChecked: currentAccount.lastChecked,
+            totalImported: Number(currentAccount.totalImported) || 0,
+          });
+
+          setLastStatusUpdate(new Date());
+
+          console.log("Automation status updated:", {
+            enabled: currentAccount.automationEnabled,
+            lastChecked: currentAccount.lastChecked,
+            totalImported: currentAccount.totalImported,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error checking automation status:", error);
+    } finally {
+      if (showLoading) setIsStatusLoading(false);
+    }
+  };
+
+  // NEW FUNCTION: Start automatic status polling
+  const startStatusPolling = () => {
+    // Clear existing interval if any
+    if (statusUpdateInterval) {
+      clearInterval(statusUpdateInterval);
+    }
+
+    // Check automation status every 30 seconds
+    const interval = setInterval(() => {
+      checkAutomationStatus(false);
+    }, 30000); // 30 seconds
+
+    setStatusUpdateInterval(interval);
+    console.log("Started automation status polling every 30 seconds");
+  };
+
+  // NEW FUNCTION: Stop automatic status polling
+  const stopStatusPolling = () => {
+    if (statusUpdateInterval) {
+      clearInterval(statusUpdateInterval);
+      setStatusUpdateInterval(null);
+      console.log("Stopped automation status polling");
+    }
+  };
+
+  // NEW FUNCTION: Manual status refresh
+  const refreshAutomationStatus = async () => {
+    await checkAutomationStatus(true);
+    toast.success("Automation status refreshed");
+  };
+
+  // ENHANCED toggleAutomation with immediate status update
+  const toggleAutomation = async (enabled: boolean) => {
+    if (!isConnected || !emailCredentials) {
+      toast.error("Please connect to an email account first");
+      return;
+    }
+
+    try {
+      // Check if account exists in automation system
+      const accountsResponse = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
+        {
+          headers: { "x-api-key": import.meta.env.VITE_API_KEY || "" },
+        }
+      );
+
+      let accountId = null;
+      if (accountsResponse.ok) {
+        const accountsData = await accountsResponse.json();
+        const existingAccount = accountsData.data?.find(
+          (account: any) => account.username === emailCredentials.username
+        );
+        accountId = existingAccount?.id;
+      }
+
+      if (enabled && !accountId) {
+        // Create new automation account
+        const createResponse = await fetch(
+          `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": import.meta.env.VITE_API_KEY || "",
+            },
+            body: JSON.stringify({
+              ...emailCredentials,
+              automationEnabled: true,
+            }),
+          }
+        );
+
+        if (!createResponse.ok) {
+          throw new Error("Failed to create automation account");
+        }
+      } else if (accountId) {
+        // Update existing account
+        const updateResponse = await fetch(
+          `${
+            import.meta.env.VITE_API_URL || ""
+          }/email/automation/accounts/${accountId}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": import.meta.env.VITE_API_KEY || "",
+            },
+            body: JSON.stringify({
+              automationEnabled: enabled,
+            }),
+          }
+        );
+
+        if (!updateResponse.ok) {
+          throw new Error("Failed to update automation settings");
+        }
+      }
+
+      setAutomationEnabled(enabled);
+
+      // Start or stop polling based on automation status
+      if (enabled) {
+        startStatusPolling();
+      } else {
+        stopStatusPolling();
+      }
+
+      // Immediately check status after toggle
+      setTimeout(() => checkAutomationStatus(false), 1000);
+
+      toast.success(
+        enabled
+          ? "Automation enabled - will check for new candidates every 15 minutes"
+          : "Automation disabled - manual import only"
+      );
+    } catch (error) {
+      console.error("Error toggling automation:", error);
+      toast.error("Failed to update automation settings");
+    }
+  };
+
   // Check for existing connection on mount
   useEffect(() => {
     const checkExistingConnection = async () => {
@@ -186,6 +521,46 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
     checkExistingConnection();
   }, []);
+
+  // ENHANCED automation check effect with polling
+  useEffect(() => {
+    if (isConnected && emailCredentials) {
+      // Initial status check
+      checkAutomationStatus(true);
+
+      // Start polling if automation is enabled
+      const checkAndStartPolling = async () => {
+        await checkAutomationStatus(false);
+        if (automationEnabled) {
+          startStatusPolling();
+        }
+      };
+
+      // Check after a short delay to ensure state is updated
+      setTimeout(checkAndStartPolling, 2000);
+    } else {
+      // Stop polling when not connected
+      stopStatusPolling();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      stopStatusPolling();
+    };
+  }, [isConnected, emailCredentials]);
+
+  // NEW EFFECT: Start/stop polling when automation is toggled
+  useEffect(() => {
+    if (isConnected && emailCredentials && automationEnabled) {
+      startStatusPolling();
+    } else {
+      stopStatusPolling();
+    }
+
+    return () => {
+      stopStatusPolling();
+    };
+  }, [automationEnabled, isConnected]);
 
   // Connect to email provider
   const connectToProvider = async () => {
@@ -269,13 +644,19 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     }
   };
 
-  // Disconnect from email provider
+  // ENHANCED disconnect function to stop polling
   const disconnectProvider = () => {
     localStorage.removeItem("emailCredentials");
     setEmailCredentials(null);
     setIsConnected(false);
     setEmails([]);
     setSelectedEmails([]);
+    setAutomationEnabled(false);
+    setAutomationStats({ lastChecked: null, totalImported: 0 });
+
+    // Stop status polling when disconnecting
+    stopStatusPolling();
+
     toast.success("Disconnected from email provider");
   };
 
@@ -411,7 +792,6 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     );
 
     try {
-      // Get selected email objects
       const selectedEmailObjects = emails.filter((email) =>
         selectedEmails.includes(email.id)
       );
@@ -420,13 +800,9 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
         throw new Error("No emails selected");
       }
 
-      // For simplicity, let's process the first email only
-      // For multiple emails, you'd need to decide how to handle them
       const emailToProcess = selectedEmailObjects[0];
-
       setImportProgress(30);
 
-      // Check if the email has resume attachments
       let resumeAttachment = null;
       if (emailToProcess.hasAttachments && emailToProcess.attachments) {
         resumeAttachment = emailToProcess.attachments.find(
@@ -435,10 +811,9 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       }
 
       if (resumeAttachment) {
-        // If there's a resume attachment, call the attachment processor
         await handleProcessAttachment(emailToProcess, resumeAttachment);
       } else {
-        // If no resume attachment, just create basic candidate data
+        // FIXED: Ensure proper date formatting for basic candidate data
         const candidateData = {
           name: emailToProcess.from.name,
           email: emailToProcess.from.email,
@@ -447,9 +822,11 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
           skills: [],
           experience: "",
           education: "",
+          // FIXED: Add proper date formatting
+          createdAt: ensureValidDate(emailToProcess.receivedAt),
+          updatedAt: ensureValidDate(new Date()),
         };
 
-        // Call onImportComplete to show in UI instead of saving directly
         if (onImportComplete) {
           onImportComplete(candidateData);
         }
@@ -458,7 +835,6 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       setImportProgress(100);
       toast.dismiss(processingToast);
 
-      // Mark as processed in UI
       setEmails((prevEmails) =>
         prevEmails.map((email) =>
           email.id === emailToProcess.id
@@ -467,7 +843,6 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
         )
       );
 
-      // Clear selection
       setSelectedEmails([]);
     } catch (error) {
       console.error("Error processing emails:", error);
@@ -630,18 +1005,23 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
           )
         );
 
-        // Pass the parsed data to the parent component with source info
+        // FIXED: Format education properly before passing to parent
+        const formattedEducation = formatEducationData(parsedData.education);
+
+        // Pass the parsed data to the parent component with proper formatting
         onImportComplete({
           name: parsedData.name || email.from.name,
           email: parsedData.email || email.from.email,
           phone: parsedData.phone || "",
-          skills: parsedData.skills || [],
+          skills: Array.isArray(parsedData.skills) ? parsedData.skills : [],
           experience: parsedData.experience || "",
-          education: parsedData.education || "",
+          education: formattedEducation, // FIXED: Use formatted education
           resumeText: parsedData.resumeText || "",
           linkedIn: parsedData.linkedIn || "",
           location: parsedData.location || "",
-          languages: parsedData.languages || [],
+          languages: Array.isArray(parsedData.languages)
+            ? parsedData.languages
+            : [],
           jobTitle: parsedData.jobTitle || "",
           resumeFileName: attachment.name,
           resumeFileURL: parsedData.resumeFileURL,
@@ -649,9 +1029,11 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
           fileType: parsedData.fileType,
           fileSize: parsedData.fileSize,
           source: "email_attachment",
+          // FIXED: Ensure proper date formatting
+          createdAt: ensureValidDate(parsedData.createdAt),
+          updatedAt: ensureValidDate(parsedData.updatedAt),
         });
 
-        // Dismiss the loading toast after successful processing
         toast.dismiss(processingToast);
         toast.success("Attachment processed successfully!");
       } else {
@@ -741,6 +1123,14 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     toggleSelectAll,
     processSelectedEmails,
     handleProcessAttachment,
+    // ADD AUTOMATION METHODS
+    automationEnabled,
+    automationStats,
+    toggleAutomation,
+    // NEW RETURNS
+    refreshAutomationStatus,
+    isStatusLoading,
+    lastStatusUpdate,
   };
 };
 
@@ -779,14 +1169,52 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     processSelectedEmails,
     filteredEmails,
     handleProcessAttachment,
+    // ADD AUTOMATION PROPS
+    automationEnabled,
+    automationStats,
+    toggleAutomation,
+    // NEW ADDITIONS
+    refreshAutomationStatus,
+    isStatusLoading,
+    lastStatusUpdate,
   } = useEmailImport(onImportComplete);
+
+  // Helper function to format the last checked time
+  const formatLastChecked = (lastChecked: string | null) => {
+    if (!lastChecked) return "Never";
+
+    try {
+      const date = new Date(lastChecked);
+      const now = new Date();
+      const diffInMinutes = Math.floor(
+        (now.getTime() - date.getTime()) / (1000 * 60)
+      );
+
+      if (diffInMinutes < 1) return "Just now";
+      if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+      if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+
+      return (
+        date.toLocaleDateString() +
+        " " +
+        date.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      );
+    } catch (error) {
+      return "Invalid date";
+    }
+  };
+
+  // Compact and Responsive EmailImport Component UI
 
   return (
     <div className="space-y-4">
       {!isConnected ? (
-        // Connection form
-        <div className="space-y-5">
-          <div className="space-y-4">
+        // Compact Connection Form
+        <div className="space-y-4">
+          <div className="space-y-3">
             <div>
               <Label className="text-sm font-medium mb-2 block">
                 Email Provider
@@ -794,46 +1222,46 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
               <RadioGroup
                 value={provider}
                 onValueChange={(value: EmailProvider) => setProvider(value)}
-                className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+                className="grid grid-cols-3 gap-2"
               >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 p-2 border rounded hover:bg-muted/50 transition-colors">
                   <RadioGroupItem value="gmail" id="provider-gmail" />
                   <Label
                     htmlFor="provider-gmail"
-                    className="flex items-center gap-1.5 cursor-pointer"
+                    className="flex items-center gap-1.5 cursor-pointer text-sm"
                   >
-                    <Mail className="size-4 text-red-500" />
-                    <span className="text-sm">Gmail</span>
+                    <Mail className="size-3 text-red-500" />
+                    Gmail
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 p-2 border rounded hover:bg-muted/50 transition-colors">
                   <RadioGroupItem value="outlook" id="provider-outlook" />
                   <Label
                     htmlFor="provider-outlook"
-                    className="flex items-center gap-1.5 cursor-pointer"
+                    className="flex items-center gap-1.5 cursor-pointer text-sm"
                   >
-                    <Mail className="size-4 text-blue-500" />
-                    <span className="text-sm">Outlook</span>
+                    <Mail className="size-3 text-blue-500" />
+                    Outlook
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 p-2 border rounded hover:bg-muted/50 transition-colors">
                   <RadioGroupItem value="other" id="provider-other" />
                   <Label
                     htmlFor="provider-other"
-                    className="flex items-center gap-1.5 cursor-pointer"
+                    className="flex items-center gap-1.5 cursor-pointer text-sm"
                   >
-                    <Mail className="size-4 text-purple-500" />
-                    <span className="text-sm">IMAP</span>
+                    <Mail className="size-3 text-purple-500" />
+                    IMAP
                   </Label>
                 </div>
               </RadioGroup>
             </div>
 
-            <div className="space-y-3 border rounded-md p-4 bg-muted/20">
+            <div className="space-y-3 border rounded p-3 bg-muted/20">
               {provider === "other" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label htmlFor="imap-server" className="text-sm">
+                    <Label htmlFor="imap-server" className="text-xs">
                       IMAP Server
                     </Label>
                     <Input
@@ -841,11 +1269,11 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                       placeholder="imap.example.com"
                       value={imapServer}
                       onChange={(e) => setImapServer(e.target.value)}
-                      className="mt-1"
+                      className="mt-1 h-8 text-sm"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="imap-port" className="text-sm">
+                    <Label htmlFor="imap-port" className="text-xs">
                       Port
                     </Label>
                     <Input
@@ -853,13 +1281,13 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                       placeholder="993"
                       value={imapPort}
                       onChange={(e) => setImapPort(e.target.value)}
-                      className="mt-1"
+                      className="mt-1 h-8 text-sm"
                     />
                   </div>
                 </div>
               )}
               <div>
-                <Label htmlFor="email-username" className="text-sm">
+                <Label htmlFor="email-username" className="text-xs">
                   Username/Email
                 </Label>
                 <Input
@@ -867,11 +1295,11 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   placeholder="user@example.com"
                   value={imapUsername}
                   onChange={(e) => setImapUsername(e.target.value)}
-                  className="mt-1"
+                  className="mt-1 h-8 text-sm"
                 />
               </div>
               <div>
-                <Label htmlFor="email-password" className="text-sm">
+                <Label htmlFor="email-password" className="text-xs">
                   {provider !== "other" ? "Password/App Password" : "Password"}
                 </Label>
                 <Input
@@ -880,11 +1308,11 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                   placeholder="Password"
                   value={imapPassword}
                   onChange={(e) => setImapPassword(e.target.value)}
-                  className="mt-1"
+                  className="mt-1 h-8 text-sm"
                 />
                 {provider !== "other" && (
-                  <div className="flex items-start gap-1.5 text-xs mt-2 bg-amber-50 text-amber-800 p-2 rounded-md border border-amber-200">
-                    <Shield className="size-3.5 mt-0.5 flex-shrink-0" />
+                  <div className="flex items-start gap-1.5 text-xs mt-2 bg-amber-50 text-amber-800 p-2 rounded border border-amber-200">
+                    <Shield className="size-3 mt-0.5 flex-shrink-0" />
                     <div>
                       For Gmail, use an app password.{" "}
                       <a
@@ -903,21 +1331,19 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
           </div>
 
           {importProgress > 0 && (
-            <div className="mt-4">
-              <div className="flex justify-between mb-1.5">
-                <span className="text-xs text-muted-foreground">
-                  Connecting...
-                </span>
-                <span className="text-xs font-medium">{importProgress}%</span>
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Connecting...</span>
+                <span className="font-medium">{importProgress}%</span>
               </div>
-              <Progress value={importProgress} className="w-full h-1.5" />
+              <Progress value={importProgress} className="h-1.5" />
             </div>
           )}
 
           <Button
             onClick={connectToProvider}
             disabled={isConnecting || !imapUsername || !imapPassword}
-            className="w-full mt-2"
+            className="w-full h-9 text-sm"
           >
             {isConnecting ? (
               <>
@@ -933,79 +1359,176 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
           </Button>
         </div>
       ) : (
-        // Email management - connected state
-        <div className="space-y-4">
-          <div className="bg-muted/20 p-3 rounded-md border">
-            <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-3 mb-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="font-normal flex gap-1.5 items-center bg-primary/10 text-primary border-primary/20"
-                >
-                  <Mail className="h-3 w-3" />
-                  {provider === "other"
-                    ? "IMAP Server"
-                    : `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`}
-                </Badge>
-                <span className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[180px]">
-                  {imapUsername}
-                </span>
+        // Compact Connected State
+        <div className="space-y-3">
+          {/* Compact Connection Status */}
+          <div className="bg-muted/20 p-3 rounded border">
+            {/* Top Row - Compact Layout */}
+            <div className="flex flex-col space-y-3">
+              {/* Provider and Toggle Row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="flex gap-1.5 items-center bg-primary/10 text-primary border-primary/20 text-xs px-2 py-1"
+                  >
+                    <Mail className="h-3 w-3" />
+                    {provider === "other"
+                      ? "IMAP"
+                      : provider.charAt(0).toUpperCase() + provider.slice(1)}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                    {imapUsername}
+                  </span>
+                  {automationEnabled && (
+                    <Badge
+                      variant="secondary"
+                      className="bg-green-100 text-green-700 border-green-200 text-xs px-2 py-0.5"
+                    >
+                      <Bot className="h-3 w-3 mr-1" />
+                      Auto
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 bg-background border rounded px-2 py-1">
+                    <Label htmlFor="automation-toggle" className="text-xs">
+                      Auto
+                    </Label>
+                    <Switch
+                      id="automation-toggle"
+                      checked={automationEnabled}
+                      onCheckedChange={toggleAutomation}
+                      className="scale-75"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={disconnectProvider}
+                    className="h-7 text-xs px-2"
+                  >
+                    Disconnect
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchEmails}
+                    disabled={isLoadingEmails}
+                    className="h-7 text-xs px-2"
+                  >
+                    {isLoadingEmails ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 ml-auto">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={disconnectProvider}
-                  className="h-8 text-xs px-3"
-                >
-                  Disconnect
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchEmails}
-                  disabled={isLoadingEmails}
-                  className="h-8 text-xs px-3"
-                >
-                  {isLoadingEmails ? (
-                    <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3 mr-1.5" />
-                  )}
-                  <span>Refresh</span>
-                </Button>
-              </div>
+              {/* Automation Status Row - More Compact */}
+              {automationEnabled && (
+                <div className="pt-2 border-t border-border/50">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">Last:</span>
+                        <span className="font-medium">
+                          {automationStats.lastChecked
+                            ? (() => {
+                                const date = new Date(
+                                  automationStats.lastChecked
+                                );
+                                const now = new Date();
+                                const diffInMinutes = Math.floor(
+                                  (now.getTime() - date.getTime()) / (1000 * 60)
+                                );
+
+                                if (diffInMinutes < 1) return "Just now";
+                                if (diffInMinutes < 60)
+                                  return `${diffInMinutes}m ago`;
+                                return date.toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                });
+                              })()
+                            : "Never"}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={refreshAutomationStatus}
+                          disabled={isStatusLoading}
+                          className="h-4 w-4 p-0 opacity-60 hover:opacity-100"
+                        >
+                          {isStatusLoading ? (
+                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-2.5 w-2.5" />
+                          )}
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">Imported:</span>
+                        <Badge
+                          variant="outline"
+                          className="bg-green-50 text-green-700 border-green-200 text-xs px-1.5 py-0"
+                        >
+                          {automationStats.totalImported || 0}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {lastStatusUpdate && (
+                        <span className="text-[10px] text-muted-foreground/70">
+                          Updated:{" "}
+                          {lastStatusUpdate.toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-1">
+                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        <span className="text-xs text-green-700">Active</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Filter controls */}
-          <div className="space-y-3 my-3">
-            <div className="relative w-full">
-              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          {/* Compact Search and Filters */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder="Search emails..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-8 w-full"
+                className="pl-8 pr-8 h-8 text-sm"
               />
               {searchQuery && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute right-0 top-0 h-full w-8 opacity-70 hover:opacity-100"
+                  className="absolute right-0 top-0 h-8 w-8 opacity-70 hover:opacity-100"
                   onClick={() => setSearchQuery("")}
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-3 w-3" />
                 </Button>
               )}
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2">
               <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger className="w-full sm:w-[140px] h-10 text-sm">
-                  <Calendar className="mr-2 h-3.5 w-3.5 opacity-70" />
-                  <SelectValue placeholder="Filter by date" />
+                <SelectTrigger className="w-32 h-8 text-xs">
+                  <Calendar className="mr-1.5 h-3 w-3 opacity-70" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Time</SelectItem>
@@ -1015,33 +1538,35 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                 </SelectContent>
               </Select>
 
-              <div className="flex flex-grow flex-wrap items-center gap-4 bg-muted/10 px-3 py-2 rounded-md border">
-                <div className="flex items-center space-x-2">
+              <div className="flex flex-1 items-center gap-3 bg-muted/30 px-3 py-1.5 rounded border">
+                <div className="flex items-center space-x-1.5">
                   <Checkbox
                     id="show-attachments"
                     checked={showOnlyWithAttachments}
                     onCheckedChange={(value) =>
                       setShowOnlyWithAttachments(!!value)
                     }
+                    className="scale-75"
                   />
                   <Label
                     htmlFor="show-attachments"
-                    className="text-xs cursor-pointer flex items-center gap-1.5"
+                    className="text-xs cursor-pointer flex items-center gap-1"
                   >
                     <Paperclip className="size-3 opacity-70" />
                     Attachments
                   </Label>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1.5">
                   <Checkbox
                     id="show-job-related"
                     checked={showOnlyJobRelated}
                     onCheckedChange={(value) => setShowOnlyJobRelated(!!value)}
+                    className="scale-75"
                   />
                   <Label
                     htmlFor="show-job-related"
-                    className="text-xs cursor-pointer flex items-center gap-1.5"
+                    className="text-xs cursor-pointer flex items-center gap-1"
                   >
                     Job related
                     <TooltipProvider>
@@ -1050,8 +1575,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                           <Info className="h-3 w-3 text-muted-foreground cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent side="top" className="text-xs max-w-xs">
-                          Shows emails with job-related keywords like 'job',
-                          'candidate', 'resume', or 'cv'
+                          Shows emails with job-related keywords
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -1061,34 +1585,39 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
             </div>
           </div>
 
-          <div className="flex flex-col xs:flex-row xs:items-center xs:justify-between gap-2 mb-2">
-            <div className="text-xs text-muted-foreground">
-              {filteredEmails.length} emails found
+          {/* Compact Results and Actions */}
+          <div className="flex items-center justify-between p-2 bg-muted/20 rounded text-xs">
+            <div className="text-muted-foreground">
+              <span className="font-medium">{filteredEmails.length}</span>{" "}
+              emails found
               {(searchQuery ||
                 dateFilter !== "all" ||
                 showOnlyWithAttachments ||
-                showOnlyJobRelated) &&
-                " matching filters"}
+                showOnlyJobRelated) && (
+                <span className="ml-1 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">
+                  filtered
+                </span>
+              )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={toggleSelectAll}
                 disabled={emails.length === 0}
-                className="h-7 text-xs w-full xs:w-auto"
+                className="h-6 text-xs px-2"
               >
                 {selectedEmails.length > 0 &&
                 selectedEmails.length === filteredEmails.length ? (
                   <>
-                    <XSquareIcon className="h-3.5 w-3.5 mr-1.5" />
-                    <span>Deselect All</span>
+                    <XSquareIcon className="h-3 w-3 mr-1" />
+                    Deselect All
                   </>
                 ) : (
                   <>
-                    <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
-                    <span>Select All</span>
+                    <CheckSquare className="h-3 w-3 mr-1" />
+                    Select All
                   </>
                 )}
               </Button>
@@ -1098,13 +1627,13 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                 size="sm"
                 onClick={processSelectedEmails}
                 disabled={selectedEmails.length === 0}
-                className="h-7 text-xs w-full xs:w-auto"
+                className="h-6 text-xs px-2"
               >
-                <span className="mr-1">Import</span>
+                Import
                 {selectedEmails.length > 0 && (
                   <Badge
                     variant="outline"
-                    className="ml-1 h-4 px-1 bg-white/20 text-white"
+                    className="ml-1 h-3.5 px-1 bg-white/20 text-white text-[10px]"
                   >
                     {selectedEmails.length}
                   </Badge>
@@ -1113,24 +1642,26 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
             </div>
           </div>
 
-          {/* Progress indicator for import process */}
+          {/* Compact Progress */}
           {importProgress > 0 && (
-            <div className="my-2">
-              <div className="flex justify-between mb-1.5">
-                <span className="text-xs text-muted-foreground">
-                  {importProgress < 100 ? "Importing..." : "Import complete!"}
+            <div className="space-y-1 p-2 bg-blue-50 border border-blue-200 rounded">
+              <div className="flex justify-between text-xs">
+                <span className="text-blue-700 font-medium">
+                  {importProgress < 100 ? "Importing..." : "Complete!"}
                 </span>
-                <span className="text-xs font-medium">{importProgress}%</span>
+                <span className="font-bold text-blue-800">
+                  {importProgress}%
+                </span>
               </div>
-              <Progress value={importProgress} className="w-full h-1.5" />
+              <Progress value={importProgress} className="h-1.5" />
             </div>
           )}
 
-          {/* Email list */}
-          <div className="border rounded-md overflow-hidden bg-white">
+          {/* Compact Email List */}
+          <div className="border rounded overflow-hidden bg-white">
             {isLoadingEmails ? (
               <div className="p-8 flex flex-col items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
                 <p className="text-sm text-muted-foreground">
                   Loading emails...
                 </p>
@@ -1140,14 +1671,14 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                 <div className="bg-muted/30 rounded-full p-4 mb-3">
                   <Mail className="h-6 w-6 text-muted-foreground/60" />
                 </div>
-                <p className="font-medium">No emails found</p>
-                <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                <p className="font-medium mb-1">No emails found</p>
+                <p className="text-sm text-muted-foreground">
                   {searchQuery ||
                   dateFilter !== "all" ||
                   showOnlyWithAttachments ||
                   showOnlyJobRelated
-                    ? "Try changing your filters to see more results"
-                    : "Your inbox is empty or no job-related emails found"}
+                    ? "Try changing your filters"
+                    : "No job-related emails found"}
                 </p>
               </div>
             ) : (
@@ -1155,25 +1686,27 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                 {filteredEmails.map((email) => (
                   <div
                     key={email.id}
-                    className={`px-4 py-3 hover:bg-muted/30 transition-colors ${
-                      selectedEmails.includes(email.id) ? "bg-primary/5" : ""
+                    className={`px-3 py-2.5 hover:bg-muted/30 transition-colors ${
+                      selectedEmails.includes(email.id)
+                        ? "bg-primary/5 border-l-2 border-l-primary"
+                        : ""
                     } ${
                       email.isProcessed || email.isImported ? "opacity-60" : ""
                     }`}
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-2.5">
                       <Checkbox
                         checked={selectedEmails.includes(email.id)}
                         onCheckedChange={() => toggleEmailSelection(email.id)}
                         disabled={email.isProcessed}
-                        className="mt-1"
+                        className="mt-0.5 scale-75"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between flex-wrap gap-1">
-                          <div className="font-medium truncate">
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium text-sm truncate">
                             {email.from.name}
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
                             <Calendar className="size-3" />
                             <span>
                               {new Date(email.receivedAt).toLocaleDateString()}
@@ -1183,12 +1716,12 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                         <div className="text-xs text-muted-foreground truncate">
                           {email.from.email}
                         </div>
-                        <div className="text-sm mt-1 font-medium truncate">
+                        <div className="text-xs font-medium truncate">
                           {email.subject}
                         </div>
 
                         {email.hasAttachments && email.attachments && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
+                          <div className="flex flex-wrap gap-1">
                             {email.attachments?.map(
                               (attachment: EmailAttachment) => (
                                 <Badge
@@ -1198,7 +1731,7 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                                   }
                                   className={`text-xs px-1.5 py-0.5 ${
                                     attachment.isResume
-                                      ? "bg-primary/10 text-primary border-primary/20 cursor-pointer"
+                                      ? "bg-primary/10 text-primary border-primary/20 cursor-pointer hover:bg-primary/20"
                                       : ""
                                   }`}
                                   onClick={() =>
@@ -1206,11 +1739,11 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                                     handleProcessAttachment(email, attachment)
                                   }
                                 >
-                                  {attachment.name.length > 25
-                                    ? `${attachment.name.substring(0, 25)}...`
+                                  {attachment.name.length > 20
+                                    ? `${attachment.name.substring(0, 20)}...`
                                     : attachment.name}{" "}
-                                  <span className="opacity-60 text-[10px]">
-                                    ({(attachment.size / 1024).toFixed(0)} KB)
+                                  <span className="opacity-60 text-[9px]">
+                                    ({(attachment.size / 1024).toFixed(0)}KB)
                                   </span>
                                 </Badge>
                               )
@@ -1218,21 +1751,16 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                           </div>
                         )}
 
-                        <div className="mt-2 flex items-center gap-2">
-                          {email.isImported && (
-                            <div className="text-xs flex items-center text-green-600 bg-green-50 px-1.5 py-0.5 rounded-sm">
+                        {(email.isImported || email.isProcessed) && (
+                          <div className="flex items-center gap-1">
+                            <div className="text-xs flex items-center text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
                               <Check className="h-3 w-3 mr-1" />
-                              Already imported
+                              {email.isImported
+                                ? "Already imported"
+                                : "Imported"}
                             </div>
-                          )}
-
-                          {email.isProcessed && !email.isImported && (
-                            <div className="text-xs flex items-center text-green-600 bg-green-50 px-1.5 py-0.5 rounded-sm">
-                              <Check className="h-3 w-3 mr-1" />
-                              Imported
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1241,23 +1769,27 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
             )}
           </div>
 
-          <div className="flex justify-between text-xs text-muted-foreground">
+          {/* Compact Footer */}
+          <div className="flex items-center justify-between p-2 bg-muted/20 rounded text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Info className="h-3 w-3" />
-              {selectedEmails.length === 0
-                ? "Select emails to import candidates"
-                : `${selectedEmails.length} email${
-                    selectedEmails.length === 1 ? "" : "s"
-                  } selected`}
+              {automationEnabled ? (
+                <div className="flex items-center gap-1 text-blue-600">
+                  <Bot className="h-3 w-3" />
+                  <span>Auto-monitoring enabled</span>
+                </div>
+              ) : selectedEmails.length === 0 ? (
+                "Select emails to import"
+              ) : (
+                <span>{selectedEmails.length} selected</span>
+              )}
             </div>
           </div>
-
-          <Separator className="my-3" />
 
           <Button
             onClick={processSelectedEmails}
             disabled={selectedEmails.length === 0}
-            className="w-full"
+            className="w-full h-8 text-sm"
           >
             {isLoadingEmails ? (
               <>
@@ -1265,15 +1797,11 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
                 Processing...
               </>
             ) : selectedEmails.length > 0 ? (
-              <>
-                Process {selectedEmails.length}
-                <span className="hidden xs:inline">
-                  {" "}
-                  Selected Email{selectedEmails.length !== 1 ? "s" : ""}
-                </span>
-              </>
+              `Process ${selectedEmails.length} Email${
+                selectedEmails.length !== 1 ? "s" : ""
+              }`
             ) : (
-              <>Select emails to process</>
+              "Select emails to process"
             )}
           </Button>
         </div>

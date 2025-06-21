@@ -31,6 +31,7 @@ export default function DashboardLayout() {
     tags: "Tag Management",
     categories: "Category Management",
     stages: "Stage Management",
+    automation: "Email Automation",
   };
 
   // Generate breadcrumbs based on URL segments

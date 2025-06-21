@@ -18,5 +18,6 @@ export default [
     route("tags", "dashboard/tags/tags.tsx"),
     route("categories", "dashboard/categories/categories.tsx"),
     route("stages", "dashboard/stages/stages.tsx"),
+    route("automation", "dashboard/automation/email-automation.tsx"),
   ]),
 ] satisfies RouteConfig;
