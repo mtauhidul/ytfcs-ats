@@ -5,7 +5,8 @@
     "firestore",
     "signup",
     "sonner",
-    "VITE"
+    "VITE",
+    "YTFCS"
   ],
   "postman.settings.dotenv-detection-notification-visibility": false
 }

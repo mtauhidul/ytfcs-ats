@@ -2,6 +2,7 @@ import {
   BarChart2,
   Bot, // Import for dashboard icon
   Building2,
+  Building2Icon,
   FolderArchive,
   Group,
   LayersIcon,
@@ -45,6 +46,12 @@ const data = {
       title: "Dashboard",
       url: "/dashboard", // This will now point to the dashboard index page
       icon: BarChart2, // Using BarChart2 for the dashboard icon
+      isActive: false,
+    },
+    {
+      title: "Jobs List",
+      url: "/dashboard/jobs",
+      icon: Building2Icon,
       isActive: false,
     },
     {

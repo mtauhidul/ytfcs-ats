@@ -9,7 +9,8 @@ export default [
   ]),
   route("dashboard", "routes/dashboard.tsx", [
     index("dashboard/dashboard/index.tsx"),
-    route("profile", "dashboard/profile/profile.tsx"), // Add profile route
+    route("jobs", "dashboard/jobs/jobs.tsx"),
+    route("profile", "dashboard/profile/profile.tsx"),
     route("import", "dashboard/import/import.tsx"),
     route("candidates", "dashboard/candidates/candidates.tsx"),
     route("workflow", "dashboard/workflow/workflow.tsx"),

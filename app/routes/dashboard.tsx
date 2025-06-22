@@ -22,6 +22,7 @@ export default function DashboardLayout() {
   // Mapping dashboard routes to more descriptive labels
   const breadcrumbLabels: Record<string, string> = {
     dashboard: "Dashboard",
+    jobs: "Jobs",
     profile: "Profile",
     import: "Candidate Import",
     candidates: "Candidates List",
