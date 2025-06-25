@@ -38,6 +38,9 @@ type CandidateData = {
 
   // Raw Affinda data for reference
   affindaData?: any;
+
+  resumeScore?: number | null; // Added for scoring
+  resumeScoringDetails?: any; // Added for scoring details
 };
 
 interface CandidateImportState {

@@ -1,7 +1,7 @@
 // app/dashboard/automation/email-automation.tsx
 
-import { Mail, Pause, Play, Plus, RefreshCw, Settings } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { Mail, Pause, Play, Plus, RefreshCw } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -12,8 +12,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
 import { Switch } from "~/components/ui/switch";
 
 interface EmailAccount {
@@ -56,10 +54,84 @@ const EmailAutomation: React.FC = () => {
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [recentImports, setRecentImports] = useState<number>(0);
+  const [recentImportsLoading, setRecentImportsLoading] = useState(false);
+
+  // Cache and timing management
+  const lastRecentImportsFetch = useRef<number>(0);
+  const recentImportsCache = useRef<{
+    count: number;
+    timestamp: number;
+  } | null>(null);
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+  const recentImportsInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Settings
   const [checkInterval, setCheckInterval] = useState(15);
   const [maxEmailsPerCheck, setMaxEmailsPerCheck] = useState(20);
+
+  // Fetch recent imports from Firebase
+  const fetchRecentImports = async (useCache: boolean = true) => {
+    const now = Date.now();
+
+    // Check cache first if useCache is true
+    if (useCache && recentImportsCache.current) {
+      const cacheAge = now - recentImportsCache.current.timestamp;
+      if (cacheAge < CACHE_DURATION) {
+        setRecentImports(recentImportsCache.current.count);
+        return recentImportsCache.current.count;
+      }
+    }
+
+    // Avoid multiple simultaneous requests
+    if (now - lastRecentImportsFetch.current < 1000) {
+      return recentImports;
+    }
+
+    setRecentImportsLoading(true);
+    lastRecentImportsFetch.current = now;
+
+    try {
+      // Calculate 24 hours ago timestamp
+      const twentyFourHoursAgo = new Date(
+        now - 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_URL
+        }/candidates/recent-imports?since=${twentyFourHoursAgo}`,
+        {
+          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const count = data.data?.count || 0;
+
+        // Update cache
+        recentImportsCache.current = {
+          count,
+          timestamp: now,
+        };
+
+        setRecentImports(count);
+        return count;
+      } else {
+        throw new Error("Failed to fetch recent imports");
+      }
+    } catch (error) {
+      console.error("Error fetching recent imports:", error);
+      // Don't show error toast for background updates unless it's the initial load
+      if (!useCache) {
+        toast.error("Failed to load recent imports");
+      }
+      return recentImports;
+    } finally {
+      setRecentImportsLoading(false);
+    }
+  };
 
   // Fetch automation status and accounts
   const fetchData = async () => {
@@ -179,7 +251,20 @@ const EmailAutomation: React.FC = () => {
     accountId: string,
     enabled: boolean
   ) => {
+    const toggleLoadingKey = `toggle-${accountId}`;
+
     try {
+      // Set loading state
+      setActionLoading(toggleLoadingKey);
+
+      // Show loading toast
+      toast.loading(
+        `${enabled ? "Enabling" : "Disabling"} automation for account...`,
+        {
+          id: toggleLoadingKey,
+        }
+      );
+
       const response = await fetch(
         `${
           import.meta.env.VITE_API_URL
@@ -195,15 +280,27 @@ const EmailAutomation: React.FC = () => {
       );
 
       if (response.ok) {
+        // Clear the loading toast
+        toast.dismiss(toggleLoadingKey);
+
+        // Show success toast
         toast.success(
           `Automation ${enabled ? "enabled" : "disabled"} for account`
         );
-        fetchData();
+
+        // Refresh data
+        await fetchData();
       } else {
         throw new Error("Failed to update account");
       }
     } catch (error) {
-      toast.error("Failed to update account");
+      // Clear loading toast and show error
+      toast.dismiss(toggleLoadingKey);
+      toast.error("Failed to update account automation");
+      console.error("Error updating account automation:", error);
+    } finally {
+      // Clear loading state
+      setActionLoading(null);
     }
   };
 
@@ -226,7 +323,12 @@ const EmailAutomation: React.FC = () => {
         toast.success(
           `Check completed: ${result.data.imported} candidates imported`
         );
-        fetchData();
+
+        // Refresh both automation data and recent imports
+        await Promise.all([
+          fetchData(),
+          fetchRecentImports(false), // Force refresh without cache
+        ]);
       } else {
         throw new Error("Failed to check account");
       }
@@ -237,12 +339,41 @@ const EmailAutomation: React.FC = () => {
     }
   };
 
+  // Setup intervals and initial data loading
   useEffect(() => {
-    fetchData();
+    // Initial data load
+    const loadInitialData = async () => {
+      await Promise.all([
+        fetchData(),
+        fetchRecentImports(true), // Use cache on initial load
+      ]);
+    };
 
-    // Set up polling to refresh status
-    const interval = setInterval(fetchData, 30000); // Every 30 seconds
-    return () => clearInterval(interval);
+    loadInitialData();
+
+    // Set up polling for automation status (every 30 seconds)
+    const automationInterval = setInterval(fetchData, 30000);
+
+    // Set up polling for recent imports (every 2 minutes)
+    recentImportsInterval.current = setInterval(() => {
+      fetchRecentImports(true); // Use cache for background updates
+    }, 2 * 60 * 1000);
+
+    return () => {
+      clearInterval(automationInterval);
+      if (recentImportsInterval.current) {
+        clearInterval(recentImportsInterval.current);
+      }
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recentImportsInterval.current) {
+        clearInterval(recentImportsInterval.current);
+      }
+    };
   }, []);
 
   if (loading) {
@@ -266,12 +397,17 @@ const EmailAutomation: React.FC = () => {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={fetchData}
-            disabled={actionLoading === "refresh"}
+            onClick={() => {
+              fetchData();
+              fetchRecentImports(false); // Force refresh without cache
+            }}
+            disabled={actionLoading === "refresh" || recentImportsLoading}
           >
             <RefreshCw
               className={`h-4 w-4 mr-2 ${
-                actionLoading === "refresh" ? "animate-spin" : ""
+                actionLoading === "refresh" || recentImportsLoading
+                  ? "animate-spin"
+                  : ""
               }`}
             />
             Refresh
@@ -299,7 +435,7 @@ const EmailAutomation: React.FC = () => {
       </div>
 
       {/* Status Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -313,7 +449,7 @@ const EmailAutomation: React.FC = () => {
               </span>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Automation Status
+              Monitoring Status
             </p>
           </CardContent>
         </Card>
@@ -329,8 +465,12 @@ const EmailAutomation: React.FC = () => {
 
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold">
-              {automationStatus?.stats.recentImports || 0}
+            <div className="text-2xl font-bold flex items-center gap-2">
+              {recentImportsLoading ? (
+                <RefreshCw className="h-5 w-5 animate-spin" />
+              ) : (
+                recentImports
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
               Recent Imports (24h)
@@ -338,18 +478,18 @@ const EmailAutomation: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
               {automationStatus?.stats.totalImported || 0}
             </div>
             <p className="text-sm text-muted-foreground">Total Imported</p>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       {/* Settings */}
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
@@ -397,7 +537,7 @@ const EmailAutomation: React.FC = () => {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       {/* Email Accounts */}
       <Card>
@@ -449,10 +589,10 @@ const EmailAutomation: React.FC = () => {
                         : "Never"}
                     </div>
 
-                    <div className="text-sm text-muted-foreground">
+                    {/* <div className="text-sm text-muted-foreground">
                       Processed: {account.totalProcessed} | Imported:{" "}
                       {account.totalImported}
-                    </div>
+                    </div> */}
 
                     {account.lastError && (
                       <div className="text-sm text-red-600 mt-1">
@@ -464,6 +604,7 @@ const EmailAutomation: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={account.automationEnabled}
+                      disabled={actionLoading === `toggle-${account.id}`}
                       onCheckedChange={(checked: boolean) =>
                         toggleAccountAutomation(account.id, checked)
                       }

@@ -1,6 +1,6 @@
 // app/dashboard/candidates/columns.tsx
 import type { ColumnDef } from "@tanstack/react-table";
-import { Eye } from "lucide-react";
+import { BadgeCheck, Eye } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -37,6 +37,11 @@ export interface Candidate {
   originalFilename?: string;
   fileType?: string;
   fileSize?: number;
+  // Resume score fields
+  resumeScore?: number;
+  resumeScoringDetails?: any;
+  scoredAgainstJobId?: string;
+  scoredAgainstJobTitle?: string;
   createdAt?: string;
   history?: { date: string; note: string }[];
   communications?: {
@@ -50,6 +55,7 @@ export interface Candidate {
   }[];
   updatedAt?: string;
   onEdit?: (c: Candidate) => void;
+  jobTitle?: string;
 }
 
 const RatingStars = ({ rating }: { rating: number }) => (
@@ -68,6 +74,60 @@ const RatingStars = ({ rating }: { rating: number }) => (
     ))}
   </div>
 );
+
+// Resume Score component for the column
+const ResumeScoreCell = ({ score }: { score?: number }) => {
+  if (!score) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  // Determine color based on score
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "bg-green-100 text-green-700 border-green-200";
+    if (score >= 60) return "bg-blue-100 text-blue-700 border-blue-200";
+    if (score >= 40) return "bg-amber-100 text-amber-700 border-amber-200";
+    return "bg-red-100 text-red-700 border-red-200";
+  };
+
+  const getProgressColor = (score: number) => {
+    if (score >= 80) return "bg-green-500";
+    if (score >= 60) return "bg-blue-500";
+    if (score >= 40) return "bg-amber-500";
+    return "bg-red-500";
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* <div className="flex-1 max-w-[100px]">
+        <div className="flex justify-between text-xs mb-1">
+          <span className="sr-only">Match</span>
+          <span
+            className={`font-medium ${
+              score >= 60 ? "text-green-700" : "text-amber-700"
+            }`}
+          >
+            {Math.round(score)}%
+          </span>
+        </div>
+        <CustomProgress
+          value={score}
+          className="h-1.5"
+          indicatorClassName={getProgressColor(score)}
+        />
+      </div> */}
+      <Badge
+        variant="outline"
+        className={cn(
+          "px-2 py-0.5 text-xs whitespace-nowrap",
+          getScoreColor(score)
+        )}
+      >
+        <BadgeCheck className="mr-1 h-3 w-3" />
+        {Math.round(score)}%
+      </Badge>
+    </div>
+  );
+};
 
 export const columns: ColumnDef<Candidate>[] = [
   {
@@ -124,49 +184,16 @@ export const columns: ColumnDef<Candidate>[] = [
     },
     size: 120,
   },
-  // {
-  //   accessorKey: "experience",
-  //   header: "Experience",
-  //   cell: ({ row }) => {
-  //     const experience = row.original.experience;
-  //     return (
-  //       <div>
-  //         {experience || <span className="text-muted-foreground">—</span>}
-  //       </div>
-  //     );
-  //   },
-  //   size: 120,
-  // },
-  // {
-  //   accessorKey: "skills",
-  //   header: "Skills",
-  //   cell: ({ row }) => {
-  //     const skills = row.original.skills || [];
-  //     if (!skills.length) {
-  //       return <span className="text-muted-foreground">—</span>;
-  //     }
-
-  //     return (
-  //       <div className="flex flex-wrap gap-1 max-w-[240px]">
-  //         {skills.slice(0, 3).map((skill) => (
-  //           <Badge
-  //             key={skill}
-  //             variant="outline"
-  //             className="px-1.5 py-0 text-xs"
-  //           >
-  //             {skill}
-  //           </Badge>
-  //         ))}
-  //         {skills.length > 3 && (
-  //           <Badge variant="outline" className="px-1.5 py-0 text-xs">
-  //             +{skills.length - 3}
-  //           </Badge>
-  //         )}
-  //       </div>
-  //     );
-  //   },
-  //   size: 240,
-  // },
+  // New Resume Score column
+  {
+    accessorKey: "resumeScore",
+    header: "Resume Score",
+    cell: ({ row }) => {
+      const score = row.original.resumeScore;
+      return <ResumeScoreCell score={score} />;
+    },
+    size: 120,
+  },
   {
     accessorKey: "category",
     header: "Category",

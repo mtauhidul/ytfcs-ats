@@ -46,13 +46,8 @@ export function NavUser() {
 
   // Generate initials from name - maximum 2 characters from first two name parts
   const getInitials = (name: string) => {
-    const nameParts = name.split(" ");
-
-    if (nameParts.length === 1) {
-      return nameParts[0].substring(0, 2).toUpperCase();
-    } else {
-      return (nameParts[0][0] + (nameParts[1]?.[0] || "")).toUpperCase();
-    }
+    if (!name) return "?";
+    return name.trim().charAt(0).toUpperCase();
   };
 
   return (
@@ -65,7 +60,7 @@ export function NavUser() {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarFallback className="rounded-lg bg-primary/10 text-primary">
+                <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-lg font-semibold">
                   {getInitials(displayName)}
                 </AvatarFallback>
               </Avatar>

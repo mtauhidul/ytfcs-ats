@@ -1,4 +1,4 @@
-// app/dashboard/import/import.tsx
+// app/dashboard/import/import.tsx (updated with resume scoring)
 
 "use client";
 
@@ -6,6 +6,7 @@ import { addDoc, collection } from "firebase/firestore";
 import {
   AlertTriangle,
   ArrowRight,
+  BadgeCheck,
   Check,
   FileUp,
   Loader2,
@@ -37,10 +38,13 @@ import { Textarea } from "~/components/ui/textarea";
 
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { resetImport, updateParsedData } from "~/features/candidateImportSlice";
+// Make sure to update the CandidateData type to include resumeScore and resumeScoringDetails
 import { db, storage } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
 import type { ImportedCandidate } from "~/types/email";
 import EmailImport from "./email-import";
+import JobSelector from "./job-selector";
+import ResumeScore, { type ResumeScoreData } from "./resume-score";
 
 // Define the parsed data interface
 interface ParsedCandidate {
@@ -60,6 +64,18 @@ interface ParsedCandidate {
   fileType?: string;
   fileSize?: number;
   resumeFileURL?: string | null;
+  resumeScore?: number; // Added for scoring
+  resumeScoringDetails?: any; // Added for scoring details
+}
+
+// Job data interface
+interface Job {
+  id: string;
+  title: string;
+  status: string;
+  location: string;
+  salary: string;
+  department: string;
 }
 
 export default function ImportPage() {
@@ -78,6 +94,12 @@ export default function ImportPage() {
 
   // AI parsing state
   const [isAiParsing, setIsAiParsing] = useState(false);
+
+  // Scoring state
+  const [selectedJobId, setSelectedJobId] = useState<string>("");
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [isScoring, setIsScoring] = useState(false);
+  const [scoreResult, setScoreResult] = useState<ResumeScoreData | null>(null);
 
   // Get state from Redux
   const { parsedData, status, error } = useSelector(
@@ -126,6 +148,91 @@ export default function ImportPage() {
         dispatch(resetImport());
       }
       setErrorDetails(null);
+      setScoreResult(null);
+    }
+  };
+
+  // Handle job selection
+  const handleJobChange = (jobId: string) => {
+    setSelectedJobId(jobId);
+  };
+
+  // Handle selected job data
+  const handleJobDataChange = (jobData: Job | null) => {
+    setSelectedJob(jobData);
+  };
+
+  // Score resume with the selected job
+  const scoreResume = async () => {
+    if (!parsedData || !selectedJobId) {
+      toast.error(
+        selectedJobId
+          ? "No resume data to score"
+          : "Please select a job for scoring"
+      );
+      return;
+    }
+
+    try {
+      setIsScoring(true);
+
+      // Create FormData with the job details
+      const formData = new FormData();
+      formData.append("jobId", selectedJobId);
+      if (selectedJob) {
+        formData.append("jobTitle", selectedJob.title);
+      }
+
+      // We'll re-parse with the selected job to get the score
+      if (file) {
+        formData.append("file", file);
+      } else {
+        toast.error("Please select a file to score");
+        setIsScoring(false);
+        return;
+      }
+
+      // Make API call to parse resume with scoring
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/resume/parse`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to score resume");
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error("Failed to score resume");
+      }
+
+      // Set the score result
+      if (data.score) {
+        setScoreResult(data.score);
+
+        // Add score to parsed data
+        dispatch(
+          updateParsedData({
+            resumeScore: data.score.finalScore,
+            resumeScoringDetails: data.score,
+          })
+        );
+
+        toast.success("Resume scored successfully");
+      } else {
+        toast.warning("Scoring completed but no results were returned");
+      }
+    } catch (error) {
+      console.error("Error scoring resume:", error);
+      toast.error("Failed to score resume");
+    } finally {
+      setIsScoring(false);
     }
   };
 
@@ -166,6 +273,14 @@ export default function ImportPage() {
       // Create a FormData object to send the file
       const formData = new FormData();
       formData.append("file", file);
+
+      // Add job ID if selected
+      if (selectedJobId) {
+        formData.append("jobId", selectedJobId);
+        if (selectedJob) {
+          formData.append("jobTitle", selectedJob.title);
+        }
+      }
 
       setParsingProgress(30);
 
@@ -221,6 +336,13 @@ export default function ImportPage() {
         fileType: file.type,
         fileSize: file.size,
       };
+
+      // If score is available, add it to the parsed data
+      if (data.score) {
+        parsedData.resumeScore = data.score.finalScore;
+        parsedData.resumeScoringDetails = data.score;
+        setScoreResult(data.score);
+      }
 
       // Dispatch to Redux store
       dispatch(updateParsedData(parsedData));
@@ -376,6 +498,14 @@ export default function ImportPage() {
         originalFilename: file ? file.name : parsedData.originalFilename,
         fileType: file ? file.type : parsedData.fileType,
         fileSize: file ? file.size : parsedData.fileSize,
+
+        // Resume score data - new fields
+        resumeScore: parsedData.resumeScore || null,
+        resumeScoringDetails: parsedData.resumeScoringDetails || null,
+
+        // Job reference if scored
+        scoredAgainstJobId: selectedJobId || null,
+        scoredAgainstJobTitle: selectedJob?.title || null,
       };
 
       // Add document to Firestore
@@ -389,6 +519,7 @@ export default function ImportPage() {
         dispatch(resetImport());
         setFile(null);
         setSaveStatus("idle");
+        setScoreResult(null);
       }, 1500);
     } catch (err) {
       console.error("Error saving candidate:", err);
@@ -462,6 +593,9 @@ export default function ImportPage() {
     setSaveStatus("idle");
     setErrorDetails(null);
     setParsingProgress(0);
+    setScoreResult(null);
+    setSelectedJobId("");
+    setSelectedJob(null);
   };
 
   // Handle email import completion - FIXED VERSION
@@ -506,11 +640,18 @@ export default function ImportPage() {
         resumeFileURL: data.resumeFileURL,
         fileType: data.fileType,
         fileSize: data.fileSize,
+        resumeScore: data.resumeScore,
+        resumeScoringDetails: data.resumeScoringDetails,
       };
 
       // Dispatch to Redux to show in the UI
       dispatch(updateParsedData(parsedCandidate));
       setParsingProgress(100);
+
+      // If score is available, set it
+      if (data.resumeScore || data.resumeScoringDetails) {
+        setScoreResult(data.resumeScoringDetails);
+      }
 
       // Switch to email tab to show parsed data
       setActiveTab("email");
@@ -697,25 +838,57 @@ export default function ImportPage() {
                   </div>
                 </div>
 
-                {file && (
-                  <Button
-                    onClick={handleParseWithAI}
-                    disabled={status === "loading" || isAiParsing}
-                    className="w-full"
-                  >
-                    {status === "loading" ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="size-4 animate-spin" />
-                        Parsing Resume...
-                      </div>
-                    ) : (
-                      <>
-                        <Zap className="mr-2 size-4" />
-                        Parse with AI
-                      </>
-                    )}
-                  </Button>
-                )}
+                {/* Job selector for resume scoring */}
+                <JobSelector
+                  value={selectedJobId}
+                  onChange={handleJobChange}
+                  onJobChange={handleJobDataChange}
+                  disabled={isAiParsing || isScoring}
+                  className="mt-4"
+                />
+
+                <div className="flex gap-2 mt-4">
+                  {file && (
+                    <Button
+                      onClick={handleParseWithAI}
+                      disabled={status === "loading" || isAiParsing}
+                      className="flex-1"
+                    >
+                      {status === "loading" || isAiParsing ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="size-4 animate-spin" />
+                          Parsing Resume...
+                        </div>
+                      ) : (
+                        <>
+                          <Zap className="mr-2 size-4" />
+                          Parse with AI
+                        </>
+                      )}
+                    </Button>
+                  )}
+
+                  {file && parsedData && selectedJobId && (
+                    <Button
+                      onClick={scoreResume}
+                      disabled={isScoring || isAiParsing}
+                      variant="outline"
+                      className="whitespace-nowrap"
+                    >
+                      {isScoring ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="size-4 animate-spin" />
+                          Scoring...
+                        </div>
+                      ) : (
+                        <>
+                          <BadgeCheck className="mr-2 size-4" />
+                          Score Resume
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent value="email" className="min-h-[300px]">
@@ -750,6 +923,17 @@ export default function ImportPage() {
                 <Progress value={parsingProgress} className="w-full h-1.5" />
               </div>
             )}
+
+            {/* Scoring Result */}
+            {scoreResult && (
+              <div className="mt-4">
+                <ResumeScore
+                  score={scoreResult}
+                  loading={isScoring}
+                  className="border-primary/20"
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -771,15 +955,35 @@ export default function ImportPage() {
                 Review and edit the extracted information
               </CardDescription>
             </div>
-            {parsedData && (
-              <Badge
-                variant="outline"
-                className="bg-blue-50 text-blue-700 border-blue-200 font-normal"
-              >
-                <Zap className="mr-1.5 size-3.5" />
-                AI Parsed
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {parsedData && (
+                <Badge
+                  variant="outline"
+                  className="bg-blue-50 text-blue-700 border-blue-200 font-normal"
+                >
+                  <Zap className="mr-1.5 size-3.5" />
+                  AI Parsed
+                </Badge>
+              )}
+
+              {parsedData?.resumeScore && (
+                <Badge
+                  variant="outline"
+                  className={`font-medium ${
+                    parsedData.resumeScore >= 80
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : parsedData.resumeScore >= 60
+                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                      : parsedData.resumeScore >= 40
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-red-50 text-red-700 border-red-200"
+                  }`}
+                >
+                  <BadgeCheck className="mr-1.5 size-3.5" />
+                  {Math.round(parsedData.resumeScore)}% Match
+                </Badge>
+              )}
+            </div>
           </CardHeader>
 
           <CardContent className="space-y-5 max-h-[650px] overflow-y-auto pr-1">

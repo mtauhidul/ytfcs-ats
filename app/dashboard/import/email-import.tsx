@@ -496,7 +496,7 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
       toast.success(
         enabled
-          ? "Automation enabled - will check for new candidates every 15 minutes"
+          ? "Automation enabled - will check for new candidates regularly"
           : "Automation disabled - manual import only"
       );
     } catch (error) {

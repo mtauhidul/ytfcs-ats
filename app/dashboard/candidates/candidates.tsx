@@ -22,6 +22,7 @@ import {
 } from "firebase/storage";
 import {
   AlertCircle,
+  BadgeCheck,
   Clipboard,
   ClipboardCheck,
   Download,
@@ -39,6 +40,7 @@ import {
   Upload,
   UserIcon,
   X,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -84,6 +86,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { db, storage } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
 import { columns, type Candidate, type CandidateDocument } from "./columns";
+import ScoreDetail from "./score-detail";
 
 interface Stage {
   id: string;
@@ -107,6 +110,15 @@ interface CommunicationEntry {
   sender: string; // Name of person who sent/received the message
   subject?: string; // Optional subject line
   read?: boolean; // Whether the message has been read
+}
+// Define job interface
+interface Job {
+  id: string;
+  title: string;
+  status: string;
+  location: string;
+  department: string;
+  salary: string;
 }
 
 interface FeedbackEntry {
@@ -172,6 +184,11 @@ export default function CandidatesPage() {
     CommunicationEntry[]
   >([]);
 
+  // Resume scoring state
+  const [newScoringJobId, setNewScoringJobId] = useState<string>("");
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [isScoring, setIsScoring] = useState(false);
+
   // Documents state
   const [modalDocuments, setModalDocuments] = useState<CandidateDocument[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -189,6 +206,47 @@ export default function CandidatesPage() {
 
   // Track original state for change detection
   const [originalState, setOriginalState] = useState<any>(null);
+
+  // Add this state to your component
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+
+  // Add this useEffect to fetch jobs
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setLoadingJobs(true);
+      try {
+        const jobsCollection = collection(db, "jobs");
+        const jobsQuery = query(jobsCollection);
+        const snapshot = await getDocs(jobsQuery);
+
+        const jobsList = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          title: doc.data().title || "Untitled Job",
+          status: doc.data().status || "Draft",
+          location: doc.data().location || "",
+          department: doc.data().department || "",
+          salary: doc.data().salary || "",
+        }));
+
+        setJobs(jobsList);
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+        toast.error("Failed to load jobs");
+      } finally {
+        setLoadingJobs(false);
+      }
+    };
+
+    fetchJobs();
+  }, []);
+
+  // Add a function to handle the selection of a job
+  const handleJobSelection = (jobId: string) => {
+    setNewScoringJobId(jobId);
+    const selectedJob = jobs.find((job) => job.id === jobId);
+    setSelectedJob(selectedJob || null);
+  };
 
   // 1. Fetch Feedbacks - real-time
   const fetchCandidateFeedback = async (candidateId: string) => {
@@ -231,6 +289,104 @@ export default function CandidatesPage() {
     }
   };
 
+  // Handle scoring against a job
+  const handleScoreAgainstJob = async () => {
+    if (!detailCandidate || !newScoringJobId) {
+      toast.error("Please select a job to score against");
+      return;
+    }
+
+    try {
+      setIsScoring(true);
+
+      // Make API call to score endpoint
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/resume/score`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": import.meta.env.VITE_API_KEY || "",
+          },
+          body: JSON.stringify({
+            resumeData: {
+              name: detailCandidate.name,
+              skills: detailCandidate.skills || [],
+              experience: detailCandidate.experience || "",
+              education: detailCandidate.education || "",
+              jobTitle: detailCandidate.jobTitle || "",
+            },
+            jobData: {
+              id: newScoringJobId,
+              title: selectedJob?.title || "Job Position",
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to score resume");
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error("Failed to score resume");
+      }
+
+      // Update candidate with new score
+      if (data.data) {
+        const scoreResult = data.data;
+
+        // Update candidate document in Firestore
+        const candidateRef = doc(db, "candidates", detailCandidate.id);
+        const newHistoryEntry = {
+          date: new Date().toISOString(),
+          note: `Resume scored against job "${
+            selectedJob?.title || "Job Position"
+          }" with a match of ${Math.round(scoreResult.finalScore)}%`,
+        };
+        await updateDoc(candidateRef, {
+          resumeScore: scoreResult.finalScore,
+          resumeScoringDetails: scoreResult,
+          scoredAgainstJobId: newScoringJobId,
+          scoredAgainstJobTitle: selectedJob?.title,
+          updatedAt: new Date().toISOString(),
+          history: [...(detailCandidate.history || []), newHistoryEntry],
+        });
+
+        // Optimistically update local state for immediate UI feedback
+        setDetailCandidate((prev) =>
+          prev
+            ? {
+                ...prev,
+                resumeScore: scoreResult.finalScore,
+                resumeScoringDetails: scoreResult,
+                scoredAgainstJobId: newScoringJobId,
+                scoredAgainstJobTitle: selectedJob?.title,
+                updatedAt: new Date().toISOString(),
+                history: [...(prev.history || []), newHistoryEntry],
+              }
+            : prev
+        );
+
+        toast.success("Resume scored successfully");
+
+        // Reset the job selection
+        setNewScoringJobId("");
+        setSelectedJob(null);
+      }
+    } catch (error) {
+      console.error("Error scoring resume:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to score resume"
+      );
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
   // In your first useEffect for fetching candidates
   useEffect(() => {
     const q = query(collection(db, "candidates"));
@@ -269,6 +425,13 @@ export default function CandidatesPage() {
           education: data.education || "",
           skills: data.skills || [],
           notes: data.notes || "",
+          jobTitle: data.jobTitle || "",
+          stageColor: data.stageColor || "",
+          resumeScore: data.resumeScore || 0,
+          resumeScoringDetails: data.resumeScoringDetails || null,
+          scoredAgainstJobId: data.scoredAgainstJobId || "",
+          scoredAgainstJobTitle: data.scoredAgainstJobTitle || "",
+          // Use the documents array we constructed
           history: data.history || [],
           communications: data.communications || [],
           documents: documents, // Use our constructed documents array
@@ -1495,7 +1658,7 @@ export default function CandidatesPage() {
               onValueChange={setActiveTab}
               className="flex-grow flex flex-col overflow-hidden"
             >
-              <TabsList className="mb-4 overflow-x-auto justify-start">
+              <TabsList className="mb-4 overflow-x-auto justify-start flex-nowrap whitespace-nowrap scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent w-full">
                 <TabsTrigger
                   value="details"
                   className="flex items-center gap-1"
@@ -1506,6 +1669,13 @@ export default function CandidatesPage() {
                 <TabsTrigger value="tags" className="flex items-center gap-1">
                   <TagIcon className="size-4" />
                   <span>Tags & Categories</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="scoring"
+                  className="flex items-center gap-1"
+                >
+                  <BadgeCheck className="size-4" />
+                  <span>Scoring</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="history"
@@ -1789,7 +1959,7 @@ export default function CandidatesPage() {
                           value={modalNotes}
                           onChange={(e) => setModalNotes(e.target.value)}
                           placeholder="Add notes about this candidate..."
-                          className="resize-none min-h-[180px]"
+                          className="resize-none min-h-[120px]"
                         />
                       </div>
                     </div>
@@ -2295,6 +2465,90 @@ export default function CandidatesPage() {
                         </p>
                       </div>
                     )}
+                  </div>
+                </TabsContent>
+                <TabsContent value="scoring" className="py-2 min-h-[400px]">
+                  <div className="space-y-6 overflow-auto h-full max-h-[460px]">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-medium">Resume Scoring</h3>
+
+                        {detailCandidate?.resumeScore ? (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "px-2 py-1",
+                              detailCandidate.resumeScore >= 80
+                                ? "bg-green-50 text-green-700"
+                                : detailCandidate.resumeScore >= 60
+                                ? "bg-blue-50 text-blue-700"
+                                : detailCandidate.resumeScore >= 40
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-red-50 text-red-700"
+                            )}
+                          >
+                            <BadgeCheck className="mr-1.5 h-4 w-4" />
+                            {Math.round(detailCandidate.resumeScore)}% Match
+                          </Badge>
+                        ) : null}
+                      </div>
+
+                      <ScoreDetail
+                        scoreDetails={detailCandidate?.resumeScoringDetails}
+                        score={detailCandidate?.resumeScore}
+                        jobTitle={detailCandidate?.scoredAgainstJobTitle}
+                        jobId={detailCandidate?.scoredAgainstJobId}
+                        scoredAt={
+                          detailCandidate?.resumeScoringDetails?.metadata
+                            ?.scoredAt || detailCandidate?.updatedAt
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <h4 className="text-sm font-medium mb-3">
+                        Score Against a Different Job
+                      </h4>
+                      <div className="flex justify-between gap-3">
+                        <div className="flex-1">
+                          <Select
+                            value={newScoringJobId}
+                            onValueChange={handleJobSelection}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select a job to score against" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {jobs.map((job) => (
+                                <SelectItem key={job.id} value={job.id}>
+                                  {job.title}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Select a job to calculate a resume match score
+                          </div>
+                        </div>
+                        <Button
+                          onClick={handleScoreAgainstJob}
+                          disabled={!newScoringJobId || isScoring}
+                          className="whitespace-nowrap self-start"
+                        >
+                          {isScoring ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Scoring...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="mr-2 h-4 w-4" />
+                              Score Resume
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </TabsContent>
               </ScrollArea>

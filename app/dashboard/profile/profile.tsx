@@ -272,14 +272,8 @@ export default function ProfilePage() {
 
   // Generate initials from name
   const getInitials = (name: string) => {
-    if (!name) return "??";
-
-    const nameParts = name.split(" ");
-    if (nameParts.length === 1) {
-      return nameParts[0].substring(0, 2).toUpperCase();
-    } else {
-      return (nameParts[0][0] + (nameParts[1]?.[0] || "")).toUpperCase();
-    }
+    if (!name) return "?";
+    return name.trim().charAt(0).toUpperCase();
   };
 
   // Show loading state if user data is not available
@@ -339,7 +333,7 @@ export default function ProfilePage() {
               <CardContent className="space-y-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
                   <Avatar className="size-20">
-                    <AvatarFallback className="bg-primary/10 text-primary text-lg">
+                    <AvatarFallback className="bg-primary/10 text-primary text-4xl font-semibold">
                       {getInitials(displayName || user.name || "")}
                     </AvatarFallback>
                   </Avatar>

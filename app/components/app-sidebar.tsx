@@ -1,19 +1,17 @@
 import {
-  BarChart2,
-  Bot, // Import for dashboard icon
+  BarChart2, // Import for dashboard icon
   Building2,
   Building2Icon,
   FolderArchive,
   Group,
   LayersIcon,
+  Mail,
   MessageSquareText,
-  Settings,
   Tag,
   Upload,
   Users,
   UsersIcon,
   Workflow,
-  Zap,
 } from "lucide-react";
 import * as React from "react";
 
@@ -109,22 +107,10 @@ const data = {
       isActive: false,
     },
     {
-      title: "Automation",
-      url: "/dashboard/automation",
-      icon: Bot,
+      title: "Email Monitoring",
+      url: "/dashboard/monitoring",
+      icon: Mail,
       isActive: true,
-      items: [
-        {
-          title: "Email Monitoring",
-          url: "/dashboard/automation",
-          icon: Zap,
-        },
-        {
-          title: "Settings",
-          url: "/dashboard/automation/settings",
-          icon: Settings,
-        },
-      ],
     },
   ],
 };

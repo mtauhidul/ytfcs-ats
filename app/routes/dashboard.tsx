@@ -32,7 +32,7 @@ export default function DashboardLayout() {
     tags: "Tag Management",
     categories: "Category Management",
     stages: "Stage Management",
-    automation: "Email Automation",
+    monitoring: "Email Monitoring",
   };
 
   // Generate breadcrumbs based on URL segments
