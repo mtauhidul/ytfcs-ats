@@ -1814,6 +1814,42 @@ export default function CandidatesPage() {
                 <TabsContent value="details" className="py-2 min-h-[400px]">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
+                      {/* Contact Information Section */}
+                      <div className="bg-muted/10 p-4 rounded-lg border">
+                        <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                          <UserIcon className="size-4" />
+                          Contact Information
+                        </h4>
+                        <div className="space-y-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              Email
+                            </Label>
+                            <p className="text-sm font-medium">
+                              {detailCandidate.email || "Not provided"}
+                            </p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              Phone
+                            </Label>
+                            <p className="text-sm font-medium">
+                              {detailCandidate.phone || "Not provided"}
+                            </p>
+                          </div>
+                          {detailCandidate.jobTitle && (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">
+                                Job Title
+                              </Label>
+                              <p className="text-sm font-medium">
+                                {detailCandidate.jobTitle}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       <div>
                         <Label
                           htmlFor="stage"
@@ -1906,7 +1942,9 @@ export default function CandidatesPage() {
                           )}
                         </div>
                       </div>
+                    </div>
 
+                    <div className="space-y-4">
                       <div>
                         <Label
                           htmlFor="skills"
@@ -1929,9 +1967,7 @@ export default function CandidatesPage() {
                           className="resize-none min-h-[100px]"
                         />
                       </div>
-                    </div>
 
-                    <div className="space-y-4">
                       <div>
                         <Label
                           htmlFor="education"
