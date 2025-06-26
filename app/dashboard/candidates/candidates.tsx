@@ -136,6 +136,7 @@ interface FeedbackEntry {
 // Constants for empty values - fixes the SelectItem empty value issue
 const UNASSIGNED_VALUE = "unassigned";
 const NONE_CATEGORY_VALUE = "none";
+const NO_TAGS_VALUE = "no-tags";
 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -1973,36 +1974,66 @@ export default function CandidatesPage() {
                         <h3 className="text-sm font-medium">Tags</h3>
                       </CardHeader>
                       <CardContent>
-                        <div className="flex flex-wrap gap-2 border p-3 rounded bg-background min-h-[200px]">
-                          {allTags.length > 0 ? (
-                            allTags.map((tag) => {
-                              const isSelected = modalTags.includes(tag);
-                              return (
+                        <div className="space-y-3">
+                          {/* Selected Tags Display */}
+                          {modalTags.length > 0 && (
+                            <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
+                              {modalTags.map((tag) => (
                                 <Badge
                                   key={tag}
-                                  variant={isSelected ? "default" : "outline"}
-                                  className={cn(
-                                    "cursor-pointer hover:opacity-80 h-8 px-3 inline-flex items-center",
-                                    isSelected
-                                      ? "bg-primary text-primary-foreground"
-                                      : ""
-                                  )}
-                                  onClick={() => {
-                                    if (isSelected) {
+                                  variant="default"
+                                  className="flex items-center gap-1"
+                                >
+                                  {tag}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
                                       setModalTags(
                                         modalTags.filter((t) => t !== tag)
                                       );
-                                    } else {
-                                      setModalTags([...modalTags, tag]);
-                                    }
-                                  }}
-                                >
-                                  {tag}
+                                    }}
+                                    className="ml-1 hover:bg-white/20 rounded-full p-0.5"
+                                  >
+                                    <X className="size-3" />
+                                  </button>
                                 </Badge>
-                              );
-                            })
-                          ) : (
-                            <div className="text-sm text-muted-foreground w-full text-center py-10 flex flex-col items-center">
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Tag Selection Dropdown */}
+                          <Select
+                            value=""
+                            onValueChange={(value) => {
+                              if (value && !modalTags.includes(value)) {
+                                setModalTags([...modalTags, value]);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Add a tag..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {allTags
+                                .filter((tag) => !modalTags.includes(tag))
+                                .map((tag) => (
+                                  <SelectItem key={tag} value={tag}>
+                                    {tag}
+                                  </SelectItem>
+                                ))}
+                              {allTags.filter((tag) => !modalTags.includes(tag))
+                                .length === 0 && (
+                                <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                  {allTags.length === 0
+                                    ? "No tags available"
+                                    : "All tags selected"}
+                                </div>
+                              )}
+                            </SelectContent>
+                          </Select>
+
+                          {allTags.length === 0 && (
+                            <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
                               <TagIcon className="mb-2 h-6 w-6 opacity-40" />
                               No tags available
                               <p className="text-xs mt-1">
