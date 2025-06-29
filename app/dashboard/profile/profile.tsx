@@ -10,10 +10,12 @@ import {
 } from "firebase/firestore";
 import {
   Check,
+  Clock,
   KeyRound,
   Loader2,
   Save,
   ShieldAlert,
+  Upload,
   User,
   UserCircle,
 } from "lucide-react";
@@ -45,6 +47,12 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import { db } from "~/lib/firebase";
 
 export default function ProfilePage() {
@@ -52,6 +60,7 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
+  const [justSaved, setJustSaved] = useState(false);
   const navigate = useNavigate();
 
   // Password States
@@ -158,6 +167,10 @@ export default function ProfilePage() {
 
       // Refresh user data
       await refreshUser();
+
+      // Show success state
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 3000);
 
       toast.success("Profile updated successfully");
     } catch (error) {
@@ -270,118 +283,501 @@ export default function ProfilePage() {
     }
   };
 
+  const resetPasswordDialog = () => {
+    setPasswordDialogOpen(false);
+    setPasswordError("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setCurrentPassword("");
+    setPasswordStrength("");
+  };
+
   // Generate initials from name
   const getInitials = (name: string) => {
     if (!name) return "?";
-    return name.trim().charAt(0).toUpperCase();
+    const names = name.trim().split(" ");
+    if (names.length === 1) return names[0].charAt(0).toUpperCase();
+    return (
+      names[0].charAt(0) + names[names.length - 1].charAt(0)
+    ).toUpperCase();
+  };
+
+  // Format last updated date
+  const formatLastUpdated = (date: string | Date) => {
+    if (!date) return null;
+    try {
+      const d = typeof date === "string" ? new Date(date) : date;
+      return d.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return null;
+    }
   };
 
   // Show loading state if user data is not available
   if (!user) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="size-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading profile...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-6 max-w-4xl">
-      <Toaster position="top-right" />
+    <TooltipProvider>
+      <div className="container mx-auto py-6 max-w-4xl">
+        <Toaster position="top-right" />
 
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <UserCircle className="size-6" />
-            My Profile
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            View and manage your account details
-          </p>
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-semibold flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <UserCircle className="size-6 text-primary" />
+              </div>
+              My Profile
+            </h1>
+            <p className="text-muted-foreground text-sm mt-2 ml-14">
+              Manage your account settings and preferences
+            </p>
+          </div>
         </div>
-      </div>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        className="space-y-6"
-      >
-        <TabsList>
-          <TabsTrigger value="profile" className="flex items-center gap-1.5">
-            <User className="size-4" />
-            <span>Profile</span>
-          </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center gap-1.5">
-            <KeyRound className="size-4" />
-            <span>Security</span>
-          </TabsTrigger>
-        </TabsList>
+        {/* Main Content */}
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-8"
+        >
+          <div className="border-b border-border/40">
+            <TabsList className="h-12 bg-transparent p-0 gap-8">
+              <TabsTrigger
+                value="profile"
+                className="flex items-center gap-2 data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 transition-all duration-200 hover:text-primary"
+              >
+                <User className="size-4" />
+                <span className="font-medium">Profile</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="security"
+                className="flex items-center gap-2 data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 transition-all duration-200 hover:text-primary"
+              >
+                <KeyRound className="size-4" />
+                <span className="font-medium">Security</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-        <TabsContent value="profile" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="size-5" />
-                Account Information
-              </CardTitle>
-              <CardDescription>
-                View and edit your profile information
-              </CardDescription>
-            </CardHeader>
+          <TabsContent value="profile" className="space-y-8 mt-8">
+            <Card className="border-border/40 shadow-sm">
+              <CardHeader className="pb-6">
+                <CardTitle className="flex items-center gap-3">
+                  <div className="p-1.5 bg-primary/10 rounded-md">
+                    <User className="size-4 text-primary" />
+                  </div>
+                  Account Information
+                </CardTitle>
+                <CardDescription>
+                  Update your personal details and profile information
+                </CardDescription>
+              </CardHeader>
 
-            <form onSubmit={handleUpdateProfile}>
+              <form onSubmit={handleUpdateProfile}>
+                <CardContent className="space-y-8">
+                  {/* Avatar Section */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 p-6 bg-accent/10 rounded-lg border border-border/30">
+                    <div className="relative group">
+                      <Avatar className="size-20 ring-4 ring-background shadow-md">
+                        <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-2xl font-semibold">
+                          {getInitials(displayName || user.name || "")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="absolute -bottom-1 -right-1 p-2 bg-primary/10 hover:bg-primary/20 rounded-full border-2 border-background transition-colors group-hover:scale-105 transition-transform"
+                          >
+                            <Upload className="size-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Avatar upload coming soon</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+
+                    <div className="space-y-3 flex-1 w-full sm:w-auto">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="name" className="text-sm font-medium">
+                          Display Name
+                        </Label>
+                        {justSaved && (
+                          <div className="flex items-center gap-1 text-green-600 animate-in fade-in-0 duration-300">
+                            <Check className="size-3" />
+                            <span className="text-xs">Saved</span>
+                          </div>
+                        )}
+                      </div>
+                      <Input
+                        id="name"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="Enter your display name"
+                        className="text-base h-11 focus:ring-2 focus:ring-primary/20 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Account Details */}
+                  <div className="grid gap-6">
+                    <div className="space-y-3">
+                      <Label htmlFor="email" className="text-sm font-medium">
+                        Email Address
+                      </Label>
+                      <Input
+                        id="email"
+                        value={user.email}
+                        disabled
+                        className="bg-muted/50 h-11 text-base border-border/40"
+                      />
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <ShieldAlert className="size-3" />
+                        Your email address cannot be changed for security
+                        reasons
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="role" className="text-sm font-medium">
+                        Role
+                      </Label>
+                      <Input
+                        id="role"
+                        value={user.role || "Team Member"}
+                        disabled
+                        className="bg-muted/50 h-11 text-base border-border/40"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+
+                <CardFooter className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-6 border-t border-border/40">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {user.updatedAt && (
+                      <>
+                        <Clock className="size-3" />
+                        <span>
+                          Last updated: {formatLastUpdated(user.updatedAt)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={
+                      !displayName.trim() ||
+                      isSubmitting ||
+                      displayName === user.name
+                    }
+                    className="min-w-[140px] h-11 transition-all duration-200 hover:shadow-md"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 size-4" />
+                        Save Changes
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </form>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="security" className="space-y-8 mt-8">
+            <Card className="border-border/40 shadow-sm">
+              <CardHeader className="pb-6">
+                <CardTitle className="flex items-center gap-3">
+                  <div className="p-1.5 bg-amber-500/10 rounded-md">
+                    <KeyRound className="size-4 text-amber-600" />
+                  </div>
+                  Password Management
+                </CardTitle>
+                <CardDescription>
+                  {hasPassword
+                    ? "Update your account password for enhanced security"
+                    : "Set up a password for quick and secure login access"}
+                </CardDescription>
+              </CardHeader>
+
               <CardContent className="space-y-6">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-                  <Avatar className="size-20">
-                    <AvatarFallback className="bg-primary/10 text-primary text-4xl font-semibold">
-                      {getInitials(displayName || user.name || "")}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  <div className="space-y-1.5 flex-1">
-                    <Label htmlFor="name">Display Name</Label>
-                    <Input
-                      id="name"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Your name"
-                    />
+                <div
+                  className={`p-6 rounded-lg border-2 transition-all duration-300 ${
+                    hasPassword
+                      ? "bg-green-50/50 border-green-200/50 dark:bg-green-950/20 dark:border-green-800/30"
+                      : "bg-amber-50/50 border-amber-200/50 dark:bg-amber-950/20 dark:border-amber-800/30"
+                  }`}
+                >
+                  <div className="flex items-start gap-4">
+                    <div
+                      className={`p-2 rounded-full ${
+                        hasPassword
+                          ? "bg-green-100 dark:bg-green-900/50"
+                          : "bg-amber-100 dark:bg-amber-900/50"
+                      }`}
+                    >
+                      <ShieldAlert
+                        className={`size-5 ${
+                          hasPassword
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-amber-600 dark:text-amber-400"
+                        }`}
+                      />
+                    </div>
+                    <div className="space-y-2 flex-1">
+                      <h4
+                        className={`font-medium ${
+                          hasPassword
+                            ? "text-green-800 dark:text-green-200"
+                            : "text-amber-800 dark:text-amber-200"
+                        }`}
+                      >
+                        {hasPassword
+                          ? "✓ Password Protection Enabled"
+                          : "⚡ Using Passwordless Authentication"}
+                      </h4>
+                      <p
+                        className={`text-sm leading-relaxed ${
+                          hasPassword
+                            ? "text-green-700 dark:text-green-300"
+                            : "text-amber-700 dark:text-amber-300"
+                        }`}
+                      >
+                        {hasPassword
+                          ? "Your account is secured with a password. You can sign in using either your email and password, or continue using magic links for convenience."
+                          : "You're currently using our secure magic link system for authentication. Setting up a password gives you an additional login option with your email and password."}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <Label htmlFor="email">Email address</Label>
-                  <Input
-                    id="email"
-                    value={user.email}
-                    disabled
-                    className="bg-muted/50 mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Your email address cannot be changed
-                  </p>
-                </div>
+                <div className="pt-2">
+                  <h4 className="font-medium mb-3">Authentication Methods</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border/30">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-md">
+                          <svg
+                            className="size-4 text-blue-600 dark:text-blue-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M3 8l7.89 7.89a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                            />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">Magic Link</p>
+                          <p className="text-xs text-muted-foreground">
+                            Sign in via email
+                          </p>
+                        </div>
+                      </div>
+                      <div className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 text-xs font-medium rounded">
+                        Active
+                      </div>
+                    </div>
 
-                <div>
-                  <Label htmlFor="role">Role</Label>
-                  <Input
-                    id="role"
-                    value={user.role || "Team Member"}
-                    disabled
-                    className="bg-muted/50 mt-2"
-                  />
+                    <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border/30">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-md">
+                          <KeyRound className="size-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">
+                            Email & Password
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Traditional login
+                          </p>
+                        </div>
+                      </div>
+                      <div
+                        className={`px-2 py-1 text-xs font-medium rounded ${
+                          hasPassword
+                            ? "bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300"
+                            : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                        }`}
+                      >
+                        {hasPassword ? "Active" : "Not Set"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
 
-              <CardFooter>
+              <CardFooter className="pt-6 border-t border-border/40">
                 <Button
-                  className="mt-2"
+                  onClick={() => setPasswordDialogOpen(true)}
+                  className="h-11 transition-all duration-200 hover:shadow-md"
+                  variant={hasPassword ? "outline" : "default"}
+                >
+                  <KeyRound className="mr-2 size-4" />
+                  {hasPassword ? "Change Password" : "Set Up Password"}
+                </Button>
+              </CardFooter>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* Enhanced Password Dialog */}
+        <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader className="space-y-3">
+              <DialogTitle className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-md">
+                  <KeyRound className="size-5 text-primary" />
+                </div>
+                {hasPassword ? "Change Your Password" : "Set Up Password"}
+              </DialogTitle>
+              <DialogDescription className="leading-relaxed">
+                {hasPassword
+                  ? "Enter your current password and create a new one to update your credentials."
+                  : "Create a secure password to enable email and password login alongside magic links."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSetupPassword} className="space-y-6 py-6">
+              {hasPassword && (
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="current-password"
+                    className="text-sm font-medium"
+                  >
+                    Current Password
+                  </Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter your current password"
+                    className="h-11 transition-all focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <Label htmlFor="new-password" className="text-sm font-medium">
+                  {hasPassword ? "New Password" : "Password"}
+                </Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder={
+                    hasPassword
+                      ? "Enter your new password"
+                      : "Create a secure password"
+                  }
+                  className="h-11 transition-all focus:ring-2 focus:ring-primary/20"
+                />
+                {passwordStrength && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        Password strength
+                      </span>
+                      <span
+                        className={`text-xs font-medium capitalize ${
+                          passwordStrength === "weak"
+                            ? "text-red-600"
+                            : passwordStrength === "medium"
+                            ? "text-amber-600"
+                            : "text-green-600"
+                        }`}
+                      >
+                        {passwordStrength}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-500 ease-out ${
+                          passwordStrength === "weak"
+                            ? "w-1/3 bg-red-500"
+                            : passwordStrength === "medium"
+                            ? "w-2/3 bg-amber-500"
+                            : "w-full bg-green-500"
+                        }`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="confirm-password"
+                  className="text-sm font-medium"
+                >
+                  Confirm Password
+                </Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  className="h-11 transition-all focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              {passwordError && (
+                <div className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-md">
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    {passwordError}
+                  </p>
+                </div>
+              )}
+
+              <DialogFooter className="gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={resetPasswordDialog}
+                  className="h-11"
+                >
+                  Cancel
+                </Button>
+                <Button
                   type="submit"
                   disabled={
-                    !displayName.trim() ||
                     isSubmitting ||
-                    displayName === user.name
+                    !newPassword ||
+                    !confirmPassword ||
+                    (hasPassword && !currentPassword)
                   }
+                  className="h-11 min-w-[120px] transition-all duration-200"
                 >
                   {isSubmitting ? (
                     <>
@@ -390,173 +786,16 @@ export default function ProfilePage() {
                     </>
                   ) : (
                     <>
-                      <Save className="mr-2 size-4" />
-                      Save Changes
+                      <Check className="mr-2 size-4" />
+                      {hasPassword ? "Update" : "Set Password"}
                     </>
                   )}
                 </Button>
-              </CardFooter>
+              </DialogFooter>
             </form>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="security" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <KeyRound className="size-5" />
-                Password Management
-              </CardTitle>
-              <CardDescription>
-                {hasPassword
-                  ? "Update your account password"
-                  : "Set up a password for quick login"}
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              <div className="bg-muted/30 p-4 rounded-md flex items-start gap-3">
-                <ShieldAlert className="size-5 text-amber-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium">
-                    {hasPassword
-                      ? "You have a password set up"
-                      : "You're currently using passwordless authentication"}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {hasPassword
-                      ? "You can use your email and password to sign in, or continue using magic links."
-                      : "Setting up a password allows you to sign in with your email and password instead of using magic links."}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-
-            <CardFooter>
-              <Button onClick={() => setPasswordDialogOpen(true)}>
-                <KeyRound className="mr-2 size-4" />
-                {hasPassword ? "Change Password" : "Set Up Password"}
-              </Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Password Dialog */}
-      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {hasPassword ? "Change Your Password" : "Set Up Password"}
-            </DialogTitle>
-            <DialogDescription>
-              {hasPassword
-                ? "Enter your current password and a new password to update your credentials."
-                : "Create a password to enable email and password login."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleSetupPassword} className="space-y-4 py-4">
-            {hasPassword && (
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Current Password</Label>
-                <Input
-                  id="current-password"
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Enter current password"
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="new-password">
-                {hasPassword ? "New Password" : "Password"}
-              </Label>
-              <Input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder={
-                  hasPassword ? "Enter new password" : "Create a password"
-                }
-              />
-              {passwordStrength && (
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${
-                        passwordStrength === "weak"
-                          ? "w-1/3 bg-red-500"
-                          : passwordStrength === "medium"
-                          ? "w-2/3 bg-amber-500"
-                          : "w-full bg-green-500"
-                      }`}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground capitalize">
-                    {passwordStrength}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm password"
-              />
-            </div>
-
-            {passwordError && (
-              <p className="text-sm text-destructive">{passwordError}</p>
-            )}
-
-            <DialogFooter className="pt-4">
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => {
-                  setPasswordDialogOpen(false);
-                  setPasswordError("");
-                  setNewPassword("");
-                  setConfirmPassword("");
-                  setCurrentPassword("");
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  isSubmitting ||
-                  !newPassword ||
-                  !confirmPassword ||
-                  (hasPassword && !currentPassword)
-                }
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Check className="mr-2 size-4" />
-                    {hasPassword ? "Update Password" : "Set Password"}
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
   );
 }
