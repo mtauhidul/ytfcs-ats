@@ -1,6 +1,6 @@
 // components/nav-user.tsx
 import { getAuth, signOut } from "firebase/auth";
-import { ChevronsUpDown, LogOut, Settings, UserCircle } from "lucide-react";
+import { ChevronsUpDown, LogOut, UserCircle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useAuth } from "~/context/auth-context";
 
@@ -119,14 +119,6 @@ export function NavUser() {
               >
                 <UserCircle className="mr-3 size-4" />
                 <span className="font-medium">My Profile</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onClick={() => navigate("/dashboard/settings")}
-                className="cursor-pointer px-3 py-2 rounded-lg transition-colors"
-              >
-                <Settings className="mr-3 size-4" />
-                <span className="font-medium">Settings</span>
               </DropdownMenuItem>
             </div>
 
