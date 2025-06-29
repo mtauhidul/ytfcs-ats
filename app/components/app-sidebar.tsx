@@ -1,16 +1,15 @@
 import {
-  BarChart2, // Import for dashboard icon
-  Building2,
-  Building2Icon,
-  FolderArchive,
+  BarChart3, // Changed to BarChart3 for better visual
+  Briefcase, // Changed from Building2Icon to Briefcase for jobs
+  FileText, // Changed from FolderArchive to FileText for categories
   Group,
-  LayersIcon,
+  Layers3, // Changed from LayersIcon to Layers3
   Mail,
-  MessageSquareText,
+  MessageSquare, // Changed from MessageSquareText to MessageSquare
   Tag,
   Upload,
-  Users,
-  UsersIcon,
+  User,
+  Users, // Changed from UsersIcon to User for profile
   Workflow,
 } from "lucide-react";
 import * as React from "react";
@@ -35,7 +34,7 @@ const data = {
   teams: [
     {
       name: "YTFCS",
-      logo: Building2,
+      logo: Briefcase,
       plan: "ATS",
     },
   ],
@@ -43,13 +42,13 @@ const data = {
     {
       title: "Dashboard",
       url: "/dashboard", // This will now point to the dashboard index page
-      icon: BarChart2, // Using BarChart2 for the dashboard icon
+      icon: BarChart3, // Using BarChart3 for better visual
       isActive: false,
     },
     {
       title: "Jobs List",
       url: "/dashboard/jobs",
-      icon: Building2Icon,
+      icon: Briefcase, // More semantic icon for jobs
       isActive: false,
     },
     {
@@ -73,7 +72,7 @@ const data = {
     {
       title: "Communication",
       url: "/dashboard/communication",
-      icon: MessageSquareText,
+      icon: MessageSquare, // Cleaner icon
       isActive: false,
     },
     {
@@ -91,19 +90,19 @@ const data = {
     {
       title: "Categories",
       url: "/dashboard/categories",
-      icon: FolderArchive,
+      icon: FileText, // More appropriate for categories
       isActive: false,
     },
     {
       title: "Stages",
       url: "/dashboard/stages",
-      icon: LayersIcon,
+      icon: Layers3, // Better visual representation
       isActive: false,
     },
     {
       title: "Profile",
       url: "/dashboard/profile",
-      icon: UsersIcon,
+      icon: User, // More appropriate single user icon
       isActive: false,
     },
     {
@@ -117,14 +116,18 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+    <Sidebar
+      collapsible="icon"
+      className="border-r-0 shadow-sm transition-all duration-150 ease-in-out"
+      {...props}
+    >
+      <SidebarHeader className="border-b border-border/40 pb-3 transition-all duration-150 ease-in-out">
         <TeamSwitcher />
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="py-3 transition-all duration-150 ease-in-out">
         <NavMain items={data.navMain} />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-border/40 pt-3 transition-all duration-150 ease-in-out">
         <NavUser />
       </SidebarFooter>
       <SidebarRail />
