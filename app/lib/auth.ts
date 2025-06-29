@@ -51,6 +51,7 @@ export interface AuthUser {
   role: UserRole;
   photoUrl?: string;
   hasPassword?: boolean;
+  updatedAt?: Date; // Optional field for last updated timestamp
 }
 
 // Save email locally for the authentication process
