@@ -16,8 +16,14 @@ import {
 import {
   AlertCircle,
   Briefcase,
+  Building,
+  Calendar,
+  ChevronDown,
+  DollarSign,
   ListChecks,
   Loader2,
+  MapPin,
+  MoreHorizontal,
   Plus,
   Search,
   Shield,
@@ -53,6 +59,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -117,6 +130,9 @@ export default function JobsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
+  // For mobile view toggle
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
 
@@ -158,19 +174,35 @@ export default function JobsPage() {
   const [modalTags, setModalTags] = useState<string[]>([]);
   const [modalCategory, setModalCategory] = useState("");
   const [modalHistory, setModalHistory] = useState<HistoryEntry[]>([]);
-  const [modalNewHistory, setModalNewHistory] = useState("");
   const [activeTab, setActiveTab] = useState("details");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Track original state for change detection
   const [originalState, setOriginalState] = useState<any>(null);
 
+  // Check screen size for responsive behavior
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth < 768) {
+        setViewMode("cards");
+      } else {
+        setViewMode("table");
+      }
+    };
+
+    checkScreenSize();
+    window.addEventListener("resize", checkScreenSize);
+    return () => window.removeEventListener("resize", checkScreenSize);
+  }, []);
+
   // Initialize job statuses on first load
   const initializeJobStatuses = async () => {
     try {
       const statusesSnapshot = await getDocs(collection(db, "job-statuses"));
       if (statusesSnapshot.empty) {
-        // Create default statuses
         for (const status of DEFAULT_JOB_STATUSES) {
           await addDoc(collection(db, "job-statuses"), status);
         }
@@ -184,7 +216,7 @@ export default function JobsPage() {
     initializeJobStatuses();
   }, []);
 
-  // 1. Real-time Firestore jobs
+  // Real-time Firestore jobs
   useEffect(() => {
     const q = query(collection(db, "jobs"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -192,7 +224,7 @@ export default function JobsPage() {
         const data = docSnap.data();
         return {
           id: docSnap.id,
-          jobId: data.jobId || "", // Custom job ID
+          jobId: data.jobId || "",
           title: data.title || "",
           description: data.description || "",
           requirements: data.requirements || [],
@@ -215,7 +247,7 @@ export default function JobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-time Firestore job statuses - sorted by order
+  // Real-time Firestore job statuses
   useEffect(() => {
     const q = query(collection(db, "job-statuses"), orderBy("order", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -233,11 +265,20 @@ export default function JobsPage() {
     return () => unsubscribe();
   }, []);
 
-  // 3. Real-time Firestore tags (shared with candidates)
+  // Real-time Firestore tags
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "tags"), (snapshot) => {
       const list = snapshot.docs.map((d) => d.data().name) as string[];
       setAllTags(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Firestore categories
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "categories"), (snapshot) => {
+      const list = snapshot.docs.map((d) => d.data().name) as string[];
+      setAllCategories(list);
     });
     return () => unsubscribe();
   }, []);
@@ -249,30 +290,17 @@ export default function JobsPage() {
     setSelectedJobIds(selectedIds);
   }, [rowSelection]);
 
-  // 4. Real-time Firestore categories (shared with candidates)
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "categories"), (snapshot) => {
-      const list = snapshot.docs.map((d) => d.data().name) as string[];
-      setAllCategories(list);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 5. Filter (search) logic
+  // Filter logic
   const filteredJobs = useMemo(() => {
     const f = globalFilter.toLowerCase();
     if (!f) return jobs;
 
-    // Get status titles for searching
     const statusTitleMap = new Map(
       statuses.map((s) => [s.id, s.title.toLowerCase()])
     );
 
     return jobs.filter((job) => {
-      // Get status title for this job if it exists
       const statusTitle = statusTitleMap.get(job.statusId) || "";
-
-      // Searching across title, tags, category, status, etc.
       const combined = [
         job.title,
         job.description || "",
@@ -291,13 +319,11 @@ export default function JobsPage() {
     });
   }, [jobs, globalFilter, statuses]);
 
-  // Helper function to detect changes between current and original state
+  // Helper functions
   const detectChanges = () => {
     if (!originalState || !detailJob) return {};
-
     const changes: Record<string, { from: any; to: any }> = {};
 
-    // Check for status changes
     const origStatusId =
       originalState.statusId === UNASSIGNED_VALUE ? "" : originalState.statusId;
     const newStatusId = modalStatusId === UNASSIGNED_VALUE ? "" : modalStatusId;
@@ -309,7 +335,6 @@ export default function JobsPage() {
       changes.status = { from: oldStatus, to: newStatus };
     }
 
-    // Check for category changes
     const origCategory =
       originalState.category === NONE_CATEGORY_VALUE
         ? ""
@@ -323,7 +348,6 @@ export default function JobsPage() {
       };
     }
 
-    // Check for tags changes
     if (JSON.stringify(originalState.tags) !== JSON.stringify(modalTags)) {
       changes.tags = {
         from:
@@ -334,7 +358,6 @@ export default function JobsPage() {
       };
     }
 
-    // Check for requirements changes
     if (
       JSON.stringify(originalState.requirements) !==
       JSON.stringify(modalRequirements)
@@ -349,7 +372,6 @@ export default function JobsPage() {
       };
     }
 
-    // Check for basic field changes
     const fields = [
       "title",
       "description",
@@ -358,7 +380,6 @@ export default function JobsPage() {
       "department",
       "employmentType",
     ];
-
     fields.forEach((field) => {
       const modalValue =
         field === "title"
@@ -384,7 +405,6 @@ export default function JobsPage() {
     return changes;
   };
 
-  // Generate history entries from detected changes
   const generateHistoryEntries = (
     changes: Record<string, { from: any; to: any }>
   ) => {
@@ -393,7 +413,6 @@ export default function JobsPage() {
 
     Object.entries(changes).forEach(([field, { from, to }]) => {
       let note = "";
-
       switch (field) {
         case "status":
           note = `Status changed from "${from}" to "${to}"`;
@@ -428,25 +447,19 @@ export default function JobsPage() {
         default:
           note = `${field} was updated`;
       }
-
-      entries.push({
-        date: timestamp,
-        note: note,
-      });
+      entries.push({ date: timestamp, note });
     });
 
     return entries;
   };
 
-  // Generate custom job ID
   const generateJobId = () => {
     const prefix = "JOB";
-    const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
-    const random = Math.random().toString(36).substring(2, 5).toUpperCase(); // 3 random chars
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.random().toString(36).substring(2, 5).toUpperCase();
     return `${prefix}-${timestamp}-${random}`;
   };
 
-  // Create new job
   const handleCreateJob = async () => {
     if (!createJobData.title.trim()) {
       toast.error("Job title is required");
@@ -456,11 +469,10 @@ export default function JobsPage() {
     try {
       setIsSubmitting(true);
       const createLoading = toast.loading("Creating job...");
-
       const customJobId = generateJobId();
 
       const newJob = {
-        jobId: customJobId, // Custom job ID
+        jobId: customJobId,
         title: createJobData.title.trim(),
         description: createJobData.description.trim(),
         requirements: createJobData.requirements,
@@ -491,7 +503,6 @@ export default function JobsPage() {
       toast.dismiss(createLoading);
       toast.success(`Job created successfully with ID: ${customJobId}`);
 
-      // Reset form and close modal
       setCreateJobData({
         title: "",
         description: "",
@@ -513,7 +524,6 @@ export default function JobsPage() {
     }
   };
 
-  // 6. Open job detail
   const openJobDetail = (job: Job) => {
     setDetailJob(job);
     setModalTitle(job.title || "");
@@ -527,10 +537,8 @@ export default function JobsPage() {
     setModalTags(job.tags || []);
     setModalCategory(job.category || NONE_CATEGORY_VALUE);
     setModalHistory(job.history || []);
-    setModalNewHistory("");
     setActiveTab("details");
 
-    // Store original state for change tracking
     setOriginalState({
       title: job.title || "",
       description: job.description || "",
@@ -545,7 +553,6 @@ export default function JobsPage() {
     });
   };
 
-  // 7. Save job detail changes
   const handleSaveDetail = async () => {
     if (!detailJob) return;
 
@@ -553,11 +560,8 @@ export default function JobsPage() {
       setIsSubmitting(true);
       const saveLoading = toast.loading("Saving changes...");
 
-      // Detect changes for history
       const changes = detectChanges();
       const hasChanges = Object.keys(changes).length > 0;
-
-      // Generate history entries for the changes
       const changeHistoryEntries = generateHistoryEntries(changes);
 
       const ref = doc(db, "jobs", detailJob.id);
@@ -569,27 +573,15 @@ export default function JobsPage() {
         salaryRange: modalSalaryRange,
         department: modalDepartment,
         employmentType: modalEmploymentType,
-        // Convert back from UNASSIGNED_VALUE to empty string for storage
         statusId: modalStatusId === UNASSIGNED_VALUE ? "" : modalStatusId,
         tags: modalTags,
-        // Convert back from NONE_CATEGORY_VALUE to empty string for storage
         category: modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory,
         history: modalHistory,
         updatedAt: new Date().toISOString(),
       };
 
-      // Add any automatically generated history entries
       if (changeHistoryEntries.length > 0) {
         updatedData.history = [...modalHistory, ...changeHistoryEntries];
-      }
-
-      // If user typed a new history note, add it as well
-      if (modalNewHistory.trim()) {
-        const newEntry = {
-          date: new Date().toISOString(),
-          note: modalNewHistory.trim(),
-        };
-        updatedData.history = [...updatedData.history, newEntry];
       }
 
       await updateDoc(ref, updatedData);
@@ -612,7 +604,6 @@ export default function JobsPage() {
     }
   };
 
-  // 8. Delete job
   const handleDeleteJob = async () => {
     if (!detailJob) return;
 
@@ -620,7 +611,6 @@ export default function JobsPage() {
       setIsSubmitting(true);
       const deleteLoading = toast.loading("Deleting job...");
 
-      // Delete the job record from Firestore
       const jobRef = doc(db, "jobs", detailJob.id);
       await deleteDoc(jobRef);
 
@@ -636,14 +626,12 @@ export default function JobsPage() {
     }
   };
 
-  // Handle bulk actions
   const handleBulkAction = async (action: "status" | "tag" | "delete") => {
     if (selectedJobIds.length === 0) {
       toast.error("No jobs selected");
       return;
     }
 
-    // Additional validation per action type
     if (action === "status" && !bulkStatusId) {
       toast.error("Please select a status");
       return;
@@ -659,12 +647,10 @@ export default function JobsPage() {
       const actionLoading = toast.loading(
         `Processing ${selectedJobIds.length} jobs...`
       );
-
       let successCount = 0;
 
       for (const id of selectedJobIds) {
         try {
-          // Find job in local state
           const job = jobs.find((j) => j.id === id);
           if (!job) {
             console.warn(
@@ -673,24 +659,19 @@ export default function JobsPage() {
             continue;
           }
 
-          // Create Firestore reference
           const jobRef = doc(db, "jobs", id);
-
-          // Create history entry
           const historyEntry = {
             date: new Date().toISOString(),
             note: "",
           };
 
           if (action === "status" && bulkStatusId) {
-            // Status change logic
             const oldStatus =
               statuses.find((s) => s.id === job.statusId)?.title ||
               "Unassigned";
             const newStatus =
               statuses.find((s) => s.id === bulkStatusId)?.title ||
               "Unassigned";
-
             historyEntry.note = `Status changed from "${oldStatus}" to "${newStatus}" via bulk update`;
 
             await updateDoc(jobRef, {
@@ -698,12 +679,9 @@ export default function JobsPage() {
               history: [...(job.history || []), historyEntry],
               updatedAt: new Date().toISOString(),
             });
-
             successCount++;
           } else if (action === "tag" && bulkTag) {
-            // Tag action
             const currentTags = Array.isArray(job.tags) ? [...job.tags] : [];
-
             if (!currentTags.includes(bulkTag)) {
               historyEntry.note = `Tag "${bulkTag}" added via bulk update`;
               const newTags = [...currentTags, bulkTag];
@@ -713,17 +691,14 @@ export default function JobsPage() {
                 history: [...(job.history || []), historyEntry],
                 updatedAt: new Date().toISOString(),
               });
-
               successCount++;
             }
           } else if (action === "delete") {
-            // Delete action
             await deleteDoc(jobRef);
             successCount++;
           }
         } catch (jobError) {
           console.error(`Error processing job ${id}:`, jobError);
-          // Continue with other jobs even if one fails
         }
       }
 
@@ -735,8 +710,6 @@ export default function JobsPage() {
             ? `Deleted ${successCount} of ${selectedJobIds.length} jobs`
             : `Updated ${successCount} of ${selectedJobIds.length} jobs`
         );
-
-        // Clear selection after successful action
         setRowSelection({});
         setSelectedJobIds([]);
         setBulkActionOpen(false);
@@ -757,78 +730,200 @@ export default function JobsPage() {
     setOriginalState(null);
   };
 
-  // Get a color style for badge by statusId
   const getBadgeColorByStatusId = (statusId: string) => {
     const status = statuses.find((s) => s.id === statusId);
     return status?.color || "";
   };
 
-  // Get status title from status ID
   const getStatusTitleById = (statusId: string) => {
     const status = statuses.find((s) => s.id === statusId);
     return status ? status.title : "Unassigned";
   };
 
-  // Handle row selection changes
   const handleRowSelectionChange = (newRowSelection: RowSelectionState) => {
     setRowSelection(newRowSelection);
-
-    // Also update the legacy selectedJobIds array
     const selectedIds = Object.keys(newRowSelection).filter(
       (id) => newRowSelection[id]
     );
     setSelectedJobIds(selectedIds);
   };
 
+  // Mobile Card Component
+  const JobCard = ({ job }: { job: Job }) => {
+    const status = statuses.find((s) => s.id === job.statusId);
+    const isSelected = selectedJobIds.includes(job.id);
+
+    return (
+      <Card
+        className={cn(
+          "relative transition-all duration-200 hover:shadow-md",
+          isSelected && "ring-2 ring-primary bg-primary/5"
+        )}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={(checked) => {
+                  const newSelection = { ...rowSelection };
+                  if (checked) {
+                    newSelection[job.id] = true;
+                  } else {
+                    delete newSelection[job.id];
+                  }
+                  setRowSelection(newSelection);
+                }}
+              />
+              <div className="min-w-0 flex-1">
+                <h3
+                  className="font-semibold text-sm truncate"
+                  title={job.title}
+                >
+                  {job.title}
+                </h3>
+                {job.jobId && (
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {job.jobId}
+                  </p>
+                )}
+              </div>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openJobDetail(job)}>
+                  View Details
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 space-y-3">
+          {/* Status */}
+          <div className="flex items-center justify-between">
+            <Badge
+              variant={status ? "default" : "outline"}
+              className={cn("text-xs", status?.color)}
+            >
+              {status ? status.title : "Unassigned"}
+            </Badge>
+          </div>
+
+          {/* Department and Location */}
+          <div className="space-y-2">
+            {job.department && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Building className="h-3 w-3" />
+                <span className="truncate">{job.department}</span>
+              </div>
+            )}
+            {job.location && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <MapPin className="h-3 w-3" />
+                <span className="truncate">{job.location}</span>
+              </div>
+            )}
+            {job.salaryRange && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <DollarSign className="h-3 w-3" />
+                <span className="truncate">{job.salaryRange}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Tags */}
+          {job.tags && job.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {job.tags.slice(0, 3).map((tag) => (
+                <Badge
+                  key={tag}
+                  variant="secondary"
+                  className="text-xs px-2 py-0"
+                >
+                  {tag}
+                </Badge>
+              ))}
+              {job.tags.length > 3 && (
+                <Badge variant="secondary" className="text-xs px-2 py-0">
+                  +{job.tags.length - 3}
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* Updated Date */}
+          {job.updatedAt && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Calendar className="h-3 w-3" />
+              <span>
+                Updated {new Date(job.updatedAt).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (loading) {
     return (
-      <section className="p-6">
+      <div className="container mx-auto p-4 sm:p-6">
         <div className="flex flex-col items-center justify-center h-60 gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
           <div className="text-muted-foreground text-sm">Loading jobs...</div>
         </div>
-      </section>
+      </div>
     );
   }
 
   return (
-    <section className="p-6 max-w-full">
-      <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Briefcase className="h-6 w-6" />
-            Jobs
+    <div className="container mx-auto p-4 sm:p-6 max-w-full">
+      {/* Header Section */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Briefcase className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
+            <span className="truncate">Jobs</span>
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-sm mt-1">
             Manage and track your job postings
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="py-1 px-3">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <Badge variant="outline" className="py-1 px-3 text-xs sm:text-sm">
             {jobs.length} jobs
           </Badge>
-          <Button onClick={() => setCreateJobOpen(true)}>
+          <Button
+            onClick={() => setCreateJobOpen(true)}
+            size={isMobile ? "sm" : "default"}
+          >
             <Plus className="h-4 w-4 mr-2" />
-            Create Job
+            <span className="hidden sm:inline">Create Job</span>
+            <span className="sm:hidden">Create</span>
           </Button>
         </div>
       </div>
 
-      {/* Searching */}
-      <div className="flex flex-col md:flex-row gap-4 items-center mb-4">
-        <div className="relative flex-1 max-w-md">
+      {/* Search and View Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center mb-4">
+        <div className="relative flex-1 w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search jobs by title, location, department..."
+            placeholder="Search jobs..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-10 pr-10"
+            className="pl-10 pr-10 h-9 sm:h-10"
           />
           {globalFilter && (
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-0 top-0 h-10 w-10 opacity-70 hover:opacity-100"
+              className="absolute right-0 top-0 h-9 w-9 sm:h-10 sm:w-10 opacity-70 hover:opacity-100"
               onClick={() => setGlobalFilter("")}
             >
               <X className="h-4 w-4" />
@@ -836,22 +931,40 @@ export default function JobsPage() {
           )}
         </div>
 
-        <div className="flex items-center text-sm text-muted-foreground">
-          <span>
-            {filteredJobs.length} of {jobs.length} jobs
-          </span>
+        <div className="flex items-center gap-3">
+          {/* View Mode Toggle for Mobile/Tablet */}
+          <div className="md:hidden">
+            <Tabs
+              value={viewMode}
+              onValueChange={(value) => setViewMode(value as "table" | "cards")}
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="cards" className="text-xs">
+                  Cards
+                </TabsTrigger>
+                <TabsTrigger value="table" className="text-xs">
+                  Table
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="flex items-center text-sm text-muted-foreground">
+            <span>
+              {filteredJobs.length} of {jobs.length} jobs
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Bulk Actions UI */}
       {selectedJobIds.length > 0 && (
-        <div className="bg-muted/20 flex items-center justify-between px-4 py-2 rounded-md mb-4 border">
+        <div className="bg-muted/20 flex flex-col sm:flex-row sm:items-center sm:justify-between px-4 py-3 rounded-md mb-4 border gap-3">
           <div className="flex items-center">
             <Checkbox
               checked={selectedJobIds.length === filteredJobs.length}
               onCheckedChange={(checked) => {
                 if (checked) {
-                  // Select all rows
                   const newRowSelection: RowSelectionState = {};
                   filteredJobs.forEach((job) => {
                     newRowSelection[job.id] = true;
@@ -859,7 +972,6 @@ export default function JobsPage() {
                   setRowSelection(newRowSelection);
                   setSelectedJobIds(filteredJobs.map((j) => j.id));
                 } else {
-                  // Clear selection
                   setRowSelection({});
                   setSelectedJobIds([]);
                 }
@@ -877,9 +989,10 @@ export default function JobsPage() {
               variant="outline"
               size="sm"
               onClick={() => setBulkActionOpen(true)}
+              className="flex-1 sm:flex-initial"
             >
               <ListChecks className="size-4 mr-2" />
-              Bulk Actions
+              Actions
             </Button>
             <Button
               variant="ghost"
@@ -888,54 +1001,75 @@ export default function JobsPage() {
                 setRowSelection({});
                 setSelectedJobIds([]);
               }}
+              className="flex-1 sm:flex-initial"
             >
               <X className="size-4 mr-2" />
-              Clear Selection
+              Clear
             </Button>
           </div>
         </div>
       )}
 
-      {/* Data Table */}
+      {/* Content Area - Responsive */}
       <div className="w-full mb-4">
-        <DataTable
-          columns={columns}
-          data={filteredJobs.map((job) => {
-            const status = statuses.find((s) => s.id === job.statusId);
-            return {
-              ...job,
-              status: status ? status.title : "Unassigned",
-              statusColor: status ? status.color : "",
-            };
-          })}
-          globalFilter={globalFilter}
-          onRowSelectionChange={handleRowSelectionChange}
-          rowSelection={rowSelection}
-          getRowId={(row) => row.id}
-        />
+        {viewMode === "cards" ? (
+          /* Card View for Mobile/Tablet */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredJobs.map((job) => (
+              <JobCard key={job.id} job={job} />
+            ))}
+            {filteredJobs.length === 0 && (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                <Briefcase className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No jobs found</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Table View for Desktop */
+          <div className="overflow-hidden rounded-md border">
+            <div className="overflow-x-auto">
+              <DataTable
+                columns={columns}
+                data={filteredJobs.map((job) => {
+                  const status = statuses.find((s) => s.id === job.statusId);
+                  return {
+                    ...job,
+                    status: status ? status.title : "Unassigned",
+                    statusColor: status ? status.color : "",
+                  };
+                })}
+                globalFilter={globalFilter}
+                onRowSelectionChange={handleRowSelectionChange}
+                rowSelection={rowSelection}
+                getRowId={(row) => row.id}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Create Job Modal */}
       <Dialog open={createJobOpen} onOpenChange={setCreateJobOpen}>
-        <DialogContent className="max-w-4xl w-full h-[90vh] flex flex-col p-0">
+        <DialogContent className="w-[95vw] max-w-4xl h-[90vh] flex flex-col p-0">
           <div className="flex flex-col h-full">
-            {/* Fixed Header */}
-            <DialogHeader className="px-6 py-4 border-b">
-              <DialogTitle className="text-xl">Create New Job</DialogTitle>
-              <DialogDescription>
+            <DialogHeader className="px-4 sm:px-6 py-4 border-b flex-shrink-0">
+              <DialogTitle className="text-lg sm:text-xl">
+                Create New Job
+              </DialogTitle>
+              <DialogDescription className="text-sm">
                 Add a new job posting to your database
               </DialogDescription>
             </DialogHeader>
 
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <ScrollArea className="flex-1 px-4 sm:px-6 py-4">
               <div className="space-y-6">
-                {/* Basic Information Section */}
+                {/* Basic Information */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium border-b pb-2">
+                  <h3 className="text-base sm:text-lg font-medium border-b pb-2">
                     Basic Information
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label
                         htmlFor="create-title"
@@ -1083,9 +1217,9 @@ export default function JobsPage() {
                   </div>
                 </div>
 
-                {/* Job Details Section */}
+                {/* Job Details */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium border-b pb-2">
+                  <h3 className="text-base sm:text-lg font-medium border-b pb-2">
                     Job Details
                   </h3>
                   <div className="space-y-4">
@@ -1139,12 +1273,12 @@ export default function JobsPage() {
                   </div>
                 </div>
 
-                {/* Organization Section */}
+                {/* Organization */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium border-b pb-2">
+                  <h3 className="text-base sm:text-lg font-medium border-b pb-2">
                     Organization
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label
                         htmlFor="create-category"
@@ -1177,76 +1311,86 @@ export default function JobsPage() {
                       </Select>
                     </div>
 
-                    {/* Tags selection */}
+                    {/* Tags Dropdown */}
                     {allTags.length > 0 && (
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Tags</Label>
-                        <div className="border rounded-md p-3 bg-muted/10 max-h-32 overflow-y-auto">
-                          <div className="flex flex-wrap gap-2">
-                            {allTags.map((tag) => {
-                              const isSelected =
-                                createJobData.tags.includes(tag);
-                              return (
-                                <Badge
-                                  key={tag}
-                                  variant={isSelected ? "default" : "outline"}
-                                  className={cn(
-                                    "cursor-pointer hover:opacity-80 h-7 px-3 text-xs transition-all",
-                                    isSelected
-                                      ? "bg-primary text-primary-foreground"
-                                      : ""
-                                  )}
-                                  onClick={() => {
-                                    if (isSelected) {
-                                      setCreateJobData({
-                                        ...createJobData,
-                                        tags: createJobData.tags.filter(
-                                          (t) => t !== tag
-                                        ),
-                                      });
-                                    } else {
-                                      setCreateJobData({
-                                        ...createJobData,
-                                        tags: [...createJobData.tags, tag],
-                                      });
-                                    }
-                                  }}
-                                >
-                                  {tag}
-                                </Badge>
-                              );
-                            })}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-between h-10"
+                            >
+                              <span className="truncate">
+                                {createJobData.tags.length > 0
+                                  ? `${createJobData.tags.length} tag${
+                                      createJobData.tags.length > 1 ? "s" : ""
+                                    } selected`
+                                  : "Select tags"}
+                              </span>
+                              <ChevronDown className="h-4 w-4 opacity-50" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
+                            {allTags.map((tag) => (
+                              <DropdownMenuCheckboxItem
+                                key={tag}
+                                checked={createJobData.tags.includes(tag)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setCreateJobData({
+                                      ...createJobData,
+                                      tags: [...createJobData.tags, tag],
+                                    });
+                                  } else {
+                                    setCreateJobData({
+                                      ...createJobData,
+                                      tags: createJobData.tags.filter(
+                                        (t) => t !== tag
+                                      ),
+                                    });
+                                  }
+                                }}
+                              >
+                                {tag}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        {createJobData.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {createJobData.tags.map((tag) => (
+                              <Badge
+                                key={tag}
+                                variant="secondary"
+                                className="text-xs"
+                              >
+                                {tag}
+                              </Badge>
+                            ))}
                           </div>
-                          {allTags.length === 0 && (
-                            <p className="text-sm text-muted-foreground text-center py-4">
-                              No tags available. Create tags in the Tags
-                              management section.
-                            </p>
-                          )}
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* Add some bottom padding for better spacing */}
-                <div className="h-4"></div>
               </div>
-            </div>
+            </ScrollArea>
 
-            {/* Fixed Footer */}
-            <div className="px-6 py-4 border-t bg-background">
-              <div className="flex justify-end gap-3">
+            <div className="px-4 sm:px-6 py-4 border-t bg-background flex-shrink-0">
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <Button
                   variant="outline"
                   onClick={() => setCreateJobOpen(false)}
                   disabled={isSubmitting}
+                  className="order-2 sm:order-1"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleCreateJob}
                   disabled={isSubmitting || !createJobData.title.trim()}
+                  className="order-1 sm:order-2"
                 >
                   {isSubmitting ? (
                     <>
@@ -1266,7 +1410,7 @@ export default function JobsPage() {
       {/* Job Detail Modal */}
       {detailJob && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               closeDetail();
@@ -1274,28 +1418,30 @@ export default function JobsPage() {
           }}
         >
           <div
-            className="bg-background p-6 rounded-lg max-w-3xl w-full h-[90vh] max-h-[800px] overflow-hidden relative flex flex-col"
+            className="bg-background rounded-lg w-full max-w-4xl h-[95vh] sm:h-[90vh] overflow-hidden relative flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-4 top-4 z-10"
+              className="absolute right-2 top-2 sm:right-4 sm:top-4 z-10"
               onClick={closeDetail}
             >
               <X className="h-4 w-4" />
             </Button>
 
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 pr-10">
-              <h2 className="text-xl font-bold">{detailJob.title}</h2>
-
-              <div className="mt-2 md:mt-0 flex items-center">
+            {/* Fixed Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 sm:p-6 pb-2 sm:pb-4 pr-10 sm:pr-16 flex-shrink-0 border-b">
+              <h2 className="text-lg sm:text-xl font-bold truncate mr-4">
+                {detailJob.title}
+              </h2>
+              <div className="mt-2 sm:mt-0 flex items-center flex-shrink-0">
                 <Badge
-                  className={`mr-2 ${
+                  className={cn(
                     modalStatusId !== UNASSIGNED_VALUE
                       ? getBadgeColorByStatusId(modalStatusId)
                       : ""
-                  }`}
+                  )}
                   variant={
                     modalStatusId !== UNASSIGNED_VALUE ? "default" : "outline"
                   }
@@ -1307,330 +1453,361 @@ export default function JobsPage() {
               </div>
             </div>
 
-            <Tabs
-              value={activeTab}
-              onValueChange={setActiveTab}
-              className="flex-grow flex flex-col overflow-hidden"
-            >
-              <TabsList className="mb-4 overflow-x-auto justify-start">
-                <TabsTrigger
-                  value="details"
-                  className="flex items-center gap-1"
-                >
-                  <Briefcase className="size-4" />
-                  <span>Details</span>
-                </TabsTrigger>
-                <TabsTrigger value="tags" className="flex items-center gap-1">
-                  <TagIcon className="size-4" />
-                  <span>Tags & Categories</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="history"
-                  className="flex items-center gap-1"
-                >
-                  <Shield className="size-4" />
-                  <span>History</span>
-                </TabsTrigger>
-              </TabsList>
+            {/* Scrollable Content */}
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              <Tabs
+                value={activeTab}
+                onValueChange={setActiveTab}
+                className="flex-1 flex flex-col px-3 sm:px-6 min-h-0"
+              >
+                <TabsList className="my-3 sm:my-4 w-full sm:w-auto flex-shrink-0">
+                  <TabsTrigger
+                    value="details"
+                    className="flex-1 sm:flex-initial text-xs sm:text-sm"
+                  >
+                    <Briefcase className="size-4 mr-1" />
+                    <span className="hidden sm:inline">Details</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="tags"
+                    className="flex-1 sm:flex-initial text-xs sm:text-sm"
+                  >
+                    <TagIcon className="size-4 mr-1" />
+                    <span className="hidden sm:inline">Tags</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="history"
+                    className="flex-1 sm:flex-initial text-xs sm:text-sm"
+                  >
+                    <Shield className="size-4 mr-1" />
+                    <span className="hidden sm:inline">History</span>
+                  </TabsTrigger>
+                </TabsList>
 
-              <ScrollArea className="flex-grow">
-                <TabsContent value="details" className="py-2 min-h-[400px]">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div>
-                        <Label
-                          htmlFor="title"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Job Title
-                        </Label>
-                        <Input
-                          id="title"
-                          value={modalTitle}
-                          onChange={(e) => setModalTitle(e.target.value)}
-                          placeholder="e.g. Senior Software Engineer"
-                        />
-                      </div>
+                {/* Scrollable Tab Content */}
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+                  <TabsContent value="details" className="m-0 pb-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div>
+                          <Label
+                            htmlFor="title"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Job Title
+                          </Label>
+                          <Input
+                            id="title"
+                            value={modalTitle}
+                            onChange={(e) => setModalTitle(e.target.value)}
+                            placeholder="e.g. Senior Software Engineer"
+                          />
+                        </div>
 
-                      <div>
-                        <Label
-                          htmlFor="location"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Location
-                        </Label>
-                        <Input
-                          id="location"
-                          value={modalLocation}
-                          onChange={(e) => setModalLocation(e.target.value)}
-                          placeholder="e.g. New York, NY"
-                        />
-                      </div>
+                        <div>
+                          <Label
+                            htmlFor="location"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Location
+                          </Label>
+                          <Input
+                            id="location"
+                            value={modalLocation}
+                            onChange={(e) => setModalLocation(e.target.value)}
+                            placeholder="e.g. New York, NY"
+                          />
+                        </div>
 
-                      <div>
-                        <Label
-                          htmlFor="department"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Department
-                        </Label>
-                        <Input
-                          id="department"
-                          value={modalDepartment}
-                          onChange={(e) => setModalDepartment(e.target.value)}
-                          placeholder="e.g. Engineering"
-                        />
-                      </div>
+                        <div>
+                          <Label
+                            htmlFor="department"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Department
+                          </Label>
+                          <Input
+                            id="department"
+                            value={modalDepartment}
+                            onChange={(e) => setModalDepartment(e.target.value)}
+                            placeholder="e.g. Engineering"
+                          />
+                        </div>
 
-                      <div>
-                        <Label
-                          htmlFor="employmentType"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Employment Type
-                        </Label>
-                        <Select
-                          value={modalEmploymentType}
-                          onValueChange={setModalEmploymentType}
-                        >
-                          <SelectTrigger id="employmentType">
-                            <SelectValue placeholder="Select employment type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="full-time">Full-time</SelectItem>
-                            <SelectItem value="part-time">Part-time</SelectItem>
-                            <SelectItem value="contract">Contract</SelectItem>
-                            <SelectItem value="internship">
-                              Internship
-                            </SelectItem>
-                            <SelectItem value="temporary">Temporary</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="status"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Status
-                        </Label>
-                        <Select
-                          value={modalStatusId}
-                          onValueChange={setModalStatusId}
-                        >
-                          <SelectTrigger id="status" className="w-full">
-                            <SelectValue placeholder="Select a status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={UNASSIGNED_VALUE}>
-                              Unassigned
-                            </SelectItem>
-                            {statuses.map((status) => (
-                              <SelectItem key={status.id} value={status.id}>
-                                {status.title}
+                        <div>
+                          <Label
+                            htmlFor="employmentType"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Employment Type
+                          </Label>
+                          <Select
+                            value={modalEmploymentType}
+                            onValueChange={setModalEmploymentType}
+                          >
+                            <SelectTrigger id="employmentType">
+                              <SelectValue placeholder="Select employment type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="full-time">
+                                Full-time
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                              <SelectItem value="part-time">
+                                Part-time
+                              </SelectItem>
+                              <SelectItem value="contract">Contract</SelectItem>
+                              <SelectItem value="internship">
+                                Internship
+                              </SelectItem>
+                              <SelectItem value="temporary">
+                                Temporary
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <Label
+                            htmlFor="status"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Status
+                          </Label>
+                          <Select
+                            value={modalStatusId}
+                            onValueChange={setModalStatusId}
+                          >
+                            <SelectTrigger id="status" className="w-full">
+                              <SelectValue placeholder="Select a status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={UNASSIGNED_VALUE}>
+                                Unassigned
+                              </SelectItem>
+                              {statuses.map((status) => (
+                                <SelectItem key={status.id} value={status.id}>
+                                  {status.title}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <Label
+                            htmlFor="salaryRange"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Salary Range
+                          </Label>
+                          <Input
+                            id="salaryRange"
+                            value={modalSalaryRange}
+                            onChange={(e) =>
+                              setModalSalaryRange(e.target.value)
+                            }
+                            placeholder="e.g. $80,000 - $120,000"
+                          />
+                        </div>
+
+                        <div>
+                          <Label
+                            htmlFor="description"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Job Description
+                          </Label>
+                          <Textarea
+                            id="description"
+                            value={modalDescription}
+                            onChange={(e) =>
+                              setModalDescription(e.target.value)
+                            }
+                            placeholder="Job description and responsibilities..."
+                            className="resize-none min-h-[120px]"
+                          />
+                        </div>
+
+                        <div>
+                          <Label
+                            htmlFor="requirements"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Requirements (comma-separated)
+                          </Label>
+                          <Textarea
+                            id="requirements"
+                            value={modalRequirements.join(", ")}
+                            onChange={(e) =>
+                              setModalRequirements(
+                                e.target.value
+                                  .split(",")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean)
+                              )
+                            }
+                            placeholder="e.g. 5+ years experience, JavaScript, React"
+                            className="resize-none min-h-[100px]"
+                          />
+                        </div>
                       </div>
                     </div>
+                  </TabsContent>
 
-                    <div className="space-y-4">
-                      <div>
-                        <Label
-                          htmlFor="salaryRange"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Salary Range
-                        </Label>
-                        <Input
-                          id="salaryRange"
-                          value={modalSalaryRange}
-                          onChange={(e) => setModalSalaryRange(e.target.value)}
-                          placeholder="e.g. $80,000 - $120,000"
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="description"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Job Description
-                        </Label>
-                        <Textarea
-                          id="description"
-                          value={modalDescription}
-                          onChange={(e) => setModalDescription(e.target.value)}
-                          placeholder="Job description and responsibilities..."
-                          className="resize-none min-h-[120px]"
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="requirements"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Requirements (comma-separated)
-                        </Label>
-                        <Textarea
-                          id="requirements"
-                          value={modalRequirements.join(", ")}
-                          onChange={(e) =>
-                            setModalRequirements(
-                              e.target.value
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter(Boolean)
-                            )
-                          }
-                          placeholder="e.g. 5+ years experience, JavaScript, React"
-                          className="resize-none min-h-[100px]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="tags" className="py-2 min-h-[400px]">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="overflow-hidden">
-                      <CardHeader className="pb-2">
-                        <h3 className="text-sm font-medium">Tags</h3>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap gap-2 border p-3 rounded bg-background min-h-[200px]">
-                          {allTags.length > 0 ? (
-                            allTags.map((tag) => {
-                              const isSelected = modalTags.includes(tag);
-                              return (
-                                <Badge
-                                  key={tag}
-                                  variant={isSelected ? "default" : "outline"}
-                                  className={cn(
-                                    "cursor-pointer hover:opacity-80 h-8 px-3 inline-flex items-center",
-                                    isSelected
-                                      ? "bg-primary text-primary-foreground"
-                                      : ""
-                                  )}
-                                  onClick={() => {
-                                    if (isSelected) {
-                                      setModalTags(
-                                        modalTags.filter((t) => t !== tag)
-                                      );
-                                    } else {
-                                      setModalTags([...modalTags, tag]);
-                                    }
-                                  }}
+                  <TabsContent value="tags" className="m-0 pb-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <Card className="overflow-hidden">
+                        <CardHeader className="pb-2">
+                          <h3 className="text-sm font-medium">Tags</h3>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="w-full justify-between"
                                 >
-                                  {tag}
-                                </Badge>
-                              );
-                            })
-                          ) : (
-                            <div className="text-sm text-muted-foreground w-full text-center py-10 flex flex-col items-center">
-                              <TagIcon className="mb-2 h-6 w-6 opacity-40" />
-                              No tags available
+                                  <span className="truncate">
+                                    {modalTags.length > 0
+                                      ? `${modalTags.length} tag${
+                                          modalTags.length > 1 ? "s" : ""
+                                        } selected`
+                                      : "Select tags"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 opacity-50" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
+                                {allTags.length > 0 ? (
+                                  allTags.map((tag) => (
+                                    <DropdownMenuCheckboxItem
+                                      key={tag}
+                                      checked={modalTags.includes(tag)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setModalTags([...modalTags, tag]);
+                                        } else {
+                                          setModalTags(
+                                            modalTags.filter((t) => t !== tag)
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      {tag}
+                                    </DropdownMenuCheckboxItem>
+                                  ))
+                                ) : (
+                                  <div className="p-4 text-center text-muted-foreground text-sm">
+                                    No tags available
+                                  </div>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            {modalTags.length > 0 && (
+                              <div className="border rounded-md p-3 bg-muted/10 min-h-[100px]">
+                                <div className="flex flex-wrap gap-2">
+                                  {modalTags.map((tag) => (
+                                    <Badge
+                                      key={tag}
+                                      variant="default"
+                                      className="cursor-pointer hover:opacity-80"
+                                      onClick={() => {
+                                        setModalTags(
+                                          modalTags.filter((t) => t !== tag)
+                                        );
+                                      }}
+                                    >
+                                      {tag}
+                                      <X className="ml-1 h-3 w-3" />
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {allTags.length === 0 && (
+                              <div className="text-sm text-muted-foreground w-full text-center py-10 flex flex-col items-center border rounded-md">
+                                <TagIcon className="mb-2 h-6 w-6 opacity-40" />
+                                No tags available
+                                <p className="text-xs mt-1">
+                                  Tags can be created in the Tags management
+                                  section
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="h-full">
+                        <CardHeader className="pb-2">
+                          <h3 className="text-sm font-medium">Category</h3>
+                        </CardHeader>
+                        <CardContent>
+                          <Select
+                            value={modalCategory}
+                            onValueChange={setModalCategory}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select a category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NONE_CATEGORY_VALUE}>
+                                (None)
+                              </SelectItem>
+                              {allCategories.map((cat) => (
+                                <SelectItem key={cat} value={cat}>
+                                  {cat}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          {allCategories.length === 0 && (
+                            <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
+                              <Briefcase className="mb-2 h-6 w-6 opacity-40" />
+                              No categories available
                               <p className="text-xs mt-1">
-                                Tags can be created in the Tags management
-                                section
+                                Categories can be created in the Categories
+                                management section
                               </p>
                             </div>
                           )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </TabsContent>
 
-                    <Card className="h-full">
-                      <CardHeader className="pb-2">
-                        <h3 className="text-sm font-medium">Category</h3>
-                      </CardHeader>
-                      <CardContent>
-                        <Select
-                          value={modalCategory}
-                          onValueChange={setModalCategory}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select a category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE_CATEGORY_VALUE}>
-                              (None)
-                            </SelectItem>
-                            {allCategories.map((cat) => (
-                              <SelectItem key={cat} value={cat}>
-                                {cat}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-
-                        {allCategories.length === 0 && (
-                          <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
-                            <Briefcase className="mb-2 h-6 w-6 opacity-40" />
-                            No categories available
-                            <p className="text-xs mt-1">
-                              Categories can be created in the Categories
-                              management section
-                            </p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="history" className="py-2 min-h-[400px]">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                  <TabsContent value="history" className="m-0 pb-6">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 mb-4">
                         <Shield className="text-primary/70 size-4" />
-                        <h3 className="font-medium">History Timeline</h3>
+                        <h3 className="font-medium text-sm sm:text-base">
+                          History Timeline
+                        </h3>
                       </div>
-                    </div>
 
-                    <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2 mb-2">
-                      <AlertCircle className="size-4 text-blue-500/70" />
-                      <p className="text-xs text-muted-foreground">
-                        The system automatically tracks changes to job
-                        information
-                      </p>
-                    </div>
-
-                    {/* Add new history entry */}
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="newHistory"
-                        className="text-sm font-medium"
-                      >
-                        Add History Note
-                      </Label>
-                      <div className="flex gap-2">
-                        <Textarea
-                          id="newHistory"
-                          value={modalNewHistory}
-                          onChange={(e) => setModalNewHistory(e.target.value)}
-                          placeholder="Add a note about this job..."
-                          className="resize-none"
-                          rows={2}
-                        />
-                      </div>
-                    </div>
-
-                    {modalHistory.length === 0 ? (
-                      <div className="text-center py-10 border-dashed border rounded-md bg-muted/5">
-                        <AlertCircle className="size-8 mx-auto mb-2 text-muted-foreground/40" />
-                        <p className="text-muted-foreground text-sm">
-                          No history entries yet
+                      <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2 mb-4">
+                        <AlertCircle className="size-4 text-blue-500/70 flex-shrink-0" />
+                        <p className="text-xs text-muted-foreground">
+                          Changes are automatically tracked and logged
                         </p>
                       </div>
-                    ) : (
-                      <ScrollArea className="h-[300px] pr-4">
-                        <div className="space-y-2.5 pb-1">
+
+                      {modalHistory.length === 0 ? (
+                        <div className="text-center py-10 border-dashed border rounded-md bg-muted/5">
+                          <AlertCircle className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+                          <p className="text-muted-foreground text-sm">
+                            No history entries yet
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
                           {[...modalHistory].reverse().map((entry, idx) => {
-                            // Determine icon and color based on content
                             let Icon = AlertCircle;
                             let iconColor = "text-blue-500";
 
@@ -1652,7 +1829,7 @@ export default function JobsPage() {
                               >
                                 <div className="flex items-center border-b border-muted/30 px-3 py-1.5 bg-muted/5">
                                   <Icon
-                                    className={`size-3.5 mr-2 ${iconColor}`}
+                                    className={`size-3.5 mr-2 ${iconColor} flex-shrink-0`}
                                   />
                                   <span className="text-xs text-muted-foreground">
                                     {new Date(entry.date).toLocaleString(
@@ -1667,25 +1844,28 @@ export default function JobsPage() {
                                   </span>
                                 </div>
                                 <div className="p-2.5">
-                                  <p className="text-sm">{entry.note}</p>
+                                  <p className="text-sm break-words">
+                                    {entry.note}
+                                  </p>
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                      </ScrollArea>
-                    )}
-                  </div>
-                </TabsContent>
-              </ScrollArea>
-            </Tabs>
+                      )}
+                    </div>
+                  </TabsContent>
+                </div>
+              </Tabs>
+            </div>
 
-            {/* Action Buttons */}
-            <div className="mt-4 pt-4 border-t flex justify-between">
+            {/* Fixed Footer */}
+            <div className="border-t flex flex-col sm:flex-row justify-between gap-3 p-3 sm:p-6 flex-shrink-0">
               <Button
                 variant="destructive"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={isSubmitting}
+                size="sm"
               >
                 Delete Job
               </Button>
@@ -1695,10 +1875,17 @@ export default function JobsPage() {
                   variant="outline"
                   onClick={closeDetail}
                   disabled={isSubmitting}
+                  size="sm"
+                  className="flex-1 sm:flex-initial"
                 >
                   Cancel
                 </Button>
-                <Button onClick={handleSaveDetail} disabled={isSubmitting}>
+                <Button
+                  onClick={handleSaveDetail}
+                  disabled={isSubmitting}
+                  size="sm"
+                  className="flex-1 sm:flex-initial"
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1714,9 +1901,377 @@ export default function JobsPage() {
         </div>
       )}
 
+      {/* Create Job Modal - Enhanced Scrolling for All Devices */}
+      <Dialog open={createJobOpen} onOpenChange={setCreateJobOpen}>
+        <DialogContent className="w-[95vw] max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[85vw] h-[95vh] sm:h-[90vh] flex flex-col p-0 overflow-hidden">
+          <div className="flex flex-col h-full min-h-0">
+            {/* Fixed Header */}
+            <DialogHeader className="px-3 sm:px-6 py-3 sm:py-4 border-b flex-shrink-0">
+              <DialogTitle className="text-lg sm:text-xl">
+                Create New Job
+              </DialogTitle>
+              <DialogDescription className="text-sm">
+                Add a new job posting to your database
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              <div className="px-3 sm:px-6 py-4">
+                <div className="space-y-6">
+                  {/* Basic Information */}
+                  <div className="space-y-4">
+                    <h3 className="text-base sm:text-lg font-medium border-b pb-2">
+                      Basic Information
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-title"
+                          className="text-sm font-medium"
+                        >
+                          Job Title *
+                        </Label>
+                        <Input
+                          id="create-title"
+                          value={createJobData.title}
+                          onChange={(e) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              title: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. Senior Software Engineer"
+                          className="h-10"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-department"
+                          className="text-sm font-medium"
+                        >
+                          Department
+                        </Label>
+                        <Input
+                          id="create-department"
+                          value={createJobData.department}
+                          onChange={(e) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              department: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. Engineering"
+                          className="h-10"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-location"
+                          className="text-sm font-medium"
+                        >
+                          Location
+                        </Label>
+                        <Input
+                          id="create-location"
+                          value={createJobData.location}
+                          onChange={(e) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              location: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. New York, NY or Remote"
+                          className="h-10"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-salary"
+                          className="text-sm font-medium"
+                        >
+                          Salary Range
+                        </Label>
+                        <Input
+                          id="create-salary"
+                          value={createJobData.salaryRange}
+                          onChange={(e) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              salaryRange: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. $80,000 - $120,000"
+                          className="h-10"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-employment-type"
+                          className="text-sm font-medium"
+                        >
+                          Employment Type
+                        </Label>
+                        <Select
+                          value={createJobData.employmentType}
+                          onValueChange={(value) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              employmentType: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select employment type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="full-time">Full-time</SelectItem>
+                            <SelectItem value="part-time">Part-time</SelectItem>
+                            <SelectItem value="contract">Contract</SelectItem>
+                            <SelectItem value="internship">
+                              Internship
+                            </SelectItem>
+                            <SelectItem value="temporary">Temporary</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-status"
+                          className="text-sm font-medium"
+                        >
+                          Status
+                        </Label>
+                        <Select
+                          value={createJobData.statusId}
+                          onValueChange={(value) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              statusId: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={UNASSIGNED_VALUE}>
+                              Unassigned
+                            </SelectItem>
+                            {statuses.map((status) => (
+                              <SelectItem key={status.id} value={status.id}>
+                                {status.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Job Details */}
+                  <div className="space-y-4">
+                    <h3 className="text-base sm:text-lg font-medium border-b pb-2">
+                      Job Details
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-description"
+                          className="text-sm font-medium"
+                        >
+                          Job Description
+                        </Label>
+                        <Textarea
+                          id="create-description"
+                          value={createJobData.description}
+                          onChange={(e) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              description: e.target.value,
+                            })
+                          }
+                          placeholder="Describe the role, responsibilities, and what the candidate will be working on..."
+                          className="min-h-[120px] resize-none"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-requirements"
+                          className="text-sm font-medium"
+                        >
+                          Requirements
+                        </Label>
+                        <Textarea
+                          id="create-requirements"
+                          value={createJobData.requirements.join(", ")}
+                          onChange={(e) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              requirements: e.target.value
+                                .split(",")
+                                .map((s) => s.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                          placeholder="Enter requirements separated by commas (e.g. 5+ years experience, JavaScript, React, Node.js)"
+                          className="min-h-[80px] resize-none"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Separate each requirement with a comma
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Organization */}
+                  <div className="space-y-4">
+                    <h3 className="text-base sm:text-lg font-medium border-b pb-2">
+                      Organization
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="create-category"
+                          className="text-sm font-medium"
+                        >
+                          Category
+                        </Label>
+                        <Select
+                          value={createJobData.category}
+                          onValueChange={(value) =>
+                            setCreateJobData({
+                              ...createJobData,
+                              category: value,
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-10">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_CATEGORY_VALUE}>
+                              (None)
+                            </SelectItem>
+                            {allCategories.map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Tags Dropdown */}
+                      {allTags.length > 0 && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Tags</Label>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-between h-10"
+                              >
+                                <span className="truncate">
+                                  {createJobData.tags.length > 0
+                                    ? `${createJobData.tags.length} tag${
+                                        createJobData.tags.length > 1 ? "s" : ""
+                                      } selected`
+                                    : "Select tags"}
+                                </span>
+                                <ChevronDown className="h-4 w-4 opacity-50" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
+                              {allTags.map((tag) => (
+                                <DropdownMenuCheckboxItem
+                                  key={tag}
+                                  checked={createJobData.tags.includes(tag)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setCreateJobData({
+                                        ...createJobData,
+                                        tags: [...createJobData.tags, tag],
+                                      });
+                                    } else {
+                                      setCreateJobData({
+                                        ...createJobData,
+                                        tags: createJobData.tags.filter(
+                                          (t) => t !== tag
+                                        ),
+                                      });
+                                    }
+                                  }}
+                                >
+                                  {tag}
+                                </DropdownMenuCheckboxItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          {createJobData.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {createJobData.tags.map((tag) => (
+                                <Badge
+                                  key={tag}
+                                  variant="secondary"
+                                  className="text-xs"
+                                >
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom padding for scroll spacing */}
+                  <div className="h-6"></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Fixed Footer */}
+            <div className="px-3 sm:px-6 py-3 sm:py-4 border-t bg-background flex-shrink-0">
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateJobOpen(false)}
+                  disabled={isSubmitting}
+                  className="order-2 sm:order-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateJob}
+                  disabled={isSubmitting || !createJobData.title.trim()}
+                  className="order-1 sm:order-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Job"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-md mx-4">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this job?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -1724,14 +2279,17 @@ export default function JobsPage() {
               <strong>{detailJob?.title}</strong> from your job database.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSubmitting}>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel
+              disabled={isSubmitting}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteJob}
               disabled={isSubmitting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 w-full sm:w-auto"
             >
               {isSubmitting ? (
                 <>
@@ -1748,7 +2306,7 @@ export default function JobsPage() {
 
       {/* Bulk Action Dialog */}
       <Dialog open={bulkActionOpen} onOpenChange={setBulkActionOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md mx-4">
           <DialogHeader>
             <DialogTitle>Bulk Actions</DialogTitle>
             <DialogDescription>
@@ -1779,6 +2337,7 @@ export default function JobsPage() {
                 variant="outline"
                 onClick={() => handleBulkAction("status")}
                 disabled={!bulkStatusId || isSubmitting}
+                size="sm"
               >
                 {isSubmitting ? (
                   <>
@@ -1810,6 +2369,7 @@ export default function JobsPage() {
                 variant="outline"
                 onClick={() => handleBulkAction("tag")}
                 disabled={!bulkTag || isSubmitting}
+                size="sm"
               >
                 {isSubmitting ? (
                   <>
@@ -1823,12 +2383,13 @@ export default function JobsPage() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button
               variant="destructive"
-              className="mr-auto"
+              className="w-full sm:w-auto order-2 sm:order-1"
               onClick={() => handleBulkAction("delete")}
               disabled={isSubmitting}
+              size="sm"
             >
               {isSubmitting ? (
                 <>
@@ -1842,7 +2403,12 @@ export default function JobsPage() {
                 </>
               )}
             </Button>
-            <Button variant="outline" onClick={() => setBulkActionOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setBulkActionOpen(false)}
+              className="w-full sm:w-auto order-1 sm:order-2"
+              size="sm"
+            >
               Cancel
             </Button>
           </DialogFooter>
@@ -1850,6 +2416,6 @@ export default function JobsPage() {
       </Dialog>
 
       <Toaster />
-    </section>
+    </div>
   );
 }
