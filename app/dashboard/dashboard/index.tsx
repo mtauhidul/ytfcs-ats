@@ -93,6 +93,11 @@ export default function DashboardPage() {
     return {
       name: stage.title,
       count,
+      // Truncate long names for better display
+      shortName:
+        stage.title.length > 12
+          ? `${stage.title.substring(0, 12)}...`
+          : stage.title,
     };
   });
 
@@ -101,6 +106,7 @@ export default function DashboardPage() {
   if (unassignedCount > 0) {
     candidatesByStage.push({
       name: "Unassigned",
+      shortName: "Unassigned",
       count: unassignedCount,
     });
   }
@@ -119,12 +125,27 @@ export default function DashboardPage() {
 
   const pieColors = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
 
+  // Custom tooltip for better mobile experience
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+          <p className="font-medium text-sm">{`${label}`}</p>
+          <p className="text-blue-600 text-sm">
+            {`Count: ${payload[0].value}`}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   if (loading) {
     return (
-      <div className="container mx-auto py-8 text-center">
+      <div className="container mx-auto py-4 px-4 text-center">
         <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-muted/50 rounded-md w-1/3 mx-auto"></div>
-          <div className="h-4 bg-muted/50 rounded-md w-1/2 mx-auto"></div>
+          <div className="h-8 bg-muted/50 rounded-md w-2/3 sm:w-1/3 mx-auto"></div>
+          <div className="h-4 bg-muted/50 rounded-md w-3/4 sm:w-1/2 mx-auto"></div>
           <div className="h-64 bg-muted/50 rounded-md w-full mx-auto mt-8"></div>
         </div>
       </div>
@@ -132,43 +153,50 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="container mx-auto py-4 px-4 sm:py-6 sm:px-6 lg:py-8 lg:px-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <LineChart className="size-6" />
+          <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
+            <LineChart className="size-5 sm:size-6" />
             Dashboard
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-sm mt-1">
             Overview of your hiring process
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      {/* Stats Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-1">
+            <CardTitle className="text-sm sm:text-base flex items-center gap-1">
               <Users className="size-4" />
               Total Candidates
             </CardTitle>
-            <CardDescription>All candidates in system</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">
+              All candidates in system
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{totalCandidates}</div>
+            <div className="text-2xl sm:text-3xl font-bold">
+              {totalCandidates}
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-1">
+            <CardTitle className="text-sm sm:text-base flex items-center gap-1">
               <Calendar className="size-4" />
               Interview Rate
             </CardTitle>
-            <CardDescription>Candidates who reached interview</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">
+              Candidates who reached interview
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-2xl sm:text-3xl font-bold">
               {totalCandidates
                 ? Math.round((interviewedCount / totalCandidates) * 100)
                 : 0}
@@ -179,14 +207,16 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-1">
+            <CardTitle className="text-sm sm:text-base flex items-center gap-1">
               <CheckCircle2 className="size-4" />
               Offer Rate
             </CardTitle>
-            <CardDescription>Candidates with offers extended</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">
+              Candidates with offers extended
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-2xl sm:text-3xl font-bold">
               {totalCandidates
                 ? Math.round((offerExtendedCount / totalCandidates) * 100)
                 : 0}
@@ -197,40 +227,61 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-1">
+            <CardTitle className="text-sm sm:text-base flex items-center gap-1">
               <FileCheck className="size-4" />
               Active Stages
             </CardTitle>
-            <CardDescription>Workflow stages in use</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">
+              Workflow stages in use
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{stages.length}</div>
+            <div className="text-2xl sm:text-3xl font-bold">
+              {stages.length}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="candidates">
-        <TabsList className="mb-4">
-          <TabsTrigger value="candidates">Candidates by Stage</TabsTrigger>
-          <TabsTrigger value="overview">Hiring Funnel</TabsTrigger>
+      {/* Charts Section */}
+      <Tabs defaultValue="candidates" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="candidates" className="text-xs sm:text-sm">
+            Candidates by Stage
+          </TabsTrigger>
+          <TabsTrigger value="overview" className="text-xs sm:text-sm">
+            Hiring Funnel
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="candidates">
           <Card>
             <CardHeader>
-              <CardTitle>Candidates by Stage</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg sm:text-xl">
+                Candidates by Stage
+              </CardTitle>
+              <CardDescription className="text-sm">
                 Distribution of candidates across stages
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[350px]">
+              <div className="h-[300px] sm:h-[350px] w-full overflow-hidden">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ReBarChart data={candidatesByStage}>
-                    <XAxis dataKey="name" />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#8884d8" />
+                  <ReBarChart
+                    data={candidatesByStage}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                  >
+                    <XAxis
+                      dataKey="shortName"
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                      fontSize={12}
+                      interval={0}
+                    />
+                    <YAxis allowDecimals={false} fontSize={12} width={40} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="count" fill="#8884d8" radius={[4, 4, 0, 0]} />
                   </ReBarChart>
                 </ResponsiveContainer>
               </div>
@@ -241,11 +292,15 @@ export default function DashboardPage() {
         <TabsContent value="overview">
           <Card>
             <CardHeader>
-              <CardTitle>Hiring Funnel Overview</CardTitle>
-              <CardDescription>Visualize your hiring pipeline</CardDescription>
+              <CardTitle className="text-lg sm:text-xl">
+                Hiring Funnel Overview
+              </CardTitle>
+              <CardDescription className="text-sm">
+                Visualize your hiring pipeline
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[350px]">
+              <div className="h-[300px] sm:h-[350px] w-full overflow-hidden">
                 <ResponsiveContainer width="100%" height="100%">
                   <RePieChart>
                     <Pie
@@ -253,12 +308,15 @@ export default function DashboardPage() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      outerRadius={120}
+                      outerRadius="70%"
                       fill="#8884d8"
                       dataKey="count"
-                      label={({ name, percent }) =>
-                        `${name}: ${(percent * 100).toFixed(0)}%`
-                      }
+                      label={({ name, percent }) => {
+                        // Only show label if percentage is significant enough
+                        return percent > 0.05
+                          ? `${name}: ${(percent * 100).toFixed(0)}%`
+                          : "";
+                      }}
                     >
                       {candidatesByStage.map((entry, index) => (
                         <Cell
@@ -267,9 +325,30 @@ export default function DashboardPage() {
                         />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip
+                      formatter={(value, name) => [value, name]}
+                      labelFormatter={(label) => `Stage: ${label}`}
+                    />
                   </RePieChart>
                 </ResponsiveContainer>
+              </div>
+
+              {/* Legend for mobile */}
+              <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                {candidatesByStage.map((entry, index) => (
+                  <div
+                    key={entry.name}
+                    className="flex items-center gap-1 text-xs"
+                  >
+                    <div
+                      className="w-3 h-3 rounded-sm"
+                      style={{
+                        backgroundColor: pieColors[index % pieColors.length],
+                      }}
+                    />
+                    <span className="truncate max-w-[100px]">{entry.name}</span>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
