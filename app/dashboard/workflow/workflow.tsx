@@ -15,11 +15,9 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import {
-  BellIcon,
   GripHorizontalIcon,
   InfoIcon,
   LayersIcon,
-  Loader2Icon,
   MoreHorizontal,
   Search,
   UserIcon,
@@ -29,16 +27,6 @@ import { useEffect, useRef, useState } from "react";
 import { toast, Toaster } from "sonner";
 import { db } from "~/lib/firebase";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -75,18 +63,11 @@ export default function WorkflowPage() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openAutomationFor, setOpenAutomationFor] = useState<{
-    id: string;
-    title: string;
-  } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedStage, setSelectedStage] = useState<string | null>(null);
-  // Add this at the top of your component
   const [dragScroll, setDragScroll] = useState({ x: 0, y: 0 });
   const boardRef = useRef<HTMLDivElement>(null);
 
-  // Add this function
   const handleDragMove = (e: MouseEvent) => {
     if (!boardRef.current || !isDragging) return;
 
@@ -117,7 +98,6 @@ export default function WorkflowPage() {
     setDragScroll({ x: scrollX, y: scrollY });
   };
 
-  // Add event listeners
   useEffect(() => {
     if (isDragging) {
       window.addEventListener("mousemove", handleDragMove);
@@ -127,7 +107,6 @@ export default function WorkflowPage() {
     }
   }, [isDragging]);
 
-  // Add this effect for auto-scrolling during drag
   useEffect(() => {
     if (!isDragging || !boardRef.current) return;
 
@@ -437,9 +416,9 @@ export default function WorkflowPage() {
       {/* Kanban Board */}
       <div
         ref={boardRef}
-        className="overflow-x-auto overflow-y-hidden pb-4 max-w-[78vw] h-[calc(100vh-200px)]"
+        className="overflow-x-auto overflow-y-hidden pb-4 h-[calc(100vh-200px)] w-full"
       >
-        <div className="flex gap-4 min-w-[100vw]">
+        <div className="flex gap-4 min-w-max">
           <DragDropContext onDragEnd={onDragEnd} onDragStart={onDragStart}>
             {stages.map((stage) => {
               const stageItems = getCandidatesForStage(stage.id);
@@ -478,19 +457,6 @@ export default function WorkflowPage() {
                           </div>
 
                           <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() =>
-                                setOpenAutomationFor({
-                                  id: stage.id,
-                                  title: stage.title,
-                                })
-                              }
-                            >
-                              <BellIcon className="size-3" />
-                            </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
@@ -503,9 +469,6 @@ export default function WorkflowPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem>
-                                  Configure automations
-                                </DropdownMenuItem>
-                                <DropdownMenuItem>
                                   Manage stage
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
@@ -514,15 +477,10 @@ export default function WorkflowPage() {
                         </div>
 
                         {/* Candidates List */}
-                        {/* In the Droppable section, update the scrollable area */}
                         <div
                           ref={droppableProvided.innerRef}
                           {...droppableProvided.droppableProps}
-                          className="flex-1 overflow-y-auto p-2 space-y-2"
-                          style={{
-                            maxHeight: "calc(100vh - 300px)", // Adjust this based on your header heights
-                            overflowY: "auto",
-                          }}
+                          className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[calc(100vh-300px)]"
                         >
                           {stageItems.length === 0 &&
                             !snapshot.isDraggingOver && (
@@ -649,44 +607,6 @@ export default function WorkflowPage() {
         </div>
       </div>
 
-      {/* Stage Automations Dialog */}
-      <AlertDialog
-        open={Boolean(openAutomationFor)}
-        onOpenChange={() => setOpenAutomationFor(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <BellIcon className="size-5" />
-              Stage Automations
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Configure alerts or automations for the{" "}
-              <strong>{openAutomationFor?.title}</strong> stage. Set up
-              notifications, email templates, or actions to be triggered
-              automatically.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="py-4">
-            <div className="flex items-center justify-center h-32">
-              <div className="text-center">
-                <Loader2Icon className="size-10 text-muted-foreground/40 mx-auto mb-3 animate-spin" />
-                <p className="text-muted-foreground">
-                  Automation features coming soon
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel>Close</AlertDialogCancel>
-            <AlertDialogAction disabled>
-              Configure Automations
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
