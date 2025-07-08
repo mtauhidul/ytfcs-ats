@@ -114,7 +114,6 @@ YTFCS-ATS/
 │   ├── root.tsx          # Redux & routing root
 │   ├── dashboard/        # Dashboard pages (import, list, etc.)
 │   └── components/       # Shared UI components
-├── data/                 # Static/mock data (if any)
 ├── features/             # Redux slices (candidateImport, tags, candidates)
 ├── lib/                  # Utils & Firebase init
 ├── routes.ts             # Router definitions

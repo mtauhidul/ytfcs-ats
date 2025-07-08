@@ -89,32 +89,8 @@ const ResumeScoreCell = ({ score }: { score?: number }) => {
     return "bg-red-100 text-red-700 border-red-200";
   };
 
-  const getProgressColor = (score: number) => {
-    if (score >= 80) return "bg-green-500";
-    if (score >= 60) return "bg-blue-500";
-    if (score >= 40) return "bg-amber-500";
-    return "bg-red-500";
-  };
-
   return (
     <div className="flex items-center gap-2">
-      {/* <div className="flex-1 max-w-[100px]">
-        <div className="flex justify-between text-xs mb-1">
-          <span className="sr-only">Match</span>
-          <span
-            className={`font-medium ${
-              score >= 60 ? "text-green-700" : "text-amber-700"
-            }`}
-          >
-            {Math.round(score)}%
-          </span>
-        </div>
-        <CustomProgress
-          value={score}
-          className="h-1.5"
-          indicatorClassName={getProgressColor(score)}
-        />
-      </div> */}
       <Badge
         variant="outline"
         className={cn(

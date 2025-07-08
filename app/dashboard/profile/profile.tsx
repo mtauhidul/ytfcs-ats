@@ -15,7 +15,6 @@ import {
   Loader2,
   Save,
   ShieldAlert,
-  Upload,
   User,
   UserCircle,
 } from "lucide-react";
@@ -400,19 +399,7 @@ export default function ProfilePage() {
                           {getInitials(displayName || user.name || "")}
                         </AvatarFallback>
                       </Avatar>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="absolute -bottom-1 -right-1 p-2 bg-primary/10 hover:bg-primary/20 rounded-full border-2 border-background transition-colors group-hover:scale-105 transition-transform"
-                          >
-                            <Upload className="size-3" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Avatar upload coming soon</p>
-                        </TooltipContent>
-                      </Tooltip>
+                      {/* Avatar upload functionality not yet implemented */}
                     </div>
 
                     <div className="space-y-3 flex-1 w-full sm:w-auto">
