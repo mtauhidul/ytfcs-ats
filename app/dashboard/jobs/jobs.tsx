@@ -292,7 +292,7 @@ export default function JobsPage() {
 
   // Filter logic
   const filteredJobs = useMemo(() => {
-    const f = globalFilter.toLowerCase();
+    const f = globalFilter.trim().toLowerCase();
     if (!f) return jobs;
 
     const statusTitleMap = new Map(
@@ -301,21 +301,31 @@ export default function JobsPage() {
 
     return jobs.filter((job) => {
       const statusTitle = statusTitleMap.get(job.statusId) || "";
-      const combined = [
-        job.title,
-        job.description || "",
-        job.location || "",
-        job.department || "",
-        job.employmentType || "",
-        job.tags.join(" "),
-        job.category,
+      
+      // Ensure tags is always an array and normalize them
+      const jobTags = Array.isArray(job.tags) ? job.tags : [];
+      const normalizedTags = jobTags.map(tag => String(tag).toLowerCase().trim());
+      const tagsText = normalizedTags.join(" ");
+      
+      // Build searchable content with proper normalization
+      const searchableFields = [
+        String(job.title || "").toLowerCase().trim(),
+        String(job.jobId || "").toLowerCase().trim(),
+        String(job.description || "").toLowerCase().trim(),
+        String(job.location || "").toLowerCase().trim(),
+        String(job.department || "").toLowerCase().trim(),
+        String(job.employmentType || "").toLowerCase().trim(),
+        tagsText,
+        String(job.category || "").toLowerCase().trim(),
         statusTitle,
-        job.requirements?.join(" "),
-        job.salaryRange,
-      ]
-        .join(" ")
-        .toLowerCase();
-      return combined.includes(f);
+        Array.isArray(job.requirements) ? job.requirements.join(" ").toLowerCase().trim() : "",
+        String(job.salaryRange || "").toLowerCase().trim(),
+      ].filter(Boolean);
+      
+      const combined = searchableFields.join(" ");
+      
+      // Check if search term matches any field
+      return combined.includes(f) || normalizedTags.some(tag => tag.includes(f));
     });
   }, [jobs, globalFilter, statuses]);
 
@@ -1039,7 +1049,6 @@ export default function JobsPage() {
                     statusColor: status ? status.color : "",
                   };
                 })}
-                globalFilter={globalFilter}
                 onRowSelectionChange={handleRowSelectionChange}
                 rowSelection={rowSelection}
                 getRowId={(row) => row.id}
