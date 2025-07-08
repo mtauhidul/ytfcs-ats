@@ -1,9 +1,8 @@
 "use client";
 
-import { ChevronRight, Plus, type LucideIcon } from "lucide-react";
+import { ChevronRight, type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "react-router";
 
-import { Button } from "~/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,12 +19,6 @@ import {
   SidebarMenuSubItem,
   SidebarSeparator,
 } from "~/components/ui/sidebar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
 
 // Define navigation groups for better organization
 const navigationGroups = {
@@ -198,50 +191,12 @@ export function NavMain({
         </div>
       ))}
 
-      {/* Quick Action Buttons */}
+      {/* Quick Action Buttons - Removed non-functional placeholders */}
       <div className="mt-4 px-2">
         <SidebarSeparator className="mb-3 group-data-[collapsible=icon]:hidden" />
         <div className="flex flex-col gap-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  className="h-8 w-full justify-start bg-primary/10 text-primary hover:bg-primary/20 transition-all duration-150 ease-in-out group-data-[collapsible=icon]:w-10 group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
-                  onClick={() => {}} // Dummy action
-                >
-                  <Plus className="h-4 w-4 shrink-0" />
-                  <span className="truncate group-data-[collapsible=icon]:sr-only">
-                    Add Job
-                  </span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                🚧 Quick Job Creation - Coming Soon!
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          {/* Quick action buttons can be implemented here when needed */}
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-full justify-start transition-all duration-150 ease-in-out group-data-[collapsible=icon]:w-10 group-data-[collapsible=icon]:h-10 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
-                  onClick={() => {}} // Dummy action
-                >
-                  <Plus className="h-4 w-4 shrink-0" />
-                  <span className="truncate group-data-[collapsible=icon]:sr-only">
-                    New Candidate
-                  </span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                🔨 Quick Candidate Add - Under Development
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </div>
       </div>
     </div>
