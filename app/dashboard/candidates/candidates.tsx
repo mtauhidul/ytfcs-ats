@@ -541,7 +541,7 @@ export default function CandidatesPage() {
 
   // 5. Filter (search) logic
   const filteredCandidates = useMemo(() => {
-    const f = globalFilter.toLowerCase();
+    const f = globalFilter.toLowerCase().trim();
     if (!f) return candidates;
 
     // Get stage titles for searching
@@ -553,21 +553,34 @@ export default function CandidatesPage() {
       // Get stage title for this candidate if it exists
       const stageTitle = stageTitleMap.get(cand.stageId) || "";
 
-      // Searching across name, tags, category, stage, etc.
-      const combined = [
+      // Helper function to safely convert to searchable string
+      const toSearchString = (value: any): string => {
+        if (value == null) return "";
+        if (Array.isArray(value)) return value.join(" ");
+        return String(value);
+      };
+
+      // Create searchable fields array
+      const searchableFields = [
         cand.name,
-        cand.email || "",
-        cand.phone || "",
-        cand.tags.join(" "),
-        cand.category,
-        stageTitle,
+        cand.email,
+        cand.phone,
+        cand.jobTitle,
         cand.experience,
         cand.education,
-        cand.skills?.join(" "),
         cand.notes,
-      ]
-        .join(" ")
-        .toLowerCase();
+        cand.category,
+        stageTitle,
+        toSearchString(cand.tags),
+        toSearchString(cand.skills),
+      ];
+
+      // Combine all fields and search
+      const combined = searchableFields
+        .filter(Boolean) // Remove null/undefined values
+        .map((field) => String(field).toLowerCase())
+        .join(" ");
+
       return combined.includes(f);
     });
   }, [candidates, globalFilter, stages]);
@@ -1568,6 +1581,7 @@ export default function CandidatesPage() {
       {/* Data Table */}
       <div className="w-full mb-4">
         <DataTable
+          key={`datatable-${globalFilter}-${filteredCandidates.length}`}
           columns={columns}
           data={filteredCandidates.map((candidate) => {
             const stage = stages.find((s) => s.id === candidate.stageId);
@@ -1577,10 +1591,8 @@ export default function CandidatesPage() {
               stageColor: stage ? stage.color : "",
             };
           })}
-          globalFilter={globalFilter}
           onRowSelectionChange={handleRowSelectionChange}
           rowSelection={rowSelection}
-          // Add this important property to correctly identify rows by ID
           getRowId={(row) => row.id}
         />
       </div>
