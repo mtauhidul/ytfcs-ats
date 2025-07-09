@@ -44,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Switch } from "~/components/ui/switch";
+import EmailConnection from "./email-connection";
 
 interface EmailAccount {
   id: string;
@@ -88,6 +89,7 @@ const EmailAutomation: React.FC = () => {
   const [recentImports, setRecentImports] = useState<number>(0);
   const [recentImportsLoading, setRecentImportsLoading] = useState(false);
   const [showStopDialog, setShowStopDialog] = useState(false);
+  const [showAddAccountDialog, setShowAddAccountDialog] = useState(false);
 
   // Cache and timing management
   const lastRecentImportsFetch = useRef<number>(0);
@@ -665,7 +667,8 @@ const EmailAutomation: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="hidden sm:flex items-center gap-2 h-9 px-3 border-gray-200 hover:border-gray-300 flex-shrink-0"
+                onClick={() => setShowAddAccountDialog(true)}
+                className="flex items-center gap-2 h-9 px-3 border-gray-200 hover:border-gray-300 flex-shrink-0"
               >
                 <Plus className="h-4 w-4" />
                 Add Account
@@ -686,8 +689,11 @@ const EmailAutomation: React.FC = () => {
                   Connect your first email account to start automated candidate
                   monitoring and resume processing.
                 </p>
-                <Button className="w-full sm:w-auto bg-blue-500 hover:bg-blue-600">
-                  <Plus className="h-4 w-4 mr-2" />
+                <Button 
+                  onClick={() => setShowAddAccountDialog(true)}
+                  className="w-full sm:w-auto bg-blue-500 hover:bg-blue-600"
+                >
+                  <Mail className="h-4 w-4 mr-2" />
                   Connect Email Account
                 </Button>
               </div>
@@ -939,13 +945,16 @@ const EmailAutomation: React.FC = () => {
             </Card>
           )}
 
-        {/* Mobile Add Account Button */}
-        <div className="sm:hidden px-1">
-          <Button className="w-full bg-blue-500 hover:bg-blue-600 h-11">
-            <Plus className="h-4 w-4 mr-2" />
-            Connect Email Account
-          </Button>
-        </div>
+        {/* External Add Account Dialog */}
+        <EmailConnection
+          isOpen={showAddAccountDialog}
+          onOpenChange={setShowAddAccountDialog}
+          onConnectionSuccess={() => {
+            fetchData();
+            setShowAddAccountDialog(false);
+          }}
+          trigger={null}
+        />
       </div>
     </div>
   );

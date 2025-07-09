@@ -1,4 +1,4 @@
-// app/dashboard/import/import.tsx (updated with resume scoring)
+// app/dashboard/import/import.tsx (Updated - Manual Upload Only)
 
 "use client";
 
@@ -33,16 +33,13 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Progress } from "~/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { resetImport, updateParsedData } from "~/features/candidateImportSlice";
-// Make sure to update the CandidateData type to include resumeScore and resumeScoringDetails
 import { db, storage } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
 import type { ImportedCandidate } from "~/types/email";
-import EmailImport from "./email-import";
 import JobSelector from "./job-selector";
 import ResumeScore, { type ResumeScoreData } from "./resume-score";
 
@@ -64,8 +61,8 @@ interface ParsedCandidate {
   fileType?: string;
   fileSize?: number;
   resumeFileURL?: string | null;
-  resumeScore?: number; // Added for scoring
-  resumeScoringDetails?: any; // Added for scoring details
+  resumeScore?: number;
+  resumeScoringDetails?: any;
 }
 
 // Job data interface
@@ -85,7 +82,6 @@ export default function ImportPage() {
   const [dragActive, setDragActive] = useState(false);
   const [parsingProgress, setParsingProgress] = useState(0);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"file" | "email" | "ai">("file");
 
   // Status
   const [saveStatus, setSaveStatus] = useState<
@@ -98,7 +94,6 @@ export default function ImportPage() {
   // Scoring state
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [isScoring, setIsScoring] = useState(false);
   const [scoreResult, setScoreResult] = useState<ResumeScoreData | null>(null);
 
   // Get state from Redux
@@ -162,81 +157,7 @@ export default function ImportPage() {
     setSelectedJob(jobData);
   };
 
-  // Score resume with the selected job
-  const scoreResume = async () => {
-    if (!parsedData || !selectedJobId) {
-      toast.error(
-        selectedJobId
-          ? "No resume data to score"
-          : "Please select a job for scoring"
-      );
-      return;
-    }
-
-    try {
-      setIsScoring(true);
-
-      // Create FormData with the job details
-      const formData = new FormData();
-      formData.append("jobId", selectedJobId);
-      if (selectedJob) {
-        formData.append("jobTitle", selectedJob.title);
-      }
-
-      // We'll re-parse with the selected job to get the score
-      if (file) {
-        formData.append("file", file);
-      } else {
-        toast.error("Please select a file to score");
-        setIsScoring(false);
-        return;
-      }
-
-      // Make API call to parse resume with scoring
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/resume/parse`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to score resume");
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error("Failed to score resume");
-      }
-
-      // Set the score result
-      if (data.score) {
-        setScoreResult(data.score);
-
-        // Add score to parsed data
-        dispatch(
-          updateParsedData({
-            resumeScore: data.score.finalScore,
-            resumeScoringDetails: data.score,
-          })
-        );
-
-        toast.success("Resume scored successfully");
-      } else {
-        toast.warning("Scoring completed but no results were returned");
-      }
-    } catch (error) {
-      console.error("Error scoring resume:", error);
-      toast.error("Failed to score resume");
-    } finally {
-      setIsScoring(false);
-    }
-  };
-
-  // Parse resume using AI
+  // Parse resume using AI (with automatic scoring if job is selected)
   const handleParseWithAI = async () => {
     if (!file) return;
 
@@ -244,6 +165,7 @@ export default function ImportPage() {
       setIsAiParsing(true);
       setParsingProgress(10);
       setSaveStatus("idle");
+      setErrorDetails(null);
 
       // Add file type validation
       const validFileTypes = [
@@ -274,7 +196,7 @@ export default function ImportPage() {
       const formData = new FormData();
       formData.append("file", file);
 
-      // Add job ID if selected
+      // Add job ID if selected for automatic scoring
       if (selectedJobId) {
         formData.append("jobId", selectedJobId);
         if (selectedJob) {
@@ -302,237 +224,86 @@ export default function ImportPage() {
           const errorData = await response.json();
           errorMessage = errorData.error || errorData.message || errorMessage;
         } catch (e) {
-          // If response can't be parsed as JSON, use status text
-          errorMessage = response.statusText || errorMessage;
+          console.error("Failed to parse error response:", e);
         }
+        
         throw new Error(errorMessage);
       }
 
-      // Process the successful response
-      const data = await response.json();
       setParsingProgress(70);
 
-      if (!data.success || !data.data) {
-        throw new Error("Invalid response format from resume parsing API");
+      // Parse the response
+      const data = await response.json();
+      console.log("API Response:", data); // Debug log
+
+      setParsingProgress(85);
+
+      if (!data.success) {
+        throw new Error(data.message || "Failed to parse resume");
       }
 
-      const parsedResume = data.data;
-      setParsingProgress(80);
-
-      // Map response to our format
-      const parsedData: ParsedCandidate = {
-        name: parsedResume.name || "",
-        email: parsedResume.email || "",
-        phone: parsedResume.phone || "",
-        experience: parsedResume.experience || "",
-        education: parsedResume.education || "",
-        skills: parsedResume.skills || [],
-        resumeText: parsedResume.resumeText || "",
-        linkedIn: parsedResume.linkedIn || "",
-        location: parsedResume.location || "",
-        languages: parsedResume.languages || [],
-        jobTitle: parsedResume.jobTitle || "",
-        originalFilename: parsedResume.originalFilename || file.name,
+      // Create the parsed candidate object with proper data extraction
+      const candidateData = data.candidate || data.data || data;
+      const scoreData = data.score || data.resumeScore || data.scoring;
+      
+      const parsedCandidate: ParsedCandidate = {
+        name: candidateData?.name || data.name || "",
+        email: candidateData?.email || data.email || "",
+        phone: candidateData?.phone || data.phone || "",
+        skills: candidateData?.skills || data.skills || [],
+        experience: candidateData?.experience || data.experience || "",
+        education: candidateData?.education || data.education || "",
+        resumeText: candidateData?.resumeText || data.resumeText || "",
+        affindaData: candidateData?.affindaData || data.affindaData || null,
+        linkedIn: candidateData?.linkedIn || data.linkedIn || "",
+        location: candidateData?.location || data.location || "",
+        languages: candidateData?.languages || data.languages || [],
+        jobTitle: candidateData?.jobTitle || data.jobTitle || "",
+        originalFilename: file.name,
         fileType: file.type,
         fileSize: file.size,
+        resumeFileURL: candidateData?.resumeFileURL || data.resumeFileURL || null,
+        resumeScore: scoreData?.finalScore || scoreData?.score || data.resumeScore || null,
+        resumeScoringDetails: scoreData || data.resumeScoringDetails || null,
       };
 
-      // If score is available, add it to the parsed data
-      if (data.score) {
-        parsedData.resumeScore = data.score.finalScore;
-        parsedData.resumeScoringDetails = data.score;
-        setScoreResult(data.score);
-      }
-
-      // Dispatch to Redux store
-      dispatch(updateParsedData(parsedData));
-
-      if (
-        parsedData &&
-        parsedData.education &&
-        Array.isArray(parsedData.education)
-      ) {
-        const educationText = parsedData.education
-          .map((edu) => {
-            if (typeof edu === "object") {
-              // Extract relevant fields from education object
-              const degree = edu.degree || "";
-              const school = edu.institution || edu.school || "";
-              const year = edu.year || edu.graduationYear || "";
-              return `${degree}${degree && school ? " - " : ""}${school}${
-                (degree || school) && year ? " (" + year + ")" : year
-              }`;
-            }
-            return edu;
-          })
-          .join("\n");
-
-        dispatch(updateParsedData({ education: educationText }));
-      }
+      console.log("Parsed Candidate:", parsedCandidate); // Debug log
 
       setParsingProgress(100);
-      toast.success("Resume parsed successfully using AI");
-    } catch (error) {
-      console.error("Error during resume parsing:", error);
-      setParsingProgress(0);
 
-      // More specific error messaging
-      if (error instanceof Error && error.message.includes("response_format")) {
-        setErrorDetails(
-          "AI model configuration error. Please notify the administrator."
-        );
-        toast.error("AI service configuration error");
+      // Store the parsed data in Redux
+      dispatch(updateParsedData(parsedCandidate));
+
+      // If score is available, set it
+      if (scoreData && scoreData.componentScores) {
+        console.log("Setting scoreResult with:", scoreData);
+        setScoreResult(scoreData);
       } else {
-        setErrorDetails(
-          "Failed to parse resume: " +
-            (error instanceof Error ? error.message : "Unknown error")
-        );
-        toast.error("Failed to parse resume");
+        console.log("Not setting scoreResult. scoreData:", scoreData);
       }
+
+      // Show success message with score info if available
+      const scoreValue = scoreData?.finalScore || scoreData?.score || data.resumeScore;
+      if (selectedJobId && scoreValue) {
+        toast.success(`Resume parsed and scored successfully! Score: ${Math.round(scoreValue)}%`);
+      } else {
+        toast.success("Resume parsed successfully!");
+      }
+    } catch (error) {
+      console.error("Error parsing resume:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to parse resume";
+      setErrorDetails(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsAiParsing(false);
     }
   };
 
-  // Monitor parsing status from Redux state
-  useEffect(() => {
-    if (status === "succeeded" && parsedData) {
-      setParsingProgress(100);
-      setErrorDetails(null);
-      toast.success("Resume parsed successfully");
-
-      // If email wasn't extracted, try to extract it from the resume text
-      if (!parsedData.email && parsedData.resumeText) {
-        // Simple regex to find emails in text
-        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-        const matches = parsedData.resumeText.match(emailRegex);
-
-        if (matches && matches.length > 0) {
-          dispatch(updateParsedData({ email: matches[0] }));
-        }
-      }
-
-      // Try to extract phone if not already found
-      if (!parsedData.phone && parsedData.resumeText) {
-        // Simple regex for phone numbers
-        const phoneRegex =
-          /(\+\d{1,3}[-\s]?)?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{4}/g;
-        const matches = parsedData.resumeText.match(phoneRegex);
-
-        if (matches && matches.length > 0) {
-          dispatch(updateParsedData({ phone: matches[0] }));
-        }
-      }
-    } else if (status === "failed") {
-      setParsingProgress(0);
-      setErrorDetails(
-        error || "Failed to parse resume. Please try another file."
-      );
-      toast.error("Failed to parse resume");
-    }
-  }, [status, error, parsedData, dispatch]);
-
-  // Update fields if user edits them
-  const handleUpdate = (field: string, value: string) => {
-    if (field === "skills") {
-      const skillsArray = value
-        .split(",")
-        .map((skill) => skill.trim())
-        .filter(Boolean);
-      dispatch(updateParsedData({ skills: skillsArray }));
-    } else if (field === "languages") {
-      const languagesArray = value
-        .split(",")
-        .map((language) => language.trim())
-        .filter(Boolean);
-      dispatch(updateParsedData({ languages: languagesArray }));
-    } else {
-      dispatch(updateParsedData({ [field]: value }));
-    }
-  };
-
-  // Save to Firestore
-  const handleSave = async () => {
-    if (!parsedData) return;
-    try {
-      setSaveStatus("saving");
-
-      // Upload file to Firebase Storage if available
-      let resumeFileURL = null;
-      if (file) {
-        resumeFileURL = await uploadFileToStorage(file);
-      }
-
-      // Create candidate object with all required fields
-      const candidateData = {
-        ...parsedData,
-        // Core fields
-        name: parsedData.name || "",
-        email: parsedData.email || "",
-        phone: parsedData.phone || "",
-        experience: parsedData.experience || "",
-        education: parsedData.education || "",
-        skills: parsedData.skills || [],
-
-        // Default status fields
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        stageId: "", // Default stage
-
-        // tags are initially empty
-        tags: [],
-
-        // Additional fields
-        resumeText: parsedData.resumeText || "",
-        linkedIn: parsedData.linkedIn || "",
-        location: parsedData.location || "",
-        languages: parsedData.languages || [],
-        jobTitle: parsedData.jobTitle || "",
-
-        // Source tracking
-        source: "resume_upload",
-        importMethod: "ai_parser",
-
-        // Resume file URL - new field
-        resumeFileURL: resumeFileURL || (parsedData as any).resumeFileURL,
-        originalFilename: file ? file.name : parsedData.originalFilename,
-        fileType: file ? file.type : parsedData.fileType,
-        fileSize: file ? file.size : parsedData.fileSize,
-
-        // Resume score data - new fields
-        resumeScore: parsedData.resumeScore || null,
-        resumeScoringDetails: parsedData.resumeScoringDetails || null,
-
-        // Job reference if scored
-        scoredAgainstJobId: selectedJobId || null,
-        scoredAgainstJobTitle: selectedJob?.title || null,
-      };
-
-      // Add document to Firestore
-      await addDoc(collection(db, "candidates"), candidateData);
-
-      setSaveStatus("done");
-      toast.success("Candidate saved successfully!");
-
-      // Reset after a short delay for better user experience
-      setTimeout(() => {
-        dispatch(resetImport());
-        setFile(null);
-        setSaveStatus("idle");
-        setScoreResult(null);
-      }, 1500);
-    } catch (err) {
-      console.error("Error saving candidate:", err);
-      setSaveStatus("error");
-      toast.error("Error saving candidate");
-    }
-  };
-
   // Handle drag events
-  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (e.type === "dragenter" || e.type === "dragover") {
       setDragActive(true);
     } else if (e.type === "dragleave") {
@@ -540,361 +311,274 @@ export default function ImportPage() {
     }
   };
 
-  // Handle file drop
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  // Handle drop
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFile = e.dataTransfer.files[0];
-      const validTypes = [
-        ".pdf",
-        ".doc",
-        ".docx",
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ];
-
-      // Check if file type is valid
-      if (
-        validTypes.some(
-          (type) =>
-            droppedFile.name.toLowerCase().endsWith(type) ||
-            droppedFile.type === type
-        )
-      ) {
-        // Check file size
-        if (droppedFile.size > 10 * 1024 * 1024) {
-          toast.error("File too large. Maximum size is 10MB.");
-          setErrorDetails("File too large. Maximum size is 10MB.");
-          return;
-        }
-
-        setFile(droppedFile);
-        if (status !== "idle") {
-          dispatch(resetImport());
-        }
-        setErrorDetails(null);
-      } else {
-        toast.error("Please upload a PDF, DOC, or DOCX file");
-        setErrorDetails(
-          "Invalid file type. Please upload a PDF, DOC, or DOCX file."
-        );
-      }
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      // Create a synthetic event to reuse the file handling logic
+      const syntheticEvent = {
+        target: {
+          files: e.dataTransfer.files,
+        },
+      } as React.ChangeEvent<HTMLInputElement>;
+      
+      handleFileChange(syntheticEvent);
     }
   };
 
-  // Reset everything
+  // Handle updating parsed data
+  const handleUpdate = (field: string, value: any) => {
+    const updates = { [field]: value };
+    if (field === "skills" && typeof value === "string") {
+      updates.skills = value.split(",").map((skill) => skill.trim());
+    }
+    if (field === "languages" && typeof value === "string") {
+      updates.languages = value.split(",").map((lang) => lang.trim());
+    }
+    dispatch(updateParsedData(updates));
+  };
+
+  // Handle saving to database
+  const handleSave = async () => {
+    if (!parsedData || !parsedData.name) {
+      toast.error("Please provide at least a candidate name");
+      return;
+    }
+
+    setSaveStatus("saving");
+
+    try {
+      let resumeFileURL: string | null = null;
+
+      // Upload resume file if available
+      if (file) {
+        const timestamp = new Date().getTime();
+        const filename = `resumes/${timestamp}_${file.name}`;
+        const storageRef = ref(storage, filename);
+        
+        const snapshot = await uploadBytes(storageRef, file);
+        resumeFileURL = await getDownloadURL(snapshot.ref);
+      }
+
+      // Prepare candidate data for Firestore
+      const candidateData = {
+        name: parsedData.name,
+        email: parsedData.email || "",
+        phone: parsedData.phone || "",
+        skills: parsedData.skills || [],
+        experience: parsedData.experience || "",
+        education: parsedData.education || "",
+        resumeText: parsedData.resumeText || "",
+        linkedIn: parsedData.linkedIn || "",
+        location: parsedData.location || "",
+        languages: parsedData.languages || [],
+        jobTitle: parsedData.jobTitle || "",
+        originalFilename: parsedData.originalFilename || file?.name || "",
+        fileType: parsedData.fileType || file?.type || "",
+        fileSize: parsedData.fileSize || file?.size || 0,
+        resumeFileURL,
+        resumeScore: parsedData.resumeScore || null,
+        resumeScoringDetails: parsedData.resumeScoringDetails || null,
+        scoredAgainstJobId: selectedJobId || null,
+        scoredAgainstJobTitle: selectedJob?.title || null,
+        source: "manual_upload",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Save to Firestore
+      const docRef = await addDoc(collection(db, "candidates"), candidateData);
+      
+      setSaveStatus("done");
+      toast.success("Candidate saved successfully!");
+      
+      // Reset the form after successful save
+      setTimeout(() => {
+        setSaveStatus("idle");
+        // Clear all form data
+        setFile(null);
+        setParsingProgress(0);
+        setErrorDetails(null);
+        setScoreResult(null);
+        setSelectedJobId("");
+        setSelectedJob(null);
+        dispatch(resetImport());
+      }, 2000);
+      
+    } catch (error) {
+      console.error("Error saving candidate:", error);
+      setSaveStatus("error");
+      toast.error("Failed to save candidate");
+      
+      // Reset error status after a delay
+      setTimeout(() => {
+        setSaveStatus("idle");
+      }, 3000);
+    }
+  };
+
+  // Handle reset
   const handleReset = () => {
-    dispatch(resetImport());
     setFile(null);
-    setSaveStatus("idle");
-    setErrorDetails(null);
     setParsingProgress(0);
+    setErrorDetails(null);
+    setSaveStatus("idle");
     setScoreResult(null);
     setSelectedJobId("");
     setSelectedJob(null);
-  };
-
-  // Handle email import completion - FIXED VERSION
-  const handleEmailImportComplete = async (
-    data: ImportedCandidate | ImportedCandidate[] | any
-  ) => {
-    if (Array.isArray(data)) {
-      // Handle multiple candidates import
-      toast.success(
-        `Successfully imported ${data.length} candidates from email`
-      );
-
-      // Instead of saving directly, show the first candidate for review
-      if (data.length > 0) {
-        const firstCandidate = data[0];
-        // Parse the first candidate for display
-        handleSingleEmailImport(firstCandidate);
-      }
-    } else {
-      // Handle single candidate import
-      handleSingleEmailImport(data);
-    }
-  };
-
-  // Helper function to handle single email import
-  const handleSingleEmailImport = (data: any) => {
-    // If this is already parsed data from an email attachment
-    if (data.source === "email_attachment") {
-      const parsedCandidate: ParsedCandidate = {
-        name: data.name || "",
-        email: data.email || "",
-        phone: data.phone || "",
-        skills: data.skills || [],
-        experience: data.experience || "",
-        education: data.education || "",
-        resumeText: data.resumeText || "",
-        linkedIn: data.linkedIn || "",
-        location: data.location || "",
-        languages: data.languages || [],
-        jobTitle: data.jobTitle || "",
-        originalFilename: data.resumeFileName || data.originalFilename,
-        resumeFileURL: data.resumeFileURL,
-        fileType: data.fileType,
-        fileSize: data.fileSize,
-        resumeScore: data.resumeScore,
-        resumeScoringDetails: data.resumeScoringDetails,
-      };
-
-      // Dispatch to Redux to show in the UI
-      dispatch(updateParsedData(parsedCandidate));
-      setParsingProgress(100);
-
-      // If score is available, set it
-      if (data.resumeScore || data.resumeScoringDetails) {
-        setScoreResult(data.resumeScoringDetails);
-      }
-
-      // Switch to email tab to show parsed data
-      setActiveTab("email");
-
-      // Show success message
-      toast.success("Resume parsed successfully from email attachment");
-    } else {
-      // Handle regular email import (without parsed resume data)
-      const candidateData: ParsedCandidate = {
-        name: data.name || "",
-        email: data.email || "",
-        phone: data.phone || "",
-        skills: data.skills || [],
-        experience: data.experience || "",
-        education: data.education || "",
-        originalFilename: data.resumeFileName,
-        resumeFileURL: data.resumeFileURL,
-      };
-
-      // Dispatch to Redux to show in the UI for review
-      dispatch(updateParsedData(candidateData));
-      setParsingProgress(100);
-
-      // Switch to email tab
-      setActiveTab("email");
-
-      toast.success("Import prepared for review. Please check and save.");
-    }
-  };
-
-  const uploadFileToStorage = async (file: File): Promise<string | null> => {
-    if (!file) return null;
-
-    try {
-      // Create a unique filename based on original name and timestamp
-      const timestamp = new Date().getTime();
-      const fileExtension = file.name.split(".").pop();
-      const uniqueFilename = `resumes/${timestamp}_${file.name}`;
-
-      // Create a reference to the file location in Firebase Storage
-      const storageRef = ref(storage, uniqueFilename);
-
-      // Upload the file
-      const snapshot = await uploadBytes(storageRef, file);
-
-      // Get the download URL
-      const downloadURL = await getDownloadURL(snapshot.ref);
-
-      console.log("File uploaded successfully:", downloadURL);
-      return downloadURL;
-    } catch (error) {
-      console.error("Error uploading file to Firebase Storage:", error);
-      toast.error("Failed to upload resume file");
-      return null;
-    }
+    dispatch(resetImport());
+    toast.success("Form reset successfully");
   };
 
   return (
-    <div className="container py-6 px-4 md:py-8 mx-auto">
-      <Toaster position="top-right" richColors />
-
+    <div className="container mx-auto p-4 max-w-7xl">
+      <Toaster position="top-right" />
+      
       <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <FileUp className="size-6" />
-          Import Candidates
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Upload resumes or import candidates from email
+        <h1 className="text-2xl font-bold mb-2">Import Candidates</h1>
+        <p className="text-muted-foreground">
+          Upload resume files to automatically extract candidate information using AI
         </p>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6 lg:gap-8">
-        {/* Left column - Upload */}
-        <Card className="w-full md:w-2/5 h-fit">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Left column - File Upload */}
+        <Card className="w-full">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Upload className="size-5 text-primary" />
-              Import Methods
+            <CardTitle className="text-lg flex items-center gap-2">
+              <UploadCloud className="size-5 text-primary" />
+              Upload Resume
             </CardTitle>
             <CardDescription>
-              Choose how to import your candidates
+              Upload candidate resume files for AI-powered data extraction
             </CardDescription>
           </CardHeader>
 
           <CardContent>
-            <Tabs
-              defaultValue="file"
-              value={activeTab}
-              onValueChange={(value) =>
-                setActiveTab(value as "file" | "email" | "ai")
-              }
-              className="space-y-4"
-            >
-              <TabsList className="grid grid-cols-2 w-full">
-                <TabsTrigger value="file" className="text-sm ">
-                  <UploadCloud className="size-3.5" />
-                  Upload
-                </TabsTrigger>
-                <TabsTrigger
-                  value="email"
-                  className="flex items-center gap-1.5 text-sm"
-                >
-                  <Mail className="size-3.5" />
-                  <span>Email</span>
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="file" className="min-h-[300px] space-y-4">
+            {/* File Upload Section */}
+            <div className="min-h-[300px] space-y-4">
+              <div
+                className={`border-2 border-dashed 
+                  ${
+                    dragActive
+                      ? "border-primary bg-primary/5"
+                      : file
+                      ? "border-green-300 bg-green-50/40"
+                      : "border-muted-foreground/20"
+                  } 
+                  rounded-lg p-8 flex flex-col items-center justify-center gap-4 transition-colors`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+              >
                 <div
-                  className={`border-2 border-dashed 
-                    ${
-                      dragActive
-                        ? "border-primary bg-primary/5"
-                        : file
-                        ? "border-green-300 bg-green-50/40"
-                        : "border-muted-foreground/20"
-                    } 
-                    rounded-lg p-8 flex flex-col items-center justify-center gap-4 transition-colors`}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  onDrop={handleDrop}
+                  className={`${
+                    file ? "bg-green-100" : "bg-muted/50"
+                  } p-4 rounded-full`}
                 >
-                  <div
-                    className={`${
-                      file ? "bg-green-100" : "bg-muted/50"
-                    } p-4 rounded-full`}
-                  >
-                    {file ? (
-                      <Check className="size-8 text-green-600" />
-                    ) : (
-                      <Upload className="size-8 text-muted-foreground" />
-                    )}
-                  </div>
+                  {file ? (
+                    <Check className="size-8 text-green-600" />
+                  ) : (
+                    <Upload className="size-8 text-muted-foreground" />
+                  )}
+                </div>
 
-                  <div className="text-center">
+                <div className="text-center">
+                  {file ? (
+                    <>
+                      <p className="font-medium mb-1 text-green-700">
+                        {file.name}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {(file.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium mb-1">
+                        Drop resume file here
+                      </p>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        PDF, DOC, or DOCX (max 10MB)
+                      </p>
+                    </>
+                  )}
+
+                  <div className="relative">
                     {file ? (
-                      <>
-                        <p className="font-medium mb-1 text-green-700">
-                          File selected
-                        </p>
-                        <p className="text-sm mb-1">{file.name}</p>
-                        <p className="text-xs text-muted-foreground mb-3">
-                          {(file.size / (1024 * 1024)).toFixed(2)} MB ·{" "}
-                          {file.type.split("/")[1].toUpperCase()}
-                        </p>
-                      </>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setFile(null)}
+                      >
+                        <RefreshCw className="mr-2 size-4" />
+                        Change File
+                      </Button>
                     ) : (
                       <>
-                        <p className="font-medium mb-1">
-                          Drop resume file here
-                        </p>
-                        <p className="text-sm text-muted-foreground mb-4">
-                          PDF, DOC, or DOCX (max 10MB)
-                        </p>
-                      </>
-                    )}
-
-                    <div className="relative">
-                      {file ? (
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => setFile(null)}
-                        >
-                          <RefreshCw className="mr-2 size-4" />
-                          Change File
+                        <Button variant="outline" className="w-full">
+                          Select File
                         </Button>
-                      ) : (
-                        <>
-                          <Button variant="outline" className="w-full">
-                            Select File
-                          </Button>
-                          <Input
-                            id="resumeFile"
-                            type="file"
-                            accept=".pdf,.doc,.docx"
-                            onChange={handleFileChange}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                          />
-                        </>
-                      )}
-                    </div>
+                        <Input
+                          id="resumeFile"
+                          type="file"
+                          accept=".pdf,.doc,.docx"
+                          onChange={handleFileChange}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
+              </div>
 
-                {/* Job selector for resume scoring */}
-                <JobSelector
-                  value={selectedJobId}
-                  onChange={handleJobChange}
-                  onJobChange={handleJobDataChange}
-                  disabled={isAiParsing || isScoring}
-                  className="mt-4"
-                />
-
-                <div className="flex gap-2 mt-4">
-                  {file && (
-                    <Button
-                      onClick={handleParseWithAI}
-                      disabled={status === "loading" || isAiParsing}
-                      className="flex-1"
-                    >
-                      {status === "loading" || isAiParsing ? (
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="size-4 animate-spin" />
-                          Parsing Resume...
-                        </div>
-                      ) : (
-                        <>
-                          <Zap className="mr-2 size-4" />
-                          Parse with AI
-                        </>
-                      )}
-                    </Button>
-                  )}
-
-                  {file && parsedData && selectedJobId && (
-                    <Button
-                      onClick={scoreResume}
-                      disabled={isScoring || isAiParsing}
-                      variant="outline"
-                      className="whitespace-nowrap"
-                    >
-                      {isScoring ? (
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="size-4 animate-spin" />
-                          Scoring...
-                        </div>
-                      ) : (
-                        <>
-                          <BadgeCheck className="mr-2 size-4" />
-                          Score Resume
-                        </>
-                      )}
-                    </Button>
-                  )}
+              {/* Job selector for resume scoring */}
+              <JobSelector
+                value={selectedJobId}
+                onChange={handleJobChange}
+                onJobChange={handleJobDataChange}
+                disabled={isAiParsing}
+                className="mt-4"
+              />
+              
+              {/* Job selection hint */}
+              {!selectedJobId && (
+                <div className="mt-2 text-sm text-muted-foreground bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <BadgeCheck className="h-4 w-4 text-amber-600" />
+                    <span className="text-amber-800">
+                      <strong>Tip:</strong> Select a job position to automatically score the resume against job requirements during parsing.
+                    </span>
+                  </div>
                 </div>
-              </TabsContent>
+              )}
 
-              <TabsContent value="email" className="min-h-[300px]">
-                <EmailImport onImportComplete={handleEmailImportComplete} />
-              </TabsContent>
-            </Tabs>
+              <div className="flex gap-2 mt-4">
+                {file && (
+                  <Button
+                    onClick={handleParseWithAI}
+                    disabled={status === "loading" || isAiParsing}
+                    className="w-full"
+                  >
+                    {status === "loading" || isAiParsing ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="size-4 animate-spin" />
+                        {selectedJobId ? "Parsing & Scoring..." : "Parsing Resume..."}
+                      </div>
+                    ) : (
+                      <>
+                        <Zap className="mr-2 size-4" />
+                        {selectedJobId ? "Parse & Score Resume" : "Parse with AI"}
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
 
             {/* Error display */}
             {errorDetails && (
@@ -912,9 +596,7 @@ export default function ImportPage() {
               <div className="mt-4">
                 <div className="flex justify-between mb-1.5">
                   <span className="text-xs text-muted-foreground">
-                    {activeTab === "ai"
-                      ? "AI processing..."
-                      : "Parsing resume..."}
+                    Parsing resume...
                   </span>
                   <span className="text-xs font-medium">
                     {parsingProgress}%
@@ -929,18 +611,40 @@ export default function ImportPage() {
               <div className="mt-4">
                 <ResumeScore
                   score={scoreResult}
-                  loading={isScoring}
+                  loading={isAiParsing}
                   className="border-primary/20"
                 />
               </div>
             )}
+
+            {/* Info about automated email monitoring */}
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-blue-100 rounded-full">
+                  <Mail className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-blue-900 mb-1">
+                    Email Monitoring Active
+                  </h4>
+                  <p className="text-sm text-blue-700">
+                    Email monitoring is now automated. New candidate emails are processed automatically. 
+                    Use this manual upload for additional candidates or when you have resume files directly.
+                  </p>
+                  <p className="text-xs text-blue-600 mt-2">
+                    <span className="font-medium">Need to add email accounts?</span> Visit the 
+                    <span className="font-medium"> Email Monitoring </span> section to connect your email accounts.
+                  </p>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         {/* Right column - Parsed Data */}
         <Card
-          className={`w-full md:w-3/5 transition-opacity duration-300 ${
-            parsedData && (status === "succeeded" || parsingProgress === 100)
+          className={`w-full md:w-full transition-opacity duration-300 ${
+            parsedData && parsedData.name
               ? "opacity-100"
               : "opacity-50 pointer-events-none"
           }`}
@@ -987,8 +691,7 @@ export default function ImportPage() {
           </CardHeader>
 
           <CardContent className="space-y-5 max-h-[650px] overflow-y-auto pr-1">
-            {parsedData &&
-            (status === "succeeded" || parsingProgress === 100) ? (
+            {parsedData && parsedData.name ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-2">
@@ -1108,22 +811,6 @@ export default function ImportPage() {
                     placeholder="e.g. JavaScript, React, Node.js"
                     className="min-h-[80px] border-input/80 resize-y"
                   />
-
-                  {parsedData.skills &&
-                    Array.isArray(parsedData.skills) &&
-                    parsedData.skills.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {parsedData.skills.map((skill, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="px-2 py-0.5"
-                          >
-                            {skill}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
                 </div>
 
                 {parsedData.languages &&
@@ -1173,6 +860,48 @@ export default function ImportPage() {
                     />
                   </div>
                 )}
+
+                {/* Resume Score Display */}
+                {parsedData.resumeScore && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Resume Score</Label>
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
+                          parsedData.resumeScore >= 80
+                            ? "bg-green-100 text-green-700"
+                            : parsedData.resumeScore >= 60
+                            ? "bg-blue-100 text-blue-700"
+                            : parsedData.resumeScore >= 40
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-red-100 text-red-700"
+                        }`}>
+                          {Math.round(parsedData.resumeScore)}
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">
+                            {Math.round(parsedData.resumeScore)}% Match
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {parsedData.resumeScore >= 80
+                              ? "Excellent match"
+                              : parsedData.resumeScore >= 60
+                              ? "Good match"
+                              : parsedData.resumeScore >= 40
+                              ? "Fair match"
+                              : "Needs improvement"}
+                          </p>
+                        </div>
+                      </div>
+                      {selectedJob && (
+                        <div className="ml-auto text-right">
+                          <p className="text-xs text-muted-foreground">Scored against</p>
+                          <p className="text-sm font-medium">{selectedJob.title}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
@@ -1206,9 +935,9 @@ export default function ImportPage() {
               onClick={handleSave}
               disabled={
                 !parsedData ||
+                !parsedData.name ||
                 saveStatus === "saving" ||
-                (status !== "succeeded" && parsingProgress !== 100) ||
-                !parsedData.name // Require at least a name
+                isAiParsing
               }
               className="relative px-4"
             >
