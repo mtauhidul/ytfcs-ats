@@ -28,13 +28,24 @@ interface ScoreMetadata {
   scoredAt: string;
 }
 
+// Legacy scoring data structure
+interface LegacyScoreBreakdown {
+  skillsMatch: number;
+  experienceMatch: number;
+  educationMatch: number;
+  jobTitleMatch?: number;
+  certMatch?: number;
+}
+
 export interface ResumeScoreData {
   finalScore: number;
-  componentScores: ComponentScore;
-  matchedSkills: string[];
-  missingSkills: string[];
-  feedback: string;
-  metadata: ScoreMetadata;
+  componentScores?: ComponentScore;
+  matchedSkills?: string[];
+  missingSkills?: string[];
+  feedback?: string;
+  metadata?: ScoreMetadata;
+  // Legacy support
+  breakdown?: LegacyScoreBreakdown;
 }
 
 interface ResumeScoreProps {
@@ -110,6 +121,25 @@ export default function ResumeScore({
     );
   }
 
+  // Handle both legacy and new data structures
+  const componentScores = score.componentScores || (score.breakdown ? {
+    skillScore: score.breakdown.skillsMatch || 0,
+    experienceScore: score.breakdown.experienceMatch || 0,
+    educationScore: score.breakdown.educationMatch || 0,
+    jobTitleScore: score.breakdown.jobTitleMatch || 0,
+    certScore: score.breakdown.certMatch || 0,
+  } : {
+    skillScore: 0,
+    experienceScore: 0,
+    educationScore: 0,
+    jobTitleScore: 0,
+    certScore: 0,
+  });
+
+  const matchedSkills = score.matchedSkills || [];
+  const missingSkills = score.missingSkills || [];
+  const feedback = score.feedback || "No detailed feedback available.";
+
   // Format the score date if it exists
   const scoreDate = score?.metadata?.scoredAt
     ? new Date(score.metadata.scoredAt).toLocaleDateString(undefined, {
@@ -175,8 +205,8 @@ export default function ResumeScore({
         <div className="mb-3">
           <h4 className="text-sm font-medium mb-2">Skills Match</h4>
           <div className="flex flex-wrap gap-1.5">
-            {score.matchedSkills.length > 0 ? (
-              score.matchedSkills.map((skill, index) => (
+            {matchedSkills.length > 0 ? (
+              matchedSkills.map((skill, index) => (
                 <Badge
                   key={index}
                   variant="outline"
@@ -194,11 +224,11 @@ export default function ResumeScore({
           </div>
         </div>
 
-        {score.missingSkills.length > 0 && (
+        {missingSkills.length > 0 && (
           <div className="mb-3">
             <h4 className="text-sm font-medium mb-2">Missing Skills</h4>
             <div className="flex flex-wrap gap-1.5">
-              {score.missingSkills.map((skill, index) => (
+              {missingSkills.map((skill, index) => (
                 <Badge
                   key={index}
                   variant="outline"
@@ -239,11 +269,11 @@ export default function ResumeScore({
                 <div className="flex justify-between text-xs mb-1">
                   <span>Skills (40%)</span>
                   <span className="font-medium">
-                    {Math.round(score.componentScores.skillScore)}%
+                    {Math.round(componentScores.skillScore)}%
                   </span>
                 </div>
                 <CustomProgress
-                  value={score.componentScores.skillScore}
+                  value={componentScores.skillScore}
                   className="h-1.5 bg-muted/30"
                   indicatorClassName="bg-blue-500"
                 />
@@ -252,11 +282,11 @@ export default function ResumeScore({
                 <div className="flex justify-between text-xs mb-1">
                   <span>Experience (20%)</span>
                   <span className="font-medium">
-                    {Math.round(score.componentScores.experienceScore)}%
+                    {Math.round(componentScores.experienceScore)}%
                   </span>
                 </div>
                 <CustomProgress
-                  value={score.componentScores.experienceScore}
+                  value={componentScores.experienceScore}
                   className="h-1.5 bg-muted/30"
                   indicatorClassName="bg-green-500"
                 />
@@ -265,11 +295,11 @@ export default function ResumeScore({
                 <div className="flex justify-between text-xs mb-1">
                   <span>Education (10%)</span>
                   <span className="font-medium">
-                    {Math.round(score.componentScores.educationScore)}%
+                    {Math.round(componentScores.educationScore)}%
                   </span>
                 </div>
                 <CustomProgress
-                  value={score.componentScores.educationScore}
+                  value={componentScores.educationScore}
                   className="h-1.5 bg-muted/30"
                   indicatorClassName="bg-amber-500"
                 />
@@ -278,11 +308,11 @@ export default function ResumeScore({
                 <div className="flex justify-between text-xs mb-1">
                   <span>Job Title (20%)</span>
                   <span className="font-medium">
-                    {Math.round(score.componentScores.jobTitleScore)}%
+                    {Math.round(componentScores.jobTitleScore)}%
                   </span>
                 </div>
                 <CustomProgress
-                  value={score.componentScores.jobTitleScore}
+                  value={componentScores.jobTitleScore}
                   className="h-1.5 bg-muted/30"
                   indicatorClassName="bg-purple-500"
                 />
@@ -291,11 +321,11 @@ export default function ResumeScore({
                 <div className="flex justify-between text-xs mb-1">
                   <span>Certifications (10%)</span>
                   <span className="font-medium">
-                    {Math.round(score.componentScores.certScore)}%
+                    {Math.round(componentScores.certScore)}%
                   </span>
                 </div>
                 <CustomProgress
-                  value={score.componentScores.certScore}
+                  value={componentScores.certScore}
                   className="h-1.5 bg-muted/30"
                   indicatorClassName="bg-indigo-500"
                 />
@@ -305,7 +335,7 @@ export default function ResumeScore({
             <div className="mt-4">
               <h4 className="text-sm font-medium mb-2">Feedback</h4>
               <div className="text-xs text-muted-foreground bg-muted/10 p-3 rounded border">
-                {score.feedback}
+                {feedback}
               </div>
             </div>
           </div>
