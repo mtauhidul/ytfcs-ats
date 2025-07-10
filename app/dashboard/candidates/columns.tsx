@@ -43,6 +43,7 @@ export interface Candidate {
   scoredAgainstJobId?: string;
   scoredAgainstJobTitle?: string;
   createdAt?: string;
+  importedAt?: string; // Added for import date tracking
   history?: { date: string; note: string }[];
   communications?: {
     id: string;
@@ -252,6 +253,43 @@ export const columns: ColumnDef<Candidate>[] = [
       }
     },
     size: 120,
+  },
+  {
+    accessorKey: "createdAt",
+    header: "Import Date",
+    cell: ({ row }) => {
+      const createdAt = row.original.createdAt || row.original.importedAt;
+      if (!createdAt) return <span className="text-muted-foreground">—</span>;
+
+      try {
+        // Format date to be readable - with error handling
+        const date = new Date(createdAt);
+
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+          return <span className="text-muted-foreground">Invalid date</span>;
+        }
+
+        const formatted = new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }).format(date);
+
+        return (
+          <span className="text-sm text-muted-foreground">{formatted}</span>
+        );
+      } catch (error) {
+        console.error("Error formatting date:", error);
+        return <span className="text-muted-foreground">Invalid date</span>;
+      }
+    },
+    size: 120,
+    sortingFn: (rowA, rowB) => {
+      const dateA = new Date(rowA.original.createdAt || rowA.original.importedAt || 0);
+      const dateB = new Date(rowB.original.createdAt || rowB.original.importedAt || 0);
+      return dateA.getTime() - dateB.getTime();
+    },
   },
   {
     id: "actions",
