@@ -120,31 +120,7 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
 
       setConnectionProgress(30);
 
-      // Test connection to email provider
-      const testResponse = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/test-connection`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY || "",
-          },
-          body: JSON.stringify(credentials),
-        }
-      );
-
-      setConnectionProgress(60);
-
-      if (!testResponse.ok) {
-        const errorData = await testResponse.json();
-        throw new Error(
-          errorData.message || "Failed to connect to email provider"
-        );
-      }
-
-      setConnectionProgress(80);
-
-      // If connection test passes, add the account to automation system
+      // Add the account directly (backend will validate connection)
       const addAccountResponse = await fetch(
         `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
         {
@@ -160,16 +136,17 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
         }
       );
 
-      setConnectionProgress(100);
+      setConnectionProgress(80);
 
       if (!addAccountResponse.ok) {
         const errorData = await addAccountResponse.json();
         throw new Error(
-          errorData.message || "Failed to add email account to automation"
+          errorData.error || "Failed to add email account to automation"
         );
       }
 
       const result = await addAccountResponse.json();
+      setConnectionProgress(100);
 
       toast.success("Email account connected successfully!");
       
@@ -364,9 +341,8 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">
-                      {connectionProgress < 30 ? "Validating credentials..." :
-                       connectionProgress < 60 ? "Testing connection..." :
-                       connectionProgress < 80 ? "Verifying email access..." :
+                      {connectionProgress < 30 ? "Preparing connection..." :
+                       connectionProgress < 80 ? "Validating credentials and testing connection..." :
                        "Setting up automation..."}
                     </span>
                     <span className="font-medium">{connectionProgress}%</span>

@@ -12,11 +12,14 @@ import {
   Plus,
   RefreshCw,
   Shield,
+  Trash2,
   XCircle,
   Zap,
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "~/lib/firebase";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -202,35 +205,26 @@ const EmailAutomation: React.FC = () => {
     lastRecentImportsFetch.current = now;
 
     try {
-      // Calculate 24 hours ago timestamp
-      const twentyFourHoursAgo = new Date(
-        now - 24 * 60 * 60 * 1000
-      ).toISOString();
-
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_URL
-        }/candidates/recent-imports?since=${twentyFourHoursAgo}`,
-        {
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
-        }
+      // TEMPORARY FIX: Query Firestore directly for recent candidates
+      const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
+      
+      const candidatesRef = collection(db, "candidates");
+      const recentQuery = query(
+        candidatesRef,
+        where("createdAt", ">=", twentyFourHoursAgo.toISOString())
       );
+      
+      const querySnapshot = await getDocs(recentQuery);
+      const count = querySnapshot.size;
 
-      if (response.ok) {
-        const data = await response.json();
-        const count = data.data?.count || 0;
+      // Update cache
+      recentImportsCache.current = {
+        count,
+        timestamp: now,
+      };
 
-        // Update cache
-        recentImportsCache.current = {
-          count,
-          timestamp: now,
-        };
-
-        setRecentImports(count);
-        return count;
-      } else {
-        throw new Error("Failed to fetch recent imports");
-      }
+      setRecentImports(count);
+      return count;
     } catch (error) {
       console.error("Error fetching recent imports:", error);
       // Don't show error toast for background updates unless it's the initial load
@@ -413,6 +407,38 @@ const EmailAutomation: React.FC = () => {
       }
     } catch (error) {
       toast.error("Failed to check account");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Delete account
+  const deleteAccount = async (accountId: string) => {
+    setActionLoading(`delete-${accountId}`);
+    try {
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_API_URL
+        }/email/automation/accounts/${accountId}`,
+        {
+          method: "DELETE",
+          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+        }
+      );
+
+      if (response.ok) {
+        toast.success("📧 Email account removed successfully");
+
+        // Refresh both automation data and recent imports
+        await Promise.all([
+          fetchData(),
+          fetchRecentImports(false), // Force refresh without cache
+        ]);
+      } else {
+        throw new Error("Failed to delete account");
+      }
+    } catch (error) {
+      toast.error("Failed to delete account");
     } finally {
       setActionLoading(null);
     }
@@ -689,7 +715,7 @@ const EmailAutomation: React.FC = () => {
                   Connect your first email account to start automated candidate
                   monitoring and resume processing.
                 </p>
-                <Button 
+                <Button
                   onClick={() => setShowAddAccountDialog(true)}
                   className="w-full sm:w-auto bg-blue-500 hover:bg-blue-600"
                 >
@@ -821,6 +847,16 @@ const EmailAutomation: React.FC = () => {
                                     }`}
                                   />
                                   Force Check
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => deleteAccount(account.id)}
+                                  disabled={
+                                    actionLoading === `delete-${account.id}`
+                                  }
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Account
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
