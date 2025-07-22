@@ -22,6 +22,7 @@ import {
 } from "firebase/storage";
 import {
   AlertCircle,
+  ArrowUpDown,
   BadgeCheck,
   Clipboard,
   ClipboardCheck,
@@ -133,6 +134,10 @@ export default function CandidatesPage() {
 
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
+
+  // For sorting
+  const [sortBy, setSortBy] = useState<"name" | "importDate" | "lastUpdate" | "rating" | "resumeScore">("importDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // For user-defined tags & categories
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -440,6 +445,7 @@ export default function CandidatesPage() {
           fileType: data.fileType,
           fileSize: data.fileSize,
           createdAt: data.createdAt,
+          importedAt: data.importedAt || data.createdAt, // Use importedAt if available, fallback to createdAt
           updatedAt: data.updatedAt || "",
           onEdit: (cand: Candidate) => openCandidateDetail(cand),
         } as Candidate;
@@ -538,51 +544,98 @@ export default function CandidatesPage() {
     }
   };
 
-  // 5. Filter (search) logic
+  // 5. Filter (search) and sort logic
   const filteredCandidates = useMemo(() => {
     const f = globalFilter.toLowerCase().trim();
-    if (!f) return candidates;
+    let filtered = candidates;
 
-    // Get stage titles for searching
-    const stageTitleMap = new Map(
-      stages.map((s) => [s.id, s.title.toLowerCase()])
-    );
+    // Apply search filter
+    if (f) {
+      // Get stage titles for searching
+      const stageTitleMap = new Map(
+        stages.map((s) => [s.id, s.title.toLowerCase()])
+      );
 
-    return candidates.filter((cand) => {
-      // Get stage title for this candidate if it exists
-      const stageTitle = stageTitleMap.get(cand.stageId) || "";
+      filtered = candidates.filter((cand) => {
+        // Get stage title for this candidate if it exists
+        const stageTitle = stageTitleMap.get(cand.stageId) || "";
 
-      // Helper function to safely convert to searchable string
-      const toSearchString = (value: any): string => {
-        if (value == null) return "";
-        if (Array.isArray(value)) return value.join(" ");
-        return String(value);
-      };
+        // Helper function to safely convert to searchable string
+        const toSearchString = (value: any): string => {
+          if (value == null) return "";
+          if (Array.isArray(value)) return value.join(" ");
+          return String(value);
+        };
 
-      // Create searchable fields array
-      const searchableFields = [
-        cand.name,
-        cand.email,
-        cand.phone,
-        cand.jobTitle,
-        cand.experience,
-        cand.education,
-        cand.notes,
-        cand.category,
-        stageTitle,
-        toSearchString(cand.tags),
-        toSearchString(cand.skills),
-      ];
+        // Create searchable fields array
+        const searchableFields = [
+          cand.name,
+          cand.email,
+          cand.phone,
+          cand.jobTitle,
+          cand.experience,
+          cand.education,
+          cand.notes,
+          cand.category,
+          stageTitle,
+          toSearchString(cand.tags),
+          toSearchString(cand.skills),
+        ];
 
-      // Combine all fields and search
-      const combined = searchableFields
-        .filter(Boolean) // Remove null/undefined values
-        .map((field) => String(field).toLowerCase())
-        .join(" ");
+        // Combine all fields and search
+        const combined = searchableFields
+          .filter(Boolean) // Remove null/undefined values
+          .map((field) => String(field).toLowerCase())
+          .join(" ");
 
-      return combined.includes(f);
+        return combined.includes(f);
+      });
+    }
+
+    // Apply sorting
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortBy) {
+        case "name":
+          aValue = a.name || "";
+          bValue = b.name || "";
+          break;
+        case "importDate":
+          aValue = new Date(a.createdAt || a.importedAt || 0).getTime();
+          bValue = new Date(b.createdAt || b.importedAt || 0).getTime();
+          break;
+        case "lastUpdate":
+          aValue = new Date(a.updatedAt || 0).getTime();
+          bValue = new Date(b.updatedAt || 0).getTime();
+          break;
+        case "rating":
+          aValue = a.rating || 0;
+          bValue = b.rating || 0;
+          break;
+        case "resumeScore":
+          aValue = a.resumeScore || 0;
+          bValue = b.resumeScore || 0;
+          break;
+        default:
+          aValue = a.name || "";
+          bValue = b.name || "";
+      }
+
+      // Handle string sorting
+      if (typeof aValue === "string" && typeof bValue === "string") {
+        const comparison = aValue.localeCompare(bValue);
+        return sortOrder === "asc" ? comparison : -comparison;
+      }
+
+      // Handle numeric sorting
+      const comparison = aValue - bValue;
+      return sortOrder === "asc" ? comparison : -comparison;
     });
-  }, [candidates, globalFilter, stages]);
+
+    return sorted;
+  }, [candidates, globalFilter, stages, sortBy, sortOrder]);
 
   // Helper function to detect changes between current and original state
   const detectChanges = () => {
@@ -1513,6 +1566,30 @@ export default function CandidatesPage() {
               <X className="h-4 w-4" />
             </Button>
           )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="importDate">Import Date</SelectItem>
+              <SelectItem value="lastUpdate">Last Update</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="rating">Rating</SelectItem>
+              <SelectItem value="resumeScore">Resume Score</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            className="px-3 gap-1"
+          >
+            <ArrowUpDown className="h-4 w-4" />
+            {sortOrder === "asc" ? "Asc" : "Desc"}
+          </Button>
         </div>
 
         <div className="flex items-center text-sm text-muted-foreground">
