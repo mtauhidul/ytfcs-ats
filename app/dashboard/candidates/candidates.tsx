@@ -39,6 +39,7 @@ import {
   Trash2,
   Upload,
   UserIcon,
+  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -85,15 +86,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import { db, storage } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
-import { columns, type Candidate, type CandidateDocument } from "./columns";
+import type {
+  Candidate,
+  CandidateDocument,
+  CommunicationEntry,
+  InterviewFeedback,
+  Stage,
+} from "~/types";
+import InterviewManager from "../interviews/interview-manager";
+import { columns } from "./columns";
 import ScoreDetail from "./score-detail";
-
-interface Stage {
-  id: string;
-  title: string;
-  order: number;
-  color?: string;
-}
 
 // History entry interface
 interface HistoryEntry {
@@ -101,16 +103,6 @@ interface HistoryEntry {
   note: string;
 }
 
-// Communication entry interface
-interface CommunicationEntry {
-  id: string; // Unique identifier for each communication
-  date: string; // ISO timestamp
-  message: string; // The content of the message
-  type: "sent" | "received"; // Whether the message was sent to or received from the candidate
-  sender: string; // Name of person who sent/received the message
-  subject?: string; // Optional subject line
-  read?: boolean; // Whether the message has been read
-}
 // Define job interface
 interface Job {
   id: string;
@@ -121,17 +113,8 @@ interface Job {
   salary: string;
 }
 
-interface FeedbackEntry {
-  id: string;
-  candidateId: string;
-  teamMemberId: string;
-  teamMemberName: string;
-  rating: number;
-  recommendation: string;
-  strengths: string;
-  weaknesses: string;
-  createdAt: string;
-}
+// Use centralized feedback type instead of local interface
+// interface FeedbackEntry - removed, using InterviewFeedback from ~/types
 
 // Constants for empty values - fixes the SelectItem empty value issue
 const UNASSIGNED_VALUE = "unassigned";
@@ -143,7 +126,7 @@ export default function CandidatesPage() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedbackList, setFeedbackList] = useState<FeedbackEntry[]>([]);
+  const [feedbackList, setFeedbackList] = useState<InterviewFeedback[]>([]);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
   const [isLoadingCommunications, setIsLoadingCommunications] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -271,14 +254,29 @@ export default function CandidatesPage() {
         return {
           id: doc.id,
           candidateId: data.candidateId || "",
-          teamMemberId: data.teamMemberId || "",
-          teamMemberName: data.teamMemberName || "",
-          rating: data.rating || 0,
-          recommendation: data.recommendation || "",
+          candidateName: data.candidateName || "",
+          interviewerId: data.teamMemberId || "",
+          interviewerName: data.teamMemberName || "",
+          overallRating: data.rating || 0,
+          recommendation:
+            data.recommendation === "hire"
+              ? "hire"
+              : data.recommendation === "reject"
+              ? "no-hire"
+              : data.recommendation === "consider"
+              ? "consider"
+              : "hire",
           strengths: data.strengths || "",
           weaknesses: data.weaknesses || "",
+          reasoning: data.recommendation || "",
+          improvementAreas: "",
+          technicalSkills: data.rating || 0,
+          communication: data.rating || 0,
+          culturalFit: data.rating || 0,
+          experience: data.rating || 0,
+          interviewId: "", // Will need to link properly
           createdAt: data.createdAt || new Date().toISOString(),
-        } as FeedbackEntry;
+        } as InterviewFeedback;
       });
 
       setFeedbackList(feedbackEntries);
@@ -435,6 +433,7 @@ export default function CandidatesPage() {
           // Use the documents array we constructed
           history: data.history || [],
           communications: data.communications || [],
+          interviewHistory: data.interviewHistory || [],
           documents: documents, // Use our constructed documents array
           resumeFileURL: data.resumeFileURL,
           originalFilename: data.originalFilename,
@@ -1629,7 +1628,8 @@ export default function CandidatesPage() {
               <X className="h-4 w-4" />
             </Button>
 
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 pr-10">
+            {/* Header - Fixed height */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 pr-10 flex-shrink-0">
               <h2 className="text-xl font-bold">{detailCandidate.name}</h2>
 
               <div className="mt-2 md:mt-0 flex items-center">
@@ -1666,971 +1666,1021 @@ export default function CandidatesPage() {
               </div>
             </div>
 
+            {/* Tabs Container - Flex grow to take remaining space */}
             <Tabs
               value={activeTab}
               onValueChange={setActiveTab}
-              className="flex-grow flex flex-col overflow-hidden"
+              className="flex-1 flex flex-col min-h-0"
             >
-              <TabsList className="mb-4 overflow-x-auto justify-start flex-nowrap whitespace-nowrap scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent w-full">
+              {/* Tabs Bar - Fixed height, always visible */}
+              <TabsList className="mb-4 overflow-x-auto justify-start flex-nowrap whitespace-nowrap scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent w-full flex-shrink-0 h-12 p-1">
                 <TabsTrigger
                   value="details"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
                 >
                   <FileText className="size-4" />
                   <span>Details</span>
                 </TabsTrigger>
-                <TabsTrigger value="tags" className="flex items-center gap-1">
+                <TabsTrigger
+                  value="tags"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
+                >
                   <TagIcon className="size-4" />
                   <span>Tags & Categories</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="scoring"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
                 >
                   <BadgeCheck className="size-4" />
                   <span>Scoring</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="history"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
                 >
                   <Shield className="size-4" />
                   <span>History</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="communications"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
                 >
                   <MessageSquare className="size-4" />
                   <span>Communications</span>
                 </TabsTrigger>
                 <TabsTrigger
+                  value="interviews"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
+                >
+                  <Users className="size-4" />
+                  <span>Interviews</span>
+                </TabsTrigger>
+                <TabsTrigger
                   value="feedback"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
                 >
                   <MessageCircle className="size-4" />
                   <span>Feedback</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="documents"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 h-10 px-4 text-sm font-medium"
                 >
                   <FileText className="size-4" />
                   <span>Documents</span>
                 </TabsTrigger>
               </TabsList>
 
-              <ScrollArea className="flex-grow">
-                {/* Document Preview Dialog */}
-                <Dialog
-                  open={showPreviewDialog}
-                  onOpenChange={setShowPreviewDialog}
-                >
-                  <DialogContent className="max-w-4xl w-full max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                      <DialogTitle>{previewDocument?.name}</DialogTitle>
-                      <DialogDescription>
-                        {previewDocument && (
-                          <span className="text-xs">
-                            {formatFileSize(previewDocument.size)} • Uploaded{" "}
-                            {new Date(
-                              previewDocument.uploadDate
-                            ).toLocaleDateString()}
-                          </span>
-                        )}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="flex-grow flex items-center justify-center overflow-auto border rounded-md bg-muted/20 p-2 min-h-[400px]">
-                      {previewDocument?.url ? (
-                        previewDocument.type.includes("pdf") ? (
-                          <iframe
-                            src={`${previewDocument.url}#toolbar=0`}
-                            className="w-full h-full min-h-[400px]"
-                            title={previewDocument.name}
-                          />
-                        ) : previewDocument.type.includes("image") ? (
-                          <img
-                            src={previewDocument.url}
-                            alt={previewDocument.name}
-                            className="max-w-full max-h-full object-contain"
-                          />
-                        ) : (
-                          <div className="text-center p-8">
-                            <FileText className="size-12 mx-auto mb-4 text-muted-foreground" />
-                            <p>Preview not available for this file type</p>
-                            <Button
-                              onClick={() =>
-                                handleDocumentDownload(previewDocument)
-                              }
-                              className="mt-4"
-                            >
-                              <Download className="size-4 mr-2" />
-                              Download to View
-                            </Button>
-                          </div>
-                        )
-                      ) : (
-                        <div className="flex flex-col items-center">
-                          <Loader2 className="size-8 animate-spin mb-4" />
-                          <p>Loading document...</p>
-                        </div>
-                      )}
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleDocumentDownload(previewDocument!)}
-                      >
-                        <Download className="size-4 mr-2" />
-                        Download
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-
-                {/* Document Delete Confirmation Dialog */}
-                <AlertDialog
-                  open={showDocumentDeleteDialog}
-                  onOpenChange={setShowDocumentDeleteDialog}
-                >
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete this document?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This action cannot be undone. This will permanently
-                        delete the document
-                        <strong> {documentToDelete?.name}</strong>.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel disabled={isSubmitting}>
-                        Cancel
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleDeleteDocument}
-                        disabled={isSubmitting}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Deleting...
-                          </>
-                        ) : (
-                          "Delete"
-                        )}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-                <TabsContent value="details" className="py-2 min-h-[400px]">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      {/* Contact Information Section */}
-                      <div className="bg-muted/10 p-4 rounded-lg border">
-                        <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-                          <UserIcon className="size-4" />
-                          Contact Information
-                        </h4>
-                        <div className="space-y-3">
-                          <div>
-                            <Label className="text-xs text-muted-foreground">
-                              Email
-                            </Label>
-                            <p className="text-sm font-medium">
-                              {detailCandidate.email || "Not provided"}
-                            </p>
-                          </div>
-                          <div>
-                            <Label className="text-xs text-muted-foreground">
-                              Phone
-                            </Label>
-                            <p className="text-sm font-medium">
-                              {detailCandidate.phone || "Not provided"}
-                            </p>
-                          </div>
-                          {detailCandidate.jobTitle && (
-                            <div>
-                              <Label className="text-xs text-muted-foreground">
-                                Job Title
-                              </Label>
-                              <p className="text-sm font-medium">
-                                {detailCandidate.jobTitle}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="stage"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Stage
-                        </Label>
-                        <Select
-                          value={modalStageId}
-                          onValueChange={setModalStageId}
-                        >
-                          <SelectTrigger id="stage" className="w-full">
-                            <SelectValue placeholder="Select a stage" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={UNASSIGNED_VALUE}>
-                              Unassigned
-                            </SelectItem>
-                            {stages.map((stage) => (
-                              <SelectItem key={stage.id} value={stage.id}>
-                                {stage.title}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="experience"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Experience
-                        </Label>
-                        <Input
-                          id="experience"
-                          value={modalExperience}
-                          onChange={(e) => setModalExperience(e.target.value)}
-                          placeholder="e.g. 5 years"
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="rating"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Rating
-                        </Label>
-                        <div className="flex items-center gap-3">
-                          <div className="flex">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <button
-                                key={star}
-                                type="button"
-                                onClick={() => setRating(star)}
-                                className="p-1 hover:scale-110 transition-transform"
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  className={`h-6 w-6 ${
-                                    star <= modalRating
-                                      ? "fill-amber-400 text-amber-400"
-                                      : "text-gray-300"
-                                  }`}
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                  fill="none"
+              {/* Tab Content Area - Scrollable content that takes remaining space */}
+              <div className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <div className="pr-4">
+                    {/* Document Preview Dialog */}
+                    <Dialog
+                      open={showPreviewDialog}
+                      onOpenChange={setShowPreviewDialog}
+                    >
+                      <DialogContent className="max-w-4xl w-full max-h-[80vh] flex flex-col">
+                        <DialogHeader>
+                          <DialogTitle>{previewDocument?.name}</DialogTitle>
+                          <DialogDescription>
+                            {previewDocument && (
+                              <span className="text-xs">
+                                {formatFileSize(previewDocument.size)} •
+                                Uploaded{" "}
+                                {new Date(
+                                  previewDocument.uploadDate
+                                ).toLocaleDateString()}
+                              </span>
+                            )}
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="flex-grow flex items-center justify-center overflow-auto border rounded-md bg-muted/20 p-2 min-h-[400px]">
+                          {previewDocument?.url ? (
+                            previewDocument.type.includes("pdf") ? (
+                              <iframe
+                                src={`${previewDocument.url}#toolbar=0`}
+                                className="w-full h-full min-h-[400px]"
+                                title={previewDocument.name}
+                              />
+                            ) : previewDocument.type.includes("image") ? (
+                              <img
+                                src={previewDocument.url}
+                                alt={previewDocument.name}
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            ) : (
+                              <div className="text-center p-8">
+                                <FileText className="size-12 mx-auto mb-4 text-muted-foreground" />
+                                <p>Preview not available for this file type</p>
+                                <Button
+                                  onClick={() =>
+                                    handleDocumentDownload(previewDocument)
+                                  }
+                                  className="mt-4"
                                 >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                                  />
-                                </svg>
-                              </button>
-                            ))}
-                          </div>
-
-                          {modalRating > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={resetRating}
-                              className="h-8 text-xs"
-                            >
-                              Clear
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        <Label
-                          htmlFor="skills"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Skills (comma-separated)
-                        </Label>
-                        <Textarea
-                          id="skills"
-                          value={modalSkills.join(", ")}
-                          onChange={(e) =>
-                            setModalSkills(
-                              e.target.value
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter(Boolean)
+                                  <Download className="size-4 mr-2" />
+                                  Download to View
+                                </Button>
+                              </div>
                             )
-                          }
-                          placeholder="e.g. JavaScript, React, Node.js"
-                          className="resize-none min-h-[100px]"
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="education"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Education
-                        </Label>
-                        <Textarea
-                          id="education"
-                          value={modalEducation}
-                          onChange={(e) => setModalEducation(e.target.value)}
-                          placeholder="Education details"
-                          className="resize-none min-h-[100px]"
-                        />
-                      </div>
-
-                      <div>
-                        <Label
-                          htmlFor="notes"
-                          className="text-sm font-medium mb-2 block"
-                        >
-                          Notes
-                        </Label>
-                        <Textarea
-                          id="notes"
-                          value={modalNotes}
-                          onChange={(e) => setModalNotes(e.target.value)}
-                          placeholder="Add notes about this candidate..."
-                          className="resize-none min-h-[120px]"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="tags" className="py-2 min-h-[400px]">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="overflow-hidden">
-                      <CardHeader className="pb-2">
-                        <h3 className="text-sm font-medium">Tags</h3>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {/* Selected Tags Display */}
-                          {modalTags.length > 0 && (
-                            <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
-                              {modalTags.map((tag) => (
-                                <Badge
-                                  key={tag}
-                                  variant="default"
-                                  className="flex items-center gap-1"
-                                >
-                                  {tag}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setModalTags(
-                                        modalTags.filter((t) => t !== tag)
-                                      );
-                                    }}
-                                    className="ml-1 hover:bg-white/20 rounded-full p-0.5"
-                                  >
-                                    <X className="size-3" />
-                                  </button>
-                                </Badge>
-                              ))}
+                          ) : (
+                            <div className="flex flex-col items-center">
+                              <Loader2 className="size-8 animate-spin mb-4" />
+                              <p>Loading document...</p>
                             </div>
                           )}
-
-                          {/* Tag Selection Dropdown */}
-                          <Select
-                            value=""
-                            onValueChange={(value) => {
-                              if (value && !modalTags.includes(value)) {
-                                setModalTags([...modalTags, value]);
-                              }
-                            }}
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              handleDocumentDownload(previewDocument!)
+                            }
                           >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Add a tag..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allTags
-                                .filter((tag) => !modalTags.includes(tag))
-                                .map((tag) => (
-                                  <SelectItem key={tag} value={tag}>
-                                    {tag}
-                                  </SelectItem>
-                                ))}
-                              {allTags.filter((tag) => !modalTags.includes(tag))
-                                .length === 0 && (
-                                <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                  {allTags.length === 0
-                                    ? "No tags available"
-                                    : "All tags selected"}
+                            <Download className="size-4 mr-2" />
+                            Download
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
+                    {/* Document Delete Confirmation Dialog */}
+                    <AlertDialog
+                      open={showDocumentDeleteDialog}
+                      onOpenChange={setShowDocumentDeleteDialog}
+                    >
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Delete this document?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently
+                            delete the document
+                            <strong> {documentToDelete?.name}</strong>.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={isSubmitting}>
+                            Cancel
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleDeleteDocument}
+                            disabled={isSubmitting}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Deleting...
+                              </>
+                            ) : (
+                              "Delete"
+                            )}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    <TabsContent value="details" className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          {/* Contact Information Section */}
+                          <div className="bg-muted/10 p-4 rounded-lg border">
+                            <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                              <UserIcon className="size-4" />
+                              Contact Information
+                            </h4>
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Email
+                                </Label>
+                                <p className="text-sm font-medium">
+                                  {detailCandidate.email || "Not provided"}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Phone
+                                </Label>
+                                <p className="text-sm font-medium">
+                                  {detailCandidate.phone || "Not provided"}
+                                </p>
+                              </div>
+                              {detailCandidate.jobTitle && (
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">
+                                    Job Title
+                                  </Label>
+                                  <p className="text-sm font-medium">
+                                    {detailCandidate.jobTitle}
+                                  </p>
                                 </div>
                               )}
-                            </SelectContent>
-                          </Select>
-
-                          {allTags.length === 0 && (
-                            <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
-                              <TagIcon className="mb-2 h-6 w-6 opacity-40" />
-                              No tags available
-                              <p className="text-xs mt-1">
-                                Tags can be created in the Tags management
-                                section
-                              </p>
                             </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="h-full">
-                      <CardHeader className="pb-2">
-                        <h3 className="text-sm font-medium">Category</h3>
-                      </CardHeader>
-                      <CardContent>
-                        <Select
-                          value={modalCategory}
-                          onValueChange={setModalCategory}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select a category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE_CATEGORY_VALUE}>
-                              (None)
-                            </SelectItem>
-                            {allCategories.map((cat) => (
-                              <SelectItem key={cat} value={cat}>
-                                {cat}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-
-                        {allCategories.length === 0 && (
-                          <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
-                            <FileText className="mb-2 h-6 w-6 opacity-40" />
-                            No categories available
-                            <p className="text-xs mt-1">
-                              Categories can be created in the Categories
-                              management section
-                            </p>
                           </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
 
-                <TabsContent value="history" className="py-2 min-h-[400px]">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Shield className="text-primary/70 size-4" />
-                        <h3 className="font-medium">History Timeline</h3>
-                      </div>
-                    </div>
+                          <div>
+                            <Label
+                              htmlFor="stage"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Stage
+                            </Label>
+                            <Select
+                              value={modalStageId}
+                              onValueChange={setModalStageId}
+                            >
+                              <SelectTrigger id="stage" className="w-full">
+                                <SelectValue placeholder="Select a stage" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={UNASSIGNED_VALUE}>
+                                  Unassigned
+                                </SelectItem>
+                                {stages.map((stage) => (
+                                  <SelectItem key={stage.id} value={stage.id}>
+                                    {stage.title}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                    <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2 mb-2">
-                      <AlertCircle className="size-4 text-blue-500/70" />
-                      <p className="text-xs text-muted-foreground">
-                        The system automatically tracks changes to candidate
-                        information
-                      </p>
-                    </div>
+                          <div>
+                            <Label
+                              htmlFor="experience"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Experience
+                            </Label>
+                            <Input
+                              id="experience"
+                              value={modalExperience}
+                              onChange={(e) =>
+                                setModalExperience(e.target.value)
+                              }
+                              placeholder="e.g. 5 years"
+                            />
+                          </div>
 
-                    {modalHistory.length === 0 ? (
-                      <div className="text-center py-10 border-dashed border rounded-md bg-muted/5">
-                        <AlertCircle className="size-8 mx-auto mb-2 text-muted-foreground/40" />
-                        <p className="text-muted-foreground text-sm">
-                          No history entries yet
-                        </p>
-                      </div>
-                    ) : (
-                      <ScrollArea className="h-[300px] pr-4">
-                        <div className="space-y-2.5 pb-1">
-                          {[...modalHistory].reverse().map((entry, idx) => {
-                            // Determine icon and color based on content
-                            let Icon = AlertCircle;
-                            let iconColor = "text-blue-500";
-
-                            if (entry.note.includes("Stage changed")) {
-                              Icon = TagIcon;
-                              iconColor = "text-violet-500";
-                            } else if (entry.note.includes("Rating changed")) {
-                              Icon = AlertCircle;
-                              iconColor = "text-amber-500";
-                            } else if (entry.note.includes("Tags updated")) {
-                              Icon = TagIcon;
-                              iconColor = "text-emerald-500";
-                            } else if (
-                              entry.note.includes("uploaded") ||
-                              entry.note.includes("Document")
-                            ) {
-                              Icon = FileText;
-                              iconColor = "text-red-500";
-                            } else if (
-                              entry.note.includes("Notes were updated")
-                            ) {
-                              Icon = MessageCircle;
-                              iconColor = "text-sky-500";
-                            }
-
-                            return (
-                              <div
-                                key={idx}
-                                className="border rounded-md bg-background overflow-hidden hover:shadow-sm transition-all"
-                              >
-                                <div className="flex items-center border-b border-muted/30 px-3 py-1.5 bg-muted/5">
-                                  <Icon
-                                    className={`size-3.5 mr-2 ${iconColor}`}
-                                  />
-                                  <span className="text-xs text-muted-foreground">
-                                    {new Date(entry.date).toLocaleString(
-                                      undefined,
-                                      {
-                                        month: "short",
-                                        day: "numeric",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      }
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="p-2.5">
-                                  <p className="text-sm">{entry.note}</p>
-                                </div>
+                          <div>
+                            <Label
+                              htmlFor="rating"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Rating
+                            </Label>
+                            <div className="flex items-center gap-3">
+                              <div className="flex">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => setRating(star)}
+                                    className="p-1 hover:scale-110 transition-transform"
+                                  >
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      className={`h-6 w-6 ${
+                                        star <= modalRating
+                                          ? "fill-amber-400 text-amber-400"
+                                          : "text-gray-300"
+                                      }`}
+                                      viewBox="0 0 24 24"
+                                      stroke="currentColor"
+                                      fill="none"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                                      />
+                                    </svg>
+                                  </button>
+                                ))}
                               </div>
-                            );
-                          })}
+
+                              {modalRating > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={resetRating}
+                                  className="h-8 text-xs"
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </ScrollArea>
-                    )}
-                  </div>
-                </TabsContent>
 
-                <TabsContent
-                  value="communications"
-                  className="py-2 min-h-[400px]"
-                >
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-medium">Communication History</h3>
-                      <Button size="sm" asChild>
-                        <Link to={`/dashboard/communication`}>
-                          <MessageSquarePlus className="size-4 mr-2" />
-                          New Message
-                        </Link>
-                      </Button>
-                    </div>
+                        <div className="space-y-4">
+                          <div>
+                            <Label
+                              htmlFor="skills"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Skills (comma-separated)
+                            </Label>
+                            <Textarea
+                              id="skills"
+                              value={modalSkills.join(", ")}
+                              onChange={(e) =>
+                                setModalSkills(
+                                  e.target.value
+                                    .split(",")
+                                    .map((s) => s.trim())
+                                    .filter(Boolean)
+                                )
+                              }
+                              placeholder="e.g. JavaScript, React, Node.js"
+                              className="resize-none min-h-[100px]"
+                            />
+                          </div>
 
-                    {isLoadingCommunications ? (
-                      <div className="flex flex-col items-center justify-center h-[350px] border rounded-md">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary/60 mb-2" />
-                        <p className="text-sm text-muted-foreground">
-                          Loading messages...
-                        </p>
+                          <div>
+                            <Label
+                              htmlFor="education"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Education
+                            </Label>
+                            <Textarea
+                              id="education"
+                              value={modalEducation}
+                              onChange={(e) =>
+                                setModalEducation(e.target.value)
+                              }
+                              placeholder="Education details"
+                              className="resize-none min-h-[100px]"
+                            />
+                          </div>
+
+                          <div>
+                            <Label
+                              htmlFor="notes"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Notes
+                            </Label>
+                            <Textarea
+                              id="notes"
+                              value={modalNotes}
+                              onChange={(e) => setModalNotes(e.target.value)}
+                              placeholder="Add notes about this candidate..."
+                              className="resize-none min-h-[120px]"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    ) : modalCommunications.length === 0 ? (
-                      <div className="text-center py-12 border rounded-md bg-muted/20">
-                        <MessageSquare className="size-8 mx-auto mb-2 text-muted-foreground/50" />
-                        <p className="text-muted-foreground">
-                          No communication history yet
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Messages sent to this candidate will appear here
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="border rounded-md overflow-hidden bg-background">
-                        <ScrollArea className="h-[350px]">
-                          <div className="space-y-1 p-3">
-                            {modalCommunications.map((comm) => (
-                              <div
-                                key={comm.id}
-                                className={`border p-3 rounded-md hover:border-primary/40 transition-colors ${
-                                  comm.type === "received" && !comm.read
-                                    ? "bg-muted/30 border-primary/50"
-                                    : "bg-card"
-                                }`}
-                                onClick={() => {
-                                  if (comm.type === "received" && !comm.read) {
-                                    markMessageAsRead(comm.id);
+                    </TabsContent>
+
+                    <TabsContent value="tags" className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Card className="overflow-hidden">
+                          <CardHeader className="pb-2">
+                            <h3 className="text-sm font-medium">Tags</h3>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-3">
+                              {/* Selected Tags Display */}
+                              {modalTags.length > 0 && (
+                                <div className="flex flex-wrap gap-2 p-2 border rounded-md bg-muted/20">
+                                  {modalTags.map((tag) => (
+                                    <Badge
+                                      key={tag}
+                                      variant="default"
+                                      className="flex items-center gap-1"
+                                    >
+                                      {tag}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setModalTags(
+                                            modalTags.filter((t) => t !== tag)
+                                          );
+                                        }}
+                                        className="ml-1 hover:bg-white/20 rounded-full p-0.5"
+                                      >
+                                        <X className="size-3" />
+                                      </button>
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Tag Selection Dropdown */}
+                              <Select
+                                value=""
+                                onValueChange={(value) => {
+                                  if (value && !modalTags.includes(value)) {
+                                    setModalTags([...modalTags, value]);
                                   }
                                 }}
                               >
-                                <div className="flex justify-between items-start mb-1">
-                                  <div className="flex items-center gap-2">
-                                    <Badge
-                                      variant={
-                                        comm.type === "sent"
-                                          ? "default"
-                                          : "secondary"
-                                      }
-                                      className="text-xs py-0 h-5"
-                                    >
-                                      {comm.type === "sent"
-                                        ? "Sent"
-                                        : "Received"}
-                                    </Badge>
-                                    <span className="text-sm font-medium">
-                                      {comm.type === "sent"
-                                        ? "HR Team"
-                                        : detailCandidate?.name}
-                                    </span>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Add a tag..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {allTags
+                                    .filter((tag) => !modalTags.includes(tag))
+                                    .map((tag) => (
+                                      <SelectItem key={tag} value={tag}>
+                                        {tag}
+                                      </SelectItem>
+                                    ))}
+                                  {allTags.filter(
+                                    (tag) => !modalTags.includes(tag)
+                                  ).length === 0 && (
+                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                      {allTags.length === 0
+                                        ? "No tags available"
+                                        : "All tags selected"}
+                                    </div>
+                                  )}
+                                </SelectContent>
+                              </Select>
+
+                              {allTags.length === 0 && (
+                                <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
+                                  <TagIcon className="mb-2 h-6 w-6 opacity-40" />
+                                  No tags available
+                                  <p className="text-xs mt-1">
+                                    Tags can be created in the Tags management
+                                    section
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="h-full">
+                          <CardHeader className="pb-2">
+                            <h3 className="text-sm font-medium">Category</h3>
+                          </CardHeader>
+                          <CardContent>
+                            <Select
+                              value={modalCategory}
+                              onValueChange={setModalCategory}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select a category" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={NONE_CATEGORY_VALUE}>
+                                  (None)
+                                </SelectItem>
+                                {allCategories.map((cat) => (
+                                  <SelectItem key={cat} value={cat}>
+                                    {cat}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            {allCategories.length === 0 && (
+                              <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
+                                <FileText className="mb-2 h-6 w-6 opacity-40" />
+                                No categories available
+                                <p className="text-xs mt-1">
+                                  Categories can be created in the Categories
+                                  management section
+                                </p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="history" className="space-y-6">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Shield className="text-primary/70 size-4" />
+                            <h3 className="font-medium">History Timeline</h3>
+                          </div>
+                        </div>
+
+                        <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2 mb-2">
+                          <AlertCircle className="size-4 text-blue-500/70" />
+                          <p className="text-xs text-muted-foreground">
+                            The system automatically tracks changes to candidate
+                            information
+                          </p>
+                        </div>
+
+                        {modalHistory.length === 0 ? (
+                          <div className="text-center py-10 border-dashed border rounded-md bg-muted/5">
+                            <AlertCircle className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+                            <p className="text-muted-foreground text-sm">
+                              No history entries yet
+                            </p>
+                          </div>
+                        ) : (
+                          <ScrollArea className="h-[300px] pr-4">
+                            <div className="space-y-2.5 pb-1">
+                              {[...modalHistory].reverse().map((entry, idx) => {
+                                // Determine icon and color based on content
+                                let Icon = AlertCircle;
+                                let iconColor = "text-blue-500";
+
+                                if (entry.note.includes("Stage changed")) {
+                                  Icon = TagIcon;
+                                  iconColor = "text-violet-500";
+                                } else if (
+                                  entry.note.includes("Rating changed")
+                                ) {
+                                  Icon = AlertCircle;
+                                  iconColor = "text-amber-500";
+                                } else if (
+                                  entry.note.includes("Tags updated")
+                                ) {
+                                  Icon = TagIcon;
+                                  iconColor = "text-emerald-500";
+                                } else if (
+                                  entry.note.includes("uploaded") ||
+                                  entry.note.includes("Document")
+                                ) {
+                                  Icon = FileText;
+                                  iconColor = "text-red-500";
+                                } else if (
+                                  entry.note.includes("Notes were updated")
+                                ) {
+                                  Icon = MessageCircle;
+                                  iconColor = "text-sky-500";
+                                }
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="border rounded-md bg-background overflow-hidden hover:shadow-sm transition-all"
+                                  >
+                                    <div className="flex items-center border-b border-muted/30 px-3 py-1.5 bg-muted/5">
+                                      <Icon
+                                        className={`size-3.5 mr-2 ${iconColor}`}
+                                      />
+                                      <span className="text-xs text-muted-foreground">
+                                        {new Date(entry.date).toLocaleString(
+                                          undefined,
+                                          {
+                                            month: "short",
+                                            day: "numeric",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          }
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div className="p-2.5">
+                                      <p className="text-sm">{entry.note}</p>
+                                    </div>
                                   </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    {new Date(comm.date).toLocaleString(
-                                      undefined,
-                                      {
-                                        month: "short",
-                                        day: "numeric",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
+                                );
+                              })}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="communications" className="space-y-6">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium">Communication History</h3>
+                          <Button size="sm" asChild>
+                            <Link to={`/dashboard/communication`}>
+                              <MessageSquarePlus className="size-4 mr-2" />
+                              New Message
+                            </Link>
+                          </Button>
+                        </div>
+
+                        {isLoadingCommunications ? (
+                          <div className="flex flex-col items-center justify-center h-[350px] border rounded-md">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary/60 mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              Loading messages...
+                            </p>
+                          </div>
+                        ) : modalCommunications.length === 0 ? (
+                          <div className="text-center py-12 border rounded-md bg-muted/20">
+                            <MessageSquare className="size-8 mx-auto mb-2 text-muted-foreground/50" />
+                            <p className="text-muted-foreground">
+                              No communication history yet
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Messages sent to this candidate will appear here
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="border rounded-md overflow-hidden bg-background">
+                            <ScrollArea className="h-[350px]">
+                              <div className="space-y-1 p-3">
+                                {modalCommunications.map((comm) => (
+                                  <div
+                                    key={comm.id}
+                                    className={`border p-3 rounded-md hover:border-primary/40 transition-colors ${
+                                      comm.type === "received" && !comm.read
+                                        ? "bg-muted/30 border-primary/50"
+                                        : "bg-card"
+                                    }`}
+                                    onClick={() => {
+                                      if (
+                                        comm.type === "received" &&
+                                        !comm.read
+                                      ) {
+                                        markMessageAsRead(comm.id);
                                       }
+                                    }}
+                                  >
+                                    <div className="flex justify-between items-start mb-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          variant={
+                                            comm.type === "sent"
+                                              ? "default"
+                                              : "secondary"
+                                          }
+                                          className="text-xs py-0 h-5"
+                                        >
+                                          {comm.type === "sent"
+                                            ? "Sent"
+                                            : "Received"}
+                                        </Badge>
+                                        <span className="text-sm font-medium">
+                                          {comm.type === "sent"
+                                            ? "HR Team"
+                                            : detailCandidate?.name}
+                                        </span>
+                                      </div>
+                                      <span className="text-xs text-muted-foreground">
+                                        {new Date(comm.date).toLocaleString(
+                                          undefined,
+                                          {
+                                            month: "short",
+                                            day: "numeric",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          }
+                                        )}
+                                      </span>
+                                    </div>
+                                    {comm.subject && (
+                                      <p className="text-sm font-medium mb-1">
+                                        {comm.subject}
+                                      </p>
                                     )}
+                                    <p className="text-sm mt-1 whitespace-pre-line text-muted-foreground">
+                                      {comm.message.length > 120
+                                        ? `${comm.message.substring(0, 120)}...`
+                                        : comm.message}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </ScrollArea>
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="interviews" className="space-y-6">
+                      <InterviewManager
+                        candidate={detailCandidate}
+                        onInterviewScheduled={() => {
+                          // Refresh candidate data to show updated interview history
+                          if (detailCandidate) {
+                            openCandidateDetail(detailCandidate);
+                          }
+                        }}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="feedback" className="space-y-6">
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <h3 className="font-medium">Interview Feedback</h3>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            className="h-8"
+                          >
+                            <Link to={`/dashboard/communication`}>
+                              <Clipboard className="size-4 mr-1" />
+                              Add Feedback
+                            </Link>
+                          </Button>
+                        </div>
+
+                        {isFeedbackLoading ? (
+                          <div className="flex items-center justify-center h-40">
+                            <Loader2 className="h-7 w-7 animate-spin text-primary/60" />
+                          </div>
+                        ) : feedbackList.length === 0 ? (
+                          <div className="text-center py-8 border border-dashed rounded-md bg-muted/10">
+                            <ClipboardCheck className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+                            <p className="text-muted-foreground text-sm">
+                              No feedback submitted yet
+                            </p>
+                          </div>
+                        ) : (
+                          <ScrollArea className="h-[350px] pr-4">
+                            <div className="space-y-3 pb-2">
+                              {feedbackList.map((feedback) => (
+                                <Card
+                                  key={feedback.id}
+                                  className="overflow-hidden shadow-sm border-muted/80 hover:border-primary/50 transition-colors"
+                                >
+                                  <div className="p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <UserIcon className="size-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium">
+                                          {feedback.interviewerName}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {new Date(
+                                            feedback.createdAt
+                                          ).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          variant={
+                                            feedback.recommendation ===
+                                            "consider"
+                                              ? "outline"
+                                              : feedback.recommendation ===
+                                                "no-hire"
+                                              ? "destructive"
+                                              : "default"
+                                          }
+                                          className="text-xs font-medium py-0 h-5"
+                                        >
+                                          {feedback.recommendation
+                                            .charAt(0)
+                                            .toUpperCase() +
+                                            feedback.recommendation.slice(1)}
+                                        </Badge>
+                                        <div className="flex">
+                                          {[1, 2, 3, 4, 5].map((star) => (
+                                            <svg
+                                              key={star}
+                                              xmlns="http://www.w3.org/2000/svg"
+                                              className={`h-3.5 w-3.5 ${
+                                                star <= feedback.overallRating
+                                                  ? "fill-amber-400 text-amber-400"
+                                                  : "text-gray-300"
+                                              }`}
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                            </svg>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                      {feedback.strengths && (
+                                        <div className="bg-muted/10 p-2 rounded border border-muted/40">
+                                          <div className="text-xs font-medium text-emerald-600 mb-1">
+                                            Strengths
+                                          </div>
+                                          <p className="text-xs">
+                                            {feedback.strengths}
+                                          </p>
+                                        </div>
+                                      )}
+                                      {feedback.weaknesses && (
+                                        <div className="bg-muted/10 p-2 rounded border border-muted/40">
+                                          <div className="text-xs font-medium text-amber-600 mb-1">
+                                            Areas for Improvement
+                                          </div>
+                                          <p className="text-xs">
+                                            {feedback.weaknesses}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </Card>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="documents" className="space-y-6">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium">Candidate Documents</h3>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleDownloadAllDocuments}
+                              disabled={!modalDocuments.length}
+                            >
+                              <Download className="size-4 mr-2" />
+                              Download All
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={triggerFileUpload}
+                              disabled={isUploading}
+                            >
+                              {isUploading ? (
+                                <>
+                                  <Loader2 className="size-4 mr-2 animate-spin" />
+                                  Uploading...
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="size-4 mr-2" />
+                                  Upload
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Upload progress bar */}
+                        {isUploading && (
+                          <div className="mb-4">
+                            <div className="flex justify-between mb-1 text-xs">
+                              <span>Uploading...</span>
+                              <span>{uploadProgress}%</span>
+                            </div>
+                            <Progress value={uploadProgress} />
+                          </div>
+                        )}
+
+                        {/* Document list or empty state */}
+                        {modalDocuments.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {modalDocuments.map((doc) => (
+                              <div
+                                key={doc.id}
+                                className="border rounded-md p-4 flex flex-col hover:border-primary transition-colors"
+                              >
+                                <div className="flex items-center mb-2">
+                                  {getFileIcon(doc.type)}
+                                  <span className="font-medium truncate flex-1 ml-2">
+                                    {doc.name}
                                   </span>
                                 </div>
-                                {comm.subject && (
-                                  <p className="text-sm font-medium mb-1">
-                                    {comm.subject}
-                                  </p>
-                                )}
-                                <p className="text-sm mt-1 whitespace-pre-line text-muted-foreground">
-                                  {comm.message.length > 120
-                                    ? `${comm.message.substring(0, 120)}...`
-                                    : comm.message}
-                                </p>
+                                <div className="text-xs text-muted-foreground mb-3">
+                                  <div>Size: {formatFileSize(doc.size)}</div>
+                                  <div>
+                                    Uploaded:{" "}
+                                    {new Date(
+                                      doc.uploadDate
+                                    ).toLocaleDateString()}
+                                  </div>
+                                </div>
+                                <div className="flex justify-between mt-auto pt-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleDocumentPreview(doc)}
+                                  >
+                                    <Eye className="size-4 mr-1" />
+                                    View
+                                  </Button>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        handleDocumentDownload(doc)
+                                      }
+                                    >
+                                      <Download className="size-4 mr-1" />
+                                      Download
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-destructive hover:text-destructive"
+                                      onClick={() => confirmDeleteDocument(doc)}
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </Button>
+                                  </div>
+                                </div>
                               </div>
                             ))}
                           </div>
-                        </ScrollArea>
+                        ) : (
+                          <div className="border rounded-lg p-6 flex flex-col items-center justify-center text-center py-16">
+                            <FileText className="size-10 text-muted-foreground/50 mb-4" />
+                            <h3 className="text-lg font-medium mb-1">
+                              No documents uploaded yet
+                            </h3>
+                            <p className="text-muted-foreground">
+                              Documents will appear here once uploaded
+                            </p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </TabsContent>
+                    </TabsContent>
+                    <TabsContent value="scoring" className="space-y-6">
+                      <div className="space-y-6 overflow-auto h-full max-h-[460px]">
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-medium">Resume Scoring</h3>
 
-                <TabsContent value="feedback" className="py-2 min-h-[400px]">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="font-medium">Interview Feedback</h3>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        asChild
-                        className="h-8"
-                      >
-                        <Link to={`/dashboard/collaboration`}>
-                          <Clipboard className="size-4 mr-1" />
-                          Add Feedback
-                        </Link>
-                      </Button>
-                    </div>
-
-                    {isFeedbackLoading ? (
-                      <div className="flex items-center justify-center h-40">
-                        <Loader2 className="h-7 w-7 animate-spin text-primary/60" />
-                      </div>
-                    ) : feedbackList.length === 0 ? (
-                      <div className="text-center py-8 border border-dashed rounded-md bg-muted/10">
-                        <ClipboardCheck className="size-8 mx-auto mb-2 text-muted-foreground/40" />
-                        <p className="text-muted-foreground text-sm">
-                          No feedback submitted yet
-                        </p>
-                      </div>
-                    ) : (
-                      <ScrollArea className="h-[350px] pr-4">
-                        <div className="space-y-3 pb-2">
-                          {feedbackList.map((feedback) => (
-                            <Card
-                              key={feedback.id}
-                              className="overflow-hidden shadow-sm border-muted/80 hover:border-primary/50 transition-colors"
-                            >
-                              <div className="p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <UserIcon className="size-4 text-muted-foreground" />
-                                    <span className="text-sm font-medium">
-                                      {feedback.teamMemberName}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {new Date(
-                                        feedback.createdAt
-                                      ).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Badge
-                                      variant={
-                                        feedback.recommendation === "consider"
-                                          ? "outline"
-                                          : feedback.recommendation === "reject"
-                                          ? "destructive"
-                                          : "default"
-                                      }
-                                      className="text-xs font-medium py-0 h-5"
-                                    >
-                                      {feedback.recommendation
-                                        .charAt(0)
-                                        .toUpperCase() +
-                                        feedback.recommendation.slice(1)}
-                                    </Badge>
-                                    <div className="flex">
-                                      {[1, 2, 3, 4, 5].map((star) => (
-                                        <svg
-                                          key={star}
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          className={`h-3.5 w-3.5 ${
-                                            star <= feedback.rating
-                                              ? "fill-amber-400 text-amber-400"
-                                              : "text-gray-300"
-                                          }`}
-                                          viewBox="0 0 24 24"
-                                        >
-                                          <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                                        </svg>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                  {feedback.strengths && (
-                                    <div className="bg-muted/10 p-2 rounded border border-muted/40">
-                                      <div className="text-xs font-medium text-emerald-600 mb-1">
-                                        Strengths
-                                      </div>
-                                      <p className="text-xs">
-                                        {feedback.strengths}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {feedback.weaknesses && (
-                                    <div className="bg-muted/10 p-2 rounded border border-muted/40">
-                                      <div className="text-xs font-medium text-amber-600 mb-1">
-                                        Areas for Improvement
-                                      </div>
-                                      <p className="text-xs">
-                                        {feedback.weaknesses}
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </Card>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    )}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="documents" className="py-2 min-h-[400px]">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-medium">Candidate Documents</h3>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleDownloadAllDocuments}
-                          disabled={!modalDocuments.length}
-                        >
-                          <Download className="size-4 mr-2" />
-                          Download All
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={triggerFileUpload}
-                          disabled={isUploading}
-                        >
-                          {isUploading ? (
-                            <>
-                              <Loader2 className="size-4 mr-2 animate-spin" />
-                              Uploading...
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="size-4 mr-2" />
-                              Upload
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Upload progress bar */}
-                    {isUploading && (
-                      <div className="mb-4">
-                        <div className="flex justify-between mb-1 text-xs">
-                          <span>Uploading...</span>
-                          <span>{uploadProgress}%</span>
-                        </div>
-                        <Progress value={uploadProgress} />
-                      </div>
-                    )}
-
-                    {/* Document list or empty state */}
-                    {modalDocuments.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {modalDocuments.map((doc) => (
-                          <div
-                            key={doc.id}
-                            className="border rounded-md p-4 flex flex-col hover:border-primary transition-colors"
-                          >
-                            <div className="flex items-center mb-2">
-                              {getFileIcon(doc.type)}
-                              <span className="font-medium truncate flex-1 ml-2">
-                                {doc.name}
-                              </span>
-                            </div>
-                            <div className="text-xs text-muted-foreground mb-3">
-                              <div>Size: {formatFileSize(doc.size)}</div>
-                              <div>
-                                Uploaded:{" "}
-                                {new Date(doc.uploadDate).toLocaleDateString()}
-                              </div>
-                            </div>
-                            <div className="flex justify-between mt-auto pt-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDocumentPreview(doc)}
+                            {detailCandidate?.resumeScore ? (
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "px-2 py-1",
+                                  detailCandidate.resumeScore >= 80
+                                    ? "bg-green-50 text-green-700"
+                                    : detailCandidate.resumeScore >= 60
+                                    ? "bg-blue-50 text-blue-700"
+                                    : detailCandidate.resumeScore >= 40
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-red-50 text-red-700"
+                                )}
                               >
-                                <Eye className="size-4 mr-1" />
-                                View
-                              </Button>
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleDocumentDownload(doc)}
-                                >
-                                  <Download className="size-4 mr-1" />
-                                  Download
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-destructive hover:text-destructive"
-                                  onClick={() => confirmDeleteDocument(doc)}
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
+                                <BadgeCheck className="mr-1.5 h-4 w-4" />
+                                {Math.round(detailCandidate.resumeScore)}% Match
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          <ScoreDetail
+                            scoreDetails={detailCandidate?.resumeScoringDetails}
+                            score={detailCandidate?.resumeScore}
+                            jobTitle={detailCandidate?.scoredAgainstJobTitle}
+                            jobId={detailCandidate?.scoredAgainstJobId}
+                            scoredAt={
+                              detailCandidate?.resumeScoringDetails?.metadata
+                                ?.scoredAt || detailCandidate?.updatedAt
+                            }
+                          />
+                        </div>
+
+                        <div>
+                          <h4 className="text-sm font-medium mb-3">
+                            Score Against a Different Job
+                          </h4>
+                          <div className="flex justify-between gap-3">
+                            <div className="flex-1">
+                              <Select
+                                value={newScoringJobId}
+                                onValueChange={handleJobSelection}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select a job to score against" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {jobs.map((job) => (
+                                    <SelectItem key={job.id} value={job.id}>
+                                      {job.title}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Select a job to calculate a resume match score
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="border rounded-lg p-6 flex flex-col items-center justify-center text-center py-16">
-                        <FileText className="size-10 text-muted-foreground/50 mb-4" />
-                        <h3 className="text-lg font-medium mb-1">
-                          No documents uploaded yet
-                        </h3>
-                        <p className="text-muted-foreground">
-                          Documents will appear here once uploaded
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
-                <TabsContent value="scoring" className="py-2 min-h-[400px]">
-                  <div className="space-y-6 overflow-auto h-full max-h-[460px]">
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-medium">Resume Scoring</h3>
-
-                        {detailCandidate?.resumeScore ? (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "px-2 py-1",
-                              detailCandidate.resumeScore >= 80
-                                ? "bg-green-50 text-green-700"
-                                : detailCandidate.resumeScore >= 60
-                                ? "bg-blue-50 text-blue-700"
-                                : detailCandidate.resumeScore >= 40
-                                ? "bg-amber-50 text-amber-700"
-                                : "bg-red-50 text-red-700"
-                            )}
-                          >
-                            <BadgeCheck className="mr-1.5 h-4 w-4" />
-                            {Math.round(detailCandidate.resumeScore)}% Match
-                          </Badge>
-                        ) : null}
-                      </div>
-
-                      <ScoreDetail
-                        scoreDetails={detailCandidate?.resumeScoringDetails}
-                        score={detailCandidate?.resumeScore}
-                        jobTitle={detailCandidate?.scoredAgainstJobTitle}
-                        jobId={detailCandidate?.scoredAgainstJobId}
-                        scoredAt={
-                          detailCandidate?.resumeScoringDetails?.metadata
-                            ?.scoredAt || detailCandidate?.updatedAt
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <h4 className="text-sm font-medium mb-3">
-                        Score Against a Different Job
-                      </h4>
-                      <div className="flex justify-between gap-3">
-                        <div className="flex-1">
-                          <Select
-                            value={newScoringJobId}
-                            onValueChange={handleJobSelection}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select a job to score against" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {jobs.map((job) => (
-                                <SelectItem key={job.id} value={job.id}>
-                                  {job.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            Select a job to calculate a resume match score
+                            <Button
+                              onClick={handleScoreAgainstJob}
+                              disabled={!newScoringJobId || isScoring}
+                              className="whitespace-nowrap self-start"
+                            >
+                              {isScoring ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Scoring...
+                                </>
+                              ) : (
+                                <>
+                                  <Zap className="mr-2 h-4 w-4" />
+                                  Score Resume
+                                </>
+                              )}
+                            </Button>
                           </div>
                         </div>
-                        <Button
-                          onClick={handleScoreAgainstJob}
-                          disabled={!newScoringJobId || isScoring}
-                          className="whitespace-nowrap self-start"
-                        >
-                          {isScoring ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Scoring...
-                            </>
-                          ) : (
-                            <>
-                              <Zap className="mr-2 h-4 w-4" />
-                              Score Resume
-                            </>
-                          )}
-                        </Button>
                       </div>
-                    </div>
+                    </TabsContent>
                   </div>
-                </TabsContent>
-              </ScrollArea>
+                </ScrollArea>
+              </div>
             </Tabs>
 
             {/* Action Buttons */}

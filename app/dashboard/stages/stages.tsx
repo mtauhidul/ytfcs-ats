@@ -59,13 +59,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-
-interface Stage {
-  id: string;
-  title: string;
-  order: number;
-  color: string;
-}
+import type { Stage } from "~/types";
 
 export default function StagesPage() {
   const [stages, setStages] = useState<Stage[]>([]);

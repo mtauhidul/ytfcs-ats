@@ -29,22 +29,7 @@ import {
 } from "~/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { db } from "~/lib/firebase";
-
-interface Stage {
-  id: string;
-  title: string;
-  order: number;
-  color?: string;
-}
-
-interface Candidate {
-  id: string;
-  name: string;
-  stageId?: string;
-  rating?: number;
-  tags?: string[];
-  createdAt?: string;
-}
+import type { Candidate, Stage } from "~/types";
 
 export default function DashboardPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -238,6 +223,25 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl sm:text-3xl font-bold">
               {stages.length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm sm:text-base flex items-center gap-1">
+              <Users className="size-4" />
+              Interview Activity
+            </CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
+              Total interviews scheduled
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl sm:text-3xl font-bold">
+              {candidates.reduce((total, candidate) => {
+                return total + (candidate.interviewHistory?.length || 0);
+              }, 0)}
             </div>
           </CardContent>
         </Card>

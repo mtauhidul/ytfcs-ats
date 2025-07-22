@@ -5,26 +5,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn } from "~/lib/utils";
-
-export type Job = {
-  id: string;
-  jobId?: string; // Custom job ID
-  title: string;
-  description?: string;
-  requirements?: string[];
-  location?: string;
-  salaryRange?: string;
-  department?: string;
-  employmentType?: string;
-  tags: string[];
-  category: string;
-  statusId: string;
-  statusColor?: string;
-  history?: { date: string; note: string }[];
-  createdAt?: string;
-  updatedAt?: string;
-  onEdit?: (j: Job) => void;
-};
+import type { Job } from "~/types";
 
 export const columns: ColumnDef<Job>[] = [
   {

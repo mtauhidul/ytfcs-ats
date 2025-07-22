@@ -1,5 +1,3 @@
-"use client";
-
 import {
   addDoc,
   collection,
@@ -71,11 +69,12 @@ import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
 // Import the email service
-import { emailService } from "~/services/emailService";
+import { communicationService } from "~/services/communicationService";
 // Import useAuth to get the current user's information
 import { useAuth } from "~/context/auth-context";
+import type { Stage } from "~/types";
 
-// Define interfaces
+// Define interfaces for collaboration (TODO: merge with centralized types)
 interface TeamMember {
   id: string;
   name: string;
@@ -109,13 +108,6 @@ interface FeedbackRecord {
   recommendation: "hire" | "consider" | "reject";
   createdAt: string;
   submittedBy?: string;
-}
-
-interface Stage {
-  id: string;
-  title: string;
-  order: number;
-  color?: string;
 }
 
 // Define feedback form
@@ -351,14 +343,14 @@ export default function CollaborationPage() {
 
       // Send email notification
       try {
-        await emailService.sendAssignmentNotification({
+        await communicationService.sendAssignmentNotification({
           candidateId,
-          teamMemberId,
           candidateName,
-          assignerName: user?.name || "A team member",
-          candidateEmail: candidates.find((c) => c.id === candidateId)?.email,
-          teamMemberEmail: teamMembers.find((t) => t.id === teamMemberId)
-            ?.email,
+          assigneeEmail:
+            teamMembers.find((t) => t.id === teamMemberId)?.email || "",
+          assigneeName:
+            teamMembers.find((t) => t.id === teamMemberId)?.name || "",
+          assignedBy: user?.name || "A team member",
         });
       } catch (emailError) {
         // Handle known error types
@@ -456,13 +448,11 @@ export default function CollaborationPage() {
 
       // Send invitation email
       try {
-        await emailService.sendTeamMemberNotification({
-          type: "invitation",
-          teamMemberId: docRef.id,
-          name: newTeamMember.name,
-          email: newTeamMember.email,
-          role: newTeamMember.role,
-          inviterName: user?.name || "The hiring team",
+        await communicationService.sendTeamMemberNotification({
+          memberEmail: newTeamMember.email,
+          memberName: newTeamMember.name,
+          subject: "Team Invitation",
+          message: `You have been invited to join the hiring team as ${newTeamMember.role}`,
         });
       } catch (emailError) {
         // Handle known error types
@@ -534,14 +524,11 @@ export default function CollaborationPage() {
       // Only send update email if role changed
       if (originalTeamMember?.role !== editingTeamMember.role) {
         try {
-          await emailService.sendTeamMemberNotification({
-            type: "update",
-            teamMemberId: editingTeamMember.id,
-            name: editingTeamMember.name,
-            email: editingTeamMember.email,
-            role: editingTeamMember.role,
-            previousRole: originalTeamMember?.role,
-            updaterName: user?.name || "A team administrator",
+          await communicationService.sendTeamMemberNotification({
+            memberEmail: editingTeamMember.email,
+            memberName: editingTeamMember.name,
+            subject: "Role Updated",
+            message: `Your role has been updated from ${originalTeamMember?.role} to ${editingTeamMember.role}`,
           });
         } catch (emailError) {
           // Handle known error types

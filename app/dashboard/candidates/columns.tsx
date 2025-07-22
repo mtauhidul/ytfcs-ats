@@ -5,58 +5,8 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn } from "~/lib/utils";
-
-// Document interface
-export interface CandidateDocument {
-  id: string;
-  name: string;
-  type: string;
-  size: number;
-  uploadDate: string;
-  path?: string; // Make path optional if not always present
-  url?: string;
-}
-
-export interface Candidate {
-  id: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  tags: string[];
-  category: string;
-  rating: number;
-  stageId: string;
-  stageColor?: string;
-  experience?: string;
-  education?: string;
-  skills?: string[];
-  notes?: string;
-  documents: CandidateDocument[];
-  // Legacy resume fields
-  resumeFileURL?: string;
-  originalFilename?: string;
-  fileType?: string;
-  fileSize?: number;
-  // Resume score fields
-  resumeScore?: number;
-  resumeScoringDetails?: any;
-  scoredAgainstJobId?: string;
-  scoredAgainstJobTitle?: string;
-  createdAt?: string;
-  history?: { date: string; note: string }[];
-  communications?: {
-    id: string;
-    date: string;
-    message: string;
-    type: "sent" | "received";
-    sender: string;
-    subject?: string;
-    read?: boolean;
-  }[];
-  updatedAt?: string;
-  onEdit?: (c: Candidate) => void;
-  jobTitle?: string;
-}
+import type { Candidate } from "~/types";
+import InterviewStatusIndicator from "./interview-status-indicator";
 
 const RatingStars = ({ rating }: { rating: number }) => (
   <div className="flex justify-start">
@@ -252,6 +202,14 @@ export const columns: ColumnDef<Candidate>[] = [
       }
     },
     size: 120,
+  },
+  {
+    accessorKey: "interviewHistory",
+    header: "Interviews",
+    cell: ({ row }) => {
+      return <InterviewStatusIndicator candidate={row.original} />;
+    },
+    size: 100,
   },
   {
     id: "actions",

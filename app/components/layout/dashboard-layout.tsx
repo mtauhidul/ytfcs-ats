@@ -2,14 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AppSidebar } from "~/components/app-sidebar";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "~/components/ui/breadcrumb";
+import NavigationBreadcrumb from "~/components/shared/navigation-breadcrumb";
 import { Separator } from "~/components/ui/separator";
 import {
   SidebarInset,
@@ -19,19 +12,9 @@ import {
 
 type DashboardLayoutProps = {
   children: ReactNode;
-  breadcrumb?: {
-    title: string;
-    href?: string;
-  }[];
 };
 
-export function DashboardLayout({
-  children,
-  breadcrumb = [],
-}: DashboardLayoutProps) {
-  const hasTrail = breadcrumb.length > 0;
-  const lastItem = breadcrumb.at(-1);
-
+export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -43,26 +26,7 @@ export function DashboardLayout({
               orientation="vertical"
               className="mr-2 data-[orientation=vertical]:h-4"
             />
-            {hasTrail && (
-              <Breadcrumb>
-                <BreadcrumbList>
-                  {breadcrumb.map((item, i) => (
-                    <BreadcrumbItem key={item.title}>
-                      {i < breadcrumb.length - 1 ? (
-                        <>
-                          <BreadcrumbLink href={item.href || "#"}>
-                            {item.title}
-                          </BreadcrumbLink>
-                          <BreadcrumbSeparator className="hidden md:inline-flex" />
-                        </>
-                      ) : (
-                        <BreadcrumbPage>{item.title}</BreadcrumbPage>
-                      )}
-                    </BreadcrumbItem>
-                  ))}
-                </BreadcrumbList>
-              </Breadcrumb>
-            )}
+            <NavigationBreadcrumb />
           </div>
         </header>
 

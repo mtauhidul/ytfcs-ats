@@ -1,6 +1,7 @@
 import {
   BarChart3, // Changed to BarChart3 for better visual
   Briefcase, // Changed from Building2Icon to Briefcase for jobs
+  Building2, // For clients/employers
   FileText, // Changed from FolderArchive to FileText for categories
   Group,
   Layers3, // Changed from LayersIcon to Layers3
@@ -61,6 +62,12 @@ const data = {
       title: "Candidates List",
       url: "/dashboard/candidates",
       icon: Users,
+      isActive: false,
+    },
+    {
+      title: "Clients / Employers",
+      url: "/dashboard/clients",
+      icon: Building2,
       isActive: false,
     },
     {
