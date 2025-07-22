@@ -51,13 +51,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
-
-type Stage = {
-  id: string;
-  title: string;
-  order: number;
-  color: string;
-};
+import type { Stage } from "~/types";
 
 type Candidate = {
   id: string;

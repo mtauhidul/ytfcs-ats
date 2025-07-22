@@ -13,6 +13,7 @@ export default [
     route("profile", "dashboard/profile/profile.tsx"),
     route("import", "dashboard/import/import.tsx"),
     route("candidates", "dashboard/candidates/candidates.tsx"),
+    route("clients", "dashboard/clients/clients.tsx"),
     route("workflow", "dashboard/workflow/workflow.tsx"),
     route("communication", "dashboard/communication/communication.tsx"),
     route("collaboration", "dashboard/collaboration/collaboration.tsx"),

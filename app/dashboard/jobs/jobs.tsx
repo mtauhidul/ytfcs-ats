@@ -80,7 +80,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
-import { columns, type Job } from "./columns";
+import type { Job } from "~/types";
+import { columns } from "./columns";
 
 interface Status {
   id: string;
@@ -301,31 +302,53 @@ export default function JobsPage() {
 
     return jobs.filter((job) => {
       const statusTitle = statusTitleMap.get(job.statusId) || "";
-      
+
       // Ensure tags is always an array and normalize them
       const jobTags = Array.isArray(job.tags) ? job.tags : [];
-      const normalizedTags = jobTags.map(tag => String(tag).toLowerCase().trim());
+      const normalizedTags = jobTags.map((tag) =>
+        String(tag).toLowerCase().trim()
+      );
       const tagsText = normalizedTags.join(" ");
-      
+
       // Build searchable content with proper normalization
       const searchableFields = [
-        String(job.title || "").toLowerCase().trim(),
-        String(job.jobId || "").toLowerCase().trim(),
-        String(job.description || "").toLowerCase().trim(),
-        String(job.location || "").toLowerCase().trim(),
-        String(job.department || "").toLowerCase().trim(),
-        String(job.employmentType || "").toLowerCase().trim(),
+        String(job.title || "")
+          .toLowerCase()
+          .trim(),
+        String(job.jobId || "")
+          .toLowerCase()
+          .trim(),
+        String(job.description || "")
+          .toLowerCase()
+          .trim(),
+        String(job.location || "")
+          .toLowerCase()
+          .trim(),
+        String(job.department || "")
+          .toLowerCase()
+          .trim(),
+        String(job.employmentType || "")
+          .toLowerCase()
+          .trim(),
         tagsText,
-        String(job.category || "").toLowerCase().trim(),
+        String(job.category || "")
+          .toLowerCase()
+          .trim(),
         statusTitle,
-        Array.isArray(job.requirements) ? job.requirements.join(" ").toLowerCase().trim() : "",
-        String(job.salaryRange || "").toLowerCase().trim(),
+        Array.isArray(job.requirements)
+          ? job.requirements.join(" ").toLowerCase().trim()
+          : "",
+        String(job.salaryRange || "")
+          .toLowerCase()
+          .trim(),
       ].filter(Boolean);
-      
+
       const combined = searchableFields.join(" ");
-      
+
       // Check if search term matches any field
-      return combined.includes(f) || normalizedTags.some(tag => tag.includes(f));
+      return (
+        combined.includes(f) || normalizedTags.some((tag) => tag.includes(f))
+      );
     });
   }, [jobs, globalFilter, statuses]);
 

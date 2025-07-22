@@ -32,7 +32,7 @@ const navigationGroups = {
   },
   candidates: {
     label: "Candidate Management",
-    items: ["Candidates List", "Candidate Import"],
+    items: ["Candidates List", "Candidate Import", "Clients / Employers"],
   },
   utilities: {
     label: "Utilities",
@@ -196,7 +196,6 @@ export function NavMain({
         <SidebarSeparator className="mb-3 group-data-[collapsible=icon]:hidden" />
         <div className="flex flex-col gap-2 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
           {/* Quick action buttons can be implemented here when needed */}
-
         </div>
       </div>
     </div>

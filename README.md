@@ -24,7 +24,12 @@ A modern, full-stack Applicant Tracking System (ATS) built with React, React Rou
 - 📝 **Notes & Ratings**
   - Add and edit candidate notes
   - Rate candidates on a custom scale
-- 🖼️ **Detail Modal**
+- � **Interview Management**
+  - Track interview history between candidates and clients/employers
+  - Prevent duplicate interviews with the same client
+  - Schedule interviews with warning for repeat candidates
+  - View comprehensive interview statistics per client
+- �🖼️ **Detail Modal**
   - Click any row to open a modal with full candidate details and edit controls
   - Transparent, blurred backdrop for focus
 - 🔄 **Real‑Time Sync**

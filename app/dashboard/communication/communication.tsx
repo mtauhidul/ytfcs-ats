@@ -78,7 +78,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
 // Import the email service
-import { emailService } from "~/services/emailService";
+import { communicationService } from "~/services/communicationService";
 // Import useAuth to get the current user's information
 import { useAuth } from "~/context/auth-context";
 
@@ -473,15 +473,10 @@ export default function CommunicationPage() {
 
       // Send the email with replaced content
       try {
-        await emailService.sendCandidateEmail({
-          messageId: docRef.id,
-          candidateId: messageForm.recipientId,
-          candidateName: recipient.name,
-          candidateEmail: recipient.email,
-          subject: replacedSubject, // Use replaced subject
-          body: replacedBody, // Use replaced body
-          type: messageForm.type,
-          senderName: user?.name || "Hiring Team",
+        await communicationService.sendCandidateEmail({
+          to: recipient.email || "",
+          subject: replacedSubject,
+          message: replacedBody,
         });
 
         // Update the message status to 'sent'
