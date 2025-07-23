@@ -65,7 +65,7 @@ const data = {
       isActive: false,
     },
     {
-      title: "Clients / Employers",
+      title: "Clients",
       url: "/dashboard/clients",
       icon: Building2,
       isActive: false,

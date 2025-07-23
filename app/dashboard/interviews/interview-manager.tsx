@@ -490,7 +490,7 @@ export default function InterviewManager({
               .map((interview) => (
                 <div
                   key={interview.id}
-                  className="group bg-card border rounded-lg p-4 hover:shadow-sm transition-all"
+                  className="group bg-card border rounded-lg p-4 hover:shadow-sm transition-all relative"
                 >
                   <div className="absolute top-4 right-4">
                     {getOutcomeBadge(interview.outcome || "pending")}

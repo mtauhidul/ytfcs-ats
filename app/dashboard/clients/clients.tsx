@@ -3,12 +3,14 @@
 
 import {
   collection,
+  doc,
   getDocs,
   onSnapshot,
   query,
+  updateDoc,
   where,
 } from "firebase/firestore";
-import { Calendar, Eye, Users } from "lucide-react";
+import { Calendar, Eye, Users, Plus, Clock, Edit } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -21,8 +23,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { Calendar as CalendarComponent } from "~/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import { cn } from "~/lib/utils";
+import { format } from "date-fns";
+import { toast } from "sonner";
 import { db } from "~/lib/firebase";
 import type { Candidate } from "~/types";
 
@@ -48,6 +63,7 @@ interface ClientWithInterviews {
   pendingInterviews: number;
   passedInterviews: number;
   rejectedInterviews: number;
+  uninterviewedCandidates: Candidate[];
 }
 
 export default function ClientsPage() {
@@ -57,16 +73,26 @@ export default function ClientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClient, setSelectedClient] =
     useState<ClientWithInterviews | null>(null);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [selectedCandidateId, setSelectedCandidateId] = useState("");
+  const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined);
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdateStatusOpen, setIsUpdateStatusOpen] = useState(false);
+  const [selectedInterview, setSelectedInterview] = useState<{
+    candidateId: string;
+    interviewIndex: number;
+    interview: InterviewSummary;
+  } | null>(null);
+  const [newStatus, setNewStatus] = useState("");
+  const [statusNotes, setStatusNotes] = useState("");
 
-  // Fetch clients (team members with Interviewer role)
+  // Fetch clients (team members with Client role)
   useEffect(() => {
-    const fetchClients = async () => {
-      try {
-        const q = query(
-          collection(db, "teamMembers"),
-          where("role", "==", "Interviewer")
-        );
-        const snapshot = await getDocs(q);
+    const unsubscribe = onSnapshot(
+      query(collection(db, "teamMembers"), where("role", "==", "Client")),
+      (snapshot) => {
         const clientList = snapshot.docs.map((doc) => ({
           id: doc.id,
           name: doc.data().name || "",
@@ -82,15 +108,14 @@ export default function ClientsPage() {
           pendingInterviews: 0,
           passedInterviews: 0,
           rejectedInterviews: 0,
+          uninterviewedCandidates: [],
         }));
 
         setClients(clientsWithInterviews);
-      } catch (error) {
-        console.error("Error fetching clients:", error);
       }
-    };
+    );
 
-    fetchClients();
+    return () => unsubscribe();
   }, []);
 
   // Fetch candidates with interview history
@@ -156,6 +181,14 @@ export default function ClientsPage() {
           (i) => i.outcome === "rejected"
         ).length;
 
+        // Get uninterviewed candidates for this client
+        const interviewedCandidateIds = new Set(
+          interviews.map((i) => i.candidateId)
+        );
+        const uninterviewedCandidates = candidates.filter(
+          (candidate) => !interviewedCandidateIds.has(candidate.id)
+        );
+
         return {
           ...clientData,
           interviews,
@@ -163,12 +196,111 @@ export default function ClientsPage() {
           pendingInterviews,
           passedInterviews,
           rejectedInterviews,
+          uninterviewedCandidates,
         };
       });
 
       setClients(updatedClients);
     }
   }, [candidates]);
+
+  // Handle interview scheduling
+  const handleScheduleInterview = async () => {
+    if (!selectedClient || !selectedCandidateId || !scheduleDate || !scheduleTime) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      // Check if interview already exists (double-check)
+      const candidate = candidates.find((c) => c.id === selectedCandidateId);
+      if (candidate?.interviewHistory?.some(
+        (interview) => interview.interviewerId === selectedClient.client.id
+      )) {
+        toast.error("This candidate has already been interviewed by this client");
+        return;
+      }
+
+      const interviewDateTime = new Date(`${format(scheduleDate, 'yyyy-MM-dd')}T${scheduleTime}`).toISOString();
+
+      // Add interview to candidate's history
+      const updatedInterviewHistory = [
+        ...(candidate?.interviewHistory || []),
+        {
+          interviewerId: selectedClient.client.id,
+          interviewDate: interviewDateTime,
+          outcome: "pending",
+          notes: scheduleNotes,
+        },
+      ];
+
+      // Update candidate in Firestore
+      const candidateRef = doc(db, "candidates", selectedCandidateId);
+      await updateDoc(candidateRef, {
+        interviewHistory: updatedInterviewHistory,
+        updatedAt: new Date().toISOString(),
+      });
+
+      toast.success("Interview scheduled successfully");
+      setIsScheduleOpen(false);
+      setSelectedCandidateId("");
+      setScheduleDate(undefined);
+      setScheduleTime("");
+      setScheduleNotes("");
+    } catch (error) {
+      console.error("Error scheduling interview:", error);
+      toast.error("Failed to schedule interview");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle interview status update
+  const handleUpdateInterviewStatus = async () => {
+    if (!selectedInterview || !newStatus) {
+      toast.error("Please select a status");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      // Find the candidate
+      const candidate = candidates.find((c) => c.id === selectedInterview.candidateId);
+      if (!candidate) {
+        toast.error("Candidate not found");
+        return;
+      }
+
+      // Update the specific interview in the history
+      const updatedInterviewHistory = [...(candidate.interviewHistory || [])];
+      updatedInterviewHistory[selectedInterview.interviewIndex] = {
+        ...updatedInterviewHistory[selectedInterview.interviewIndex],
+        outcome: newStatus,
+        notes: statusNotes || updatedInterviewHistory[selectedInterview.interviewIndex].notes,
+      };
+
+      // Update candidate in Firestore
+      const candidateRef = doc(db, "candidates", selectedInterview.candidateId);
+      await updateDoc(candidateRef, {
+        interviewHistory: updatedInterviewHistory,
+        updatedAt: new Date().toISOString(),
+      });
+
+      toast.success("Interview status updated successfully");
+      setIsUpdateStatusOpen(false);
+      setSelectedInterview(null);
+      setNewStatus("");
+      setStatusNotes("");
+    } catch (error) {
+      console.error("Error updating interview status:", error);
+      toast.error("Failed to update interview status");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const filteredClients = clients.filter(
     (clientData) =>
@@ -215,11 +347,10 @@ export default function ClientsPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Users className="h-6 w-6" />
-            Clients / Employers
+            Clients
           </h1>
           <p className="text-muted-foreground text-sm">
-            Track interview history for each client and prevent duplicate
-            interviews
+            Track client interview history and prevent duplicate interviews
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -321,6 +452,24 @@ export default function ClientsPage() {
                   </div>
                 )}
 
+                {/* Schedule Interview Button */}
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  className="w-full mb-2"
+                  onClick={() => {
+                    setSelectedClient(clientData);
+                    setIsScheduleOpen(true);
+                  }}
+                  disabled={clientData.uninterviewedCandidates.length === 0}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Schedule Interview
+                  <Badge variant="secondary" className="ml-2">
+                    {clientData.uninterviewedCandidates.length}
+                  </Badge>
+                </Button>
+
                 {/* View Details Button */}
                 <Dialog>
                   <DialogTrigger asChild>
@@ -347,7 +496,28 @@ export default function ClientsPage() {
                                 <div className="font-medium">
                                   {interview.candidateName}
                                 </div>
-                                {getOutcomeBadge(interview.outcome)}
+                                <div className="flex items-center gap-2">
+                                  {getOutcomeBadge(interview.outcome)}
+                                  {interview.outcome === "pending" && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedInterview({
+                                          candidateId: interview.candidateId,
+                                          interviewIndex: idx,
+                                          interview,
+                                        });
+                                        setNewStatus("");
+                                        setStatusNotes("");
+                                        setIsUpdateStatusOpen(true);
+                                      }}
+                                    >
+                                      <Edit className="h-3 w-3 mr-1" />
+                                      Update
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                                 <Calendar className="h-4 w-4" />
@@ -394,16 +564,223 @@ export default function ClientsPage() {
           <p className="text-gray-500 mb-4">
             {searchTerm
               ? "No clients match your search criteria."
-              : "No team members with 'Interviewer' role found."}
+              : "No team members with 'Client' role found."}
           </p>
           {!searchTerm && (
             <p className="text-sm text-gray-400">
-              Add team members with the "Interviewer" role to track client
+              Add team members with the "Client" role to track client
               interview history.
             </p>
           )}
         </div>
       )}
+
+      {/* Schedule Interview Dialog */}
+      <Dialog open={isScheduleOpen} onOpenChange={setIsScheduleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule Interview</DialogTitle>
+            <DialogDescription>
+              Schedule a new interview with {selectedClient?.client.name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Select Candidate
+              </label>
+              <Select value={selectedCandidateId} onValueChange={setSelectedCandidateId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a candidate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedClient?.uninterviewedCandidates.map((candidate) => (
+                    <SelectItem key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedClient?.uninterviewedCandidates.length === 0 && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  All candidates have been interviewed by this client
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Interview Date
+                </label>
+                <Popover modal={true}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !scheduleDate && "text-muted-foreground"
+                      )}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {scheduleDate ? format(scheduleDate, "PPP") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 z-50" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={scheduleDate}
+                      onSelect={setScheduleDate}
+                      disabled={(date) => date < new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Interview Time
+                </label>
+                <Select value={scheduleTime} onValueChange={setScheduleTime}>
+                  <SelectTrigger className="z-10">
+                    <SelectValue placeholder="Select time" />
+                  </SelectTrigger>
+                  <SelectContent className="z-50 max-h-[200px]">
+                    {Array.from({ length: 24 }, (_, i) => {
+                      const hour = i.toString().padStart(2, '0');
+                      return (
+                        <div key={i}>
+                          <SelectItem value={`${hour}:00`}>{hour}:00</SelectItem>
+                          <SelectItem value={`${hour}:30`}>{hour}:30</SelectItem>
+                        </div>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Notes (optional)
+              </label>
+              <Textarea
+                placeholder="Interview notes or instructions..."
+                value={scheduleNotes}
+                onChange={(e) => setScheduleNotes(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsScheduleOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleScheduleInterview}
+              disabled={isSubmitting || !selectedCandidateId || !scheduleDate || !scheduleTime}
+            >
+              {isSubmitting ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Scheduling...
+                </>
+              ) : (
+                "Schedule Interview"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Interview Status Dialog */}
+      <Dialog open={isUpdateStatusOpen} onOpenChange={setIsUpdateStatusOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update Interview Status</DialogTitle>
+            <DialogDescription>
+              Update the outcome for {selectedInterview?.interview.candidateName}'s interview
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Interview Outcome
+              </label>
+              <Select value={newStatus} onValueChange={setNewStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select outcome" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="passed">Passed</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Interview Notes
+              </label>
+              <Textarea
+                placeholder="Add feedback or notes about the interview..."
+                value={statusNotes}
+                onChange={(e) => setStatusNotes(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+              {selectedInterview?.interview.notes && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Current notes: {selectedInterview.interview.notes}
+                </p>
+              )}
+            </div>
+
+            <div className="text-sm text-muted-foreground bg-gray-50 p-3 rounded">
+              <div className="font-medium mb-1">Interview Details:</div>
+              <div>Date: {selectedInterview && new Date(selectedInterview.interview.interviewDate).toLocaleDateString()}</div>
+              <div>Time: {selectedInterview && new Date(selectedInterview.interview.interviewDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsUpdateStatusOpen(false);
+                setSelectedInterview(null);
+                setNewStatus("");
+                setStatusNotes("");
+              }}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateInterviewStatus}
+              disabled={isSubmitting || !newStatus}
+            >
+              {isSubmitting ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Update Status"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

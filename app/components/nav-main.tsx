@@ -32,7 +32,7 @@ const navigationGroups = {
   },
   candidates: {
     label: "Candidate Management",
-    items: ["Candidates List", "Candidate Import", "Clients / Employers"],
+    items: ["Candidates List", "Candidate Import", "Clients"],
   },
   utilities: {
     label: "Utilities",
