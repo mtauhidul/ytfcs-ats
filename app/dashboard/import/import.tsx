@@ -16,7 +16,7 @@ import {
   UploadCloud,
   Zap,
 } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Toaster, toast } from "sonner";
 
@@ -39,7 +39,6 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { resetImport, updateParsedData } from "~/features/candidateImportSlice";
 import { db, storage } from "~/lib/firebase";
 import type { AppDispatch, RootState } from "~/store";
-import type { ImportedCandidate } from "~/types/email";
 import JobSelector from "./job-selector";
 import ResumeScore, { type ResumeScoreData } from "./resume-score";
 
@@ -208,9 +207,12 @@ export default function ImportPage() {
 
       // Make the actual API call to the backend
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/resume/parse`,
+        `${import.meta.env.VITE_API_URL || ""}/api/resume/parse`,
         {
           method: "POST",
+          headers: {
+            "X-API-KEY": import.meta.env.VITE_API_KEY || "",
+          },
           body: formData,
         }
       );
@@ -226,7 +228,7 @@ export default function ImportPage() {
         } catch (e) {
           console.error("Failed to parse error response:", e);
         }
-        
+
         throw new Error(errorMessage);
       }
 
@@ -245,7 +247,7 @@ export default function ImportPage() {
       // Create the parsed candidate object with proper data extraction
       const candidateData = data.candidate || data.data || data;
       const scoreData = data.score || data.resumeScore || data.scoring;
-      
+
       const parsedCandidate: ParsedCandidate = {
         name: candidateData?.name || data.name || "",
         email: candidateData?.email || data.email || "",
@@ -262,8 +264,10 @@ export default function ImportPage() {
         originalFilename: file.name,
         fileType: file.type,
         fileSize: file.size,
-        resumeFileURL: candidateData?.resumeFileURL || data.resumeFileURL || null,
-        resumeScore: scoreData?.finalScore || scoreData?.score || data.resumeScore || null,
+        resumeFileURL:
+          candidateData?.resumeFileURL || data.resumeFileURL || null,
+        resumeScore:
+          scoreData?.finalScore || scoreData?.score || data.resumeScore || null,
         resumeScoringDetails: scoreData || data.resumeScoringDetails || null,
       };
 
@@ -283,9 +287,14 @@ export default function ImportPage() {
       }
 
       // Show success message with score info if available
-      const scoreValue = scoreData?.finalScore || scoreData?.score || data.resumeScore;
+      const scoreValue =
+        scoreData?.finalScore || scoreData?.score || data.resumeScore;
       if (selectedJobId && scoreValue) {
-        toast.success(`Resume parsed and scored successfully! Score: ${Math.round(scoreValue)}%`);
+        toast.success(
+          `Resume parsed and scored successfully! Score: ${Math.round(
+            scoreValue
+          )}%`
+        );
       } else {
         toast.success("Resume parsed successfully!");
       }
@@ -316,7 +325,7 @@ export default function ImportPage() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       // Create a synthetic event to reuse the file handling logic
       const syntheticEvent = {
@@ -324,7 +333,7 @@ export default function ImportPage() {
           files: e.dataTransfer.files,
         },
       } as React.ChangeEvent<HTMLInputElement>;
-      
+
       handleFileChange(syntheticEvent);
     }
   };
@@ -358,13 +367,13 @@ export default function ImportPage() {
         const timestamp = new Date().getTime();
         const filename = `resumes/${timestamp}_${file.name}`;
         const storageRef = ref(storage, filename);
-        
+
         const snapshot = await uploadBytes(storageRef, file);
         resumeFileURL = await getDownloadURL(snapshot.ref);
       }
 
-      // Prepare candidate data for Firestore
-      const candidateData = {
+      // Prepare application data for Firestore
+      const applicationData = {
         name: parsedData.name,
         email: parsedData.email || "",
         phone: parsedData.phone || "",
@@ -385,16 +394,20 @@ export default function ImportPage() {
         scoredAgainstJobId: selectedJobId || null,
         scoredAgainstJobTitle: selectedJob?.title || null,
         source: "manual_upload",
+        status: "pending",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      // Save to Firestore
-      const docRef = await addDoc(collection(db, "candidates"), candidateData);
-      
+      // Save to Applications collection for review
+      const docRef = await addDoc(
+        collection(db, "applications"),
+        applicationData
+      );
+
       setSaveStatus("done");
-      toast.success("Candidate saved successfully!");
-      
+      toast.success("Application submitted for review!");
+
       // Reset the form after successful save
       setTimeout(() => {
         setSaveStatus("idle");
@@ -407,12 +420,11 @@ export default function ImportPage() {
         setSelectedJob(null);
         dispatch(resetImport());
       }, 2000);
-      
     } catch (error) {
-      console.error("Error saving candidate:", error);
+      console.error("Error saving application:", error);
       setSaveStatus("error");
-      toast.error("Failed to save candidate");
-      
+      toast.error("Failed to save application");
+
       // Reset error status after a delay
       setTimeout(() => {
         setSaveStatus("idle");
@@ -436,11 +448,12 @@ export default function ImportPage() {
   return (
     <div className="container mx-auto p-4 max-w-7xl">
       <Toaster position="top-right" />
-      
+
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-2">Import Candidates</h1>
+        <h1 className="text-2xl font-bold mb-2">Import Applications</h1>
         <p className="text-muted-foreground">
-          Upload resume files to automatically extract candidate information using AI
+          Upload resume files to automatically extract candidate information.
+          Applications will be reviewed before becoming candidates.
         </p>
       </div>
 
@@ -499,9 +512,7 @@ export default function ImportPage() {
                     </>
                   ) : (
                     <>
-                      <p className="font-medium mb-1">
-                        Drop resume file here
-                      </p>
+                      <p className="font-medium mb-1">Drop resume file here</p>
                       <p className="text-sm text-muted-foreground mb-4">
                         PDF, DOC, or DOCX (max 10MB)
                       </p>
@@ -544,14 +555,16 @@ export default function ImportPage() {
                 disabled={isAiParsing}
                 className="mt-4"
               />
-              
+
               {/* Job selection hint */}
               {!selectedJobId && (
                 <div className="mt-2 text-sm text-muted-foreground bg-amber-50 border border-amber-200 rounded-lg p-3">
                   <div className="flex items-center gap-2">
                     <BadgeCheck className="h-4 w-4 text-amber-600" />
                     <span className="text-amber-800">
-                      <strong>Tip:</strong> Select a job position to automatically score the resume against job requirements during parsing.
+                      <strong>Tip:</strong> Select a job position to
+                      automatically score the resume against job requirements
+                      during parsing.
                     </span>
                   </div>
                 </div>
@@ -567,12 +580,16 @@ export default function ImportPage() {
                     {status === "loading" || isAiParsing ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="size-4 animate-spin" />
-                        {selectedJobId ? "Parsing & Scoring..." : "Parsing Resume..."}
+                        {selectedJobId
+                          ? "Parsing & Scoring..."
+                          : "Parsing Resume..."}
                       </div>
                     ) : (
                       <>
                         <Zap className="mr-2 size-4" />
-                        {selectedJobId ? "Parse & Score Resume" : "Parse with AI"}
+                        {selectedJobId
+                          ? "Parse & Score Resume"
+                          : "Parse with AI"}
                       </>
                     )}
                   </Button>
@@ -628,12 +645,18 @@ export default function ImportPage() {
                     Email Monitoring Active
                   </h4>
                   <p className="text-sm text-blue-700">
-                    Email monitoring is now automated. New candidate emails are processed automatically. 
-                    Use this manual upload for additional candidates or when you have resume files directly.
+                    Email monitoring is now automated. New candidate emails are
+                    processed automatically. Use this manual upload for
+                    additional candidates or when you have resume files
+                    directly.
                   </p>
                   <p className="text-xs text-blue-600 mt-2">
-                    <span className="font-medium">Need to add email accounts?</span> Visit the 
-                    <span className="font-medium"> Email Monitoring </span> section to connect your email accounts.
+                    <span className="font-medium">
+                      Need to add email accounts?
+                    </span>{" "}
+                    Visit the
+                    <span className="font-medium"> Email Monitoring </span>{" "}
+                    section to connect your email accounts.
                   </p>
                 </div>
               </div>
@@ -653,10 +676,10 @@ export default function ImportPage() {
             <div>
               <CardTitle className="text-lg flex items-center gap-2">
                 <ArrowRight className="size-5 text-primary" />
-                Candidate Information
+                Application Information
               </CardTitle>
               <CardDescription>
-                Review and edit the extracted information
+                Review and edit the extracted information before submission
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -867,15 +890,17 @@ export default function ImportPage() {
                     <Label className="text-sm font-medium">Resume Score</Label>
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
                       <div className="flex items-center gap-2">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
-                          parsedData.resumeScore >= 80
-                            ? "bg-green-100 text-green-700"
-                            : parsedData.resumeScore >= 60
-                            ? "bg-blue-100 text-blue-700"
-                            : parsedData.resumeScore >= 40
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-red-100 text-red-700"
-                        }`}>
+                        <div
+                          className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
+                            parsedData.resumeScore >= 80
+                              ? "bg-green-100 text-green-700"
+                              : parsedData.resumeScore >= 60
+                              ? "bg-blue-100 text-blue-700"
+                              : parsedData.resumeScore >= 40
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
+                        >
                           {Math.round(parsedData.resumeScore)}
                         </div>
                         <div>
@@ -895,8 +920,12 @@ export default function ImportPage() {
                       </div>
                       {selectedJob && (
                         <div className="ml-auto text-right">
-                          <p className="text-xs text-muted-foreground">Scored against</p>
-                          <p className="text-sm font-medium">{selectedJob.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Scored against
+                          </p>
+                          <p className="text-sm font-medium">
+                            {selectedJob.title}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -949,10 +978,10 @@ export default function ImportPage() {
               ) : saveStatus === "done" ? (
                 <div className="flex items-center gap-2">
                   <Check className="size-4" />
-                  Saved!
+                  Submitted!
                 </div>
               ) : (
-                "Save to Database"
+                "Submit for Review"
               )}
             </Button>
           </CardFooter>

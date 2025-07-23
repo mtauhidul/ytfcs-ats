@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  Trash2,
   X,
   XSquareIcon,
 } from "lucide-react";
@@ -144,6 +145,8 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
   });
 
   const [isTogglingAutomation, setIsTogglingAutomation] = useState(false);
+  const [monitoredEmails, setMonitoredEmails] = useState<string[]>([]);
+  const [isRemovingEmail, setIsRemovingEmail] = useState<string | null>(null);
 
   // Add this helper function to format education data properly
 
@@ -333,7 +336,125 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
   };
 
   // ADD AUTOMATION FUNCTIONS
-  // ENHANCED automation status check with loading state
+  // Get comprehensive automation status
+  const getAutomationStatus = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/status`,
+        {
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY || "" },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return data;
+      }
+    } catch (error) {
+      console.error("Error getting automation status:", error);
+    }
+    return null;
+  };
+
+  // Start automation service
+  const startAutomationService = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/start`,
+        {
+          method: "POST",
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY || "" },
+        }
+      );
+
+      if (response.ok) {
+        toast.success("Automation service started");
+        return true;
+      }
+    } catch (error) {
+      console.error("Error starting automation:", error);
+      toast.error("Failed to start automation service");
+    }
+    return false;
+  };
+
+  // Stop automation service
+  const stopAutomationService = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/stop`,
+        {
+          method: "POST",
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY || "" },
+        }
+      );
+
+      if (response.ok) {
+        toast.success("Automation service stopped");
+        return true;
+      }
+    } catch (error) {
+      console.error("Error stopping automation:", error);
+      toast.error("Failed to stop automation service");
+    }
+    return false;
+  };
+
+  // Get monitored emails
+  const getMonitoredEmails = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/monitored`,
+        {
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY || "" },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setMonitoredEmails(data.emails || []);
+        return data.emails || [];
+      }
+    } catch (error) {
+      console.error("Error getting monitored emails:", error);
+    }
+    return [];
+  };
+
+  // Remove email from automation monitoring
+  const removeEmailFromMonitoring = async (email: string) => {
+    try {
+      setIsRemovingEmail(email);
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/remove`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-KEY": import.meta.env.VITE_API_KEY || "",
+          },
+          body: JSON.stringify({ email }),
+        }
+      );
+
+      if (response.ok) {
+        toast.success(`${email} removed from monitoring`);
+        // Refresh the monitored emails list
+        await getMonitoredEmails();
+        return true;
+      } else {
+        toast.error("Failed to remove email from monitoring");
+      }
+    } catch (error) {
+      console.error("Error removing email from monitoring:", error);
+      toast.error("Failed to remove email from monitoring");
+    } finally {
+      setIsRemovingEmail(null);
+    }
+    return false;
+  };
+
+  // ENHANCED automation status check with loading state and error handling
   const checkAutomationStatus = async (showLoading = false) => {
     if (!isConnected || !emailCredentials) return;
 
@@ -341,11 +462,25 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/accounts`,
         {
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY || "" },
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY || "" },
         }
       );
+
+      // Handle 404 - backend doesn't have automation endpoints yet
+      if (response.status === 404) {
+        console.warn(
+          "Automation endpoints not implemented yet. Using fallback behavior."
+        );
+        // Set default automation state
+        setAutomationEnabled(false);
+        setAutomationStats({
+          lastChecked: null,
+          totalImported: 0,
+        });
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -363,6 +498,11 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
             totalImported: Number(currentAccount.totalImported) || 0,
           });
 
+          // Load monitored emails if automation is enabled
+          if (currentAccount.automationEnabled) {
+            getMonitoredEmails();
+          }
+
           setLastStatusUpdate(new Date());
 
           console.log("Automation status updated:", {
@@ -374,6 +514,8 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       }
     } catch (error) {
       console.error("Error checking automation status:", error);
+      // Fallback to manual mode if automation API is not available
+      setAutomationEnabled(false);
     } finally {
       if (showLoading) setIsStatusLoading(false);
     }
@@ -407,6 +549,10 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
   // NEW FUNCTION: Manual status refresh
   const refreshAutomationStatus = async () => {
     await checkAutomationStatus(true);
+    // Also refresh monitored emails list
+    if (automationEnabled) {
+      await getMonitoredEmails();
+    }
     toast.success("Automation status refreshed");
   };
 
@@ -423,9 +569,9 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     try {
       // Check if account exists in automation system
       const accountsResponse = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
+        `${import.meta.env.VITE_API_URL || ""}/api/email/automation/accounts`,
         {
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY || "" },
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY || "" },
         }
       );
 
@@ -441,12 +587,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
       if (enabled && !accountId) {
         // Create new automation account
         const createResponse = await fetch(
-          `${import.meta.env.VITE_API_URL || ""}/email/automation/accounts`,
+          `${import.meta.env.VITE_API_URL || ""}/api/email/automation/accounts`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-api-key": import.meta.env.VITE_API_KEY || "",
+              "X-API-KEY": import.meta.env.VITE_API_KEY || "",
             },
             body: JSON.stringify({
               ...emailCredentials,
@@ -463,12 +609,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
         const updateResponse = await fetch(
           `${
             import.meta.env.VITE_API_URL || ""
-          }/email/automation/accounts/${accountId}`,
+          }/api/email/automation/accounts/${accountId}`,
           {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
-              "x-api-key": import.meta.env.VITE_API_KEY || "",
+              "X-API-KEY": import.meta.env.VITE_API_KEY || "",
             },
             body: JSON.stringify({
               automationEnabled: enabled,
@@ -605,12 +751,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
       // Make API call to connect to email provider
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/inbox/connect`,
+        `${import.meta.env.VITE_API_URL || ""}/api/email/inbox/connect`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY || "",
+            "X-API-KEY": import.meta.env.VITE_API_KEY || "",
           },
           body: JSON.stringify(credentials),
         }
@@ -684,12 +830,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     try {
       // Make API call to fetch emails
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/inbox/list`,
+        `${import.meta.env.VITE_API_URL || ""}/api/email/inbox/list`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY || "",
+            "X-API-KEY": import.meta.env.VITE_API_KEY || "",
           },
           body: JSON.stringify({
             ...credentials,
@@ -729,21 +875,32 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
           emailChunks.push(emailAddresses.slice(i, i + chunkSize));
         }
 
-        // Query Firestore for existing candidates with these emails
+        // Query Firestore for existing candidates and applications with these emails
         const importedEmails = new Set<string>();
 
         // Process each chunk separately
         for (const chunk of emailChunks) {
           if (chunk.length === 0) continue;
 
-          const candidatesQuery = query(
-            collection(db, "candidates"),
-            where("email", "in", chunk)
-          );
+          // Check both candidates and applications collections
+          const [candidatesQuery, applicationsQuery] = [
+            query(collection(db, "candidates"), where("email", "in", chunk)),
+            query(collection(db, "applications"), where("email", "in", chunk)),
+          ];
 
-          const querySnapshot = await getDocs(candidatesQuery);
+          const [candidatesSnapshot, applicationsSnapshot] = await Promise.all([
+            getDocs(candidatesQuery),
+            getDocs(applicationsQuery),
+          ]);
 
-          querySnapshot.forEach((doc) => {
+          candidatesSnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data.email) {
+              importedEmails.add(data.email);
+            }
+          });
+
+          applicationsSnapshot.forEach((doc) => {
             const data = doc.data();
             if (data.email) {
               importedEmails.add(data.email);
@@ -877,12 +1034,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     try {
       // First, download the actual attachment file
       const attachmentResponse = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/download-attachment`,
+        `${import.meta.env.VITE_API_URL || ""}/api/email/download-attachment`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY || "",
+            "X-API-KEY": import.meta.env.VITE_API_KEY || "",
           },
           body: JSON.stringify({
             ...emailCredentials,
@@ -946,12 +1103,12 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
 
       // Make API call to process the attachment for parsing
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/email/parse-attachment`,
+        `${import.meta.env.VITE_API_URL || ""}/api/email/parse-attachment`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY || "",
+            "X-API-KEY": import.meta.env.VITE_API_KEY || "",
           },
           body: JSON.stringify({
             ...emailCredentials,
@@ -1141,6 +1298,10 @@ export const useEmailImport = (onImportComplete?: (data: any) => void) => {
     refreshAutomationStatus,
     isStatusLoading,
     lastStatusUpdate,
+    monitoredEmails,
+    getMonitoredEmails,
+    removeEmailFromMonitoring,
+    isRemovingEmail,
   };
 };
 
@@ -1188,6 +1349,10 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
     refreshAutomationStatus,
     isStatusLoading,
     lastStatusUpdate,
+    monitoredEmails,
+    getMonitoredEmails,
+    removeEmailFromMonitoring,
+    isRemovingEmail,
   } = useEmailImport(onImportComplete);
 
   // Helper function to format the last checked time
@@ -1527,6 +1692,53 @@ const EmailImport: React.FC<EmailImportProps> = ({ onImportComplete }) => {
               )}
             </div>
           </div>
+
+          {/* Monitored Emails Management - Show when automation is enabled */}
+          {automationEnabled && monitoredEmails.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium text-muted-foreground">
+                  Monitored Emails ({monitoredEmails.length})
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={getMonitoredEmails}
+                  className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="bg-muted/20 rounded border max-h-32 overflow-y-auto">
+                <div className="divide-y">
+                  {monitoredEmails.map((email) => (
+                    <div
+                      key={email}
+                      className="flex items-center justify-between p-2 hover:bg-muted/30"
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Mail className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="text-xs truncate">{email}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeEmailFromMonitoring(email)}
+                        disabled={isRemovingEmail === email}
+                        className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        {isRemovingEmail === email ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Compact Search and Filters */}
           <div className="space-y-2">
