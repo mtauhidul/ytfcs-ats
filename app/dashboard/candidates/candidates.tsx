@@ -98,6 +98,24 @@ import InterviewManager from "../interviews/interview-manager";
 import { columns } from "./columns";
 import ScoreDetail from "./score-detail";
 
+// Utility function to extract storage path from Firebase Storage URL
+const getStoragePathFromURL = (url: string): string | null => {
+  try {
+    // Handle Firebase Storage URLs like:
+    // https://firebasestorage.googleapis.com/v0/b/bucket/o/path%2Fto%2Ffile.pdf?alt=media&token=...
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split("/o/");
+    if (pathParts.length > 1) {
+      // Decode the path component and remove any query parameters
+      return decodeURIComponent(pathParts[1].split("?")[0]);
+    }
+    return null;
+  } catch (error) {
+    console.error("Error parsing storage URL:", error);
+    return null;
+  }
+};
+
 // History entry interface
 interface HistoryEntry {
   date: string;
@@ -136,7 +154,9 @@ export default function CandidatesPage() {
   const [globalFilter, setGlobalFilter] = useState("");
 
   // For sorting
-  const [sortBy, setSortBy] = useState<"name" | "importDate" | "lastUpdate" | "rating" | "resumeScore">("importDate");
+  const [sortBy, setSortBy] = useState<
+    "name" | "importDate" | "lastUpdate" | "rating" | "resumeScore"
+  >("importDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // For user-defined tags & categories
@@ -939,11 +959,29 @@ export default function CandidatesPage() {
       // Delete all associated documents from storage first
       if (detailCandidate.documents && detailCandidate.documents.length > 0) {
         for (const document of detailCandidate.documents) {
-          const storageRef = ref(storage, document.path);
-          await deleteObject(storageRef).catch((error) => {
+          try {
+            // Use path if available, otherwise extract from URL
+            let storagePath = document.path;
+            if (!storagePath && document.url) {
+              const pathFromURL = getStoragePathFromURL(document.url);
+              if (pathFromURL) {
+                storagePath = pathFromURL;
+              }
+            }
+
+            if (storagePath) {
+              const storageRef = ref(storage, storagePath);
+              await deleteObject(storageRef);
+              console.log(`Successfully deleted document: ${document.name}`);
+            } else {
+              console.warn(
+                `Could not determine storage path for document: ${document.name}`
+              );
+            }
+          } catch (error) {
             console.error(`Error deleting document ${document.name}:`, error);
             // Continue with deletion even if some files fail to delete
-          });
+          }
         }
       }
 
@@ -1116,10 +1154,27 @@ export default function CandidatesPage() {
       const deleteLoading = toast.loading("Deleting document...");
 
       // Delete from Firebase Storage
-      if (documentToDelete.path) {
+      if (documentToDelete.path || documentToDelete.url) {
         try {
-          const storageRef = ref(storage, documentToDelete.path);
-          await deleteObject(storageRef);
+          let storagePath = documentToDelete.path;
+          if (!storagePath && documentToDelete.url) {
+            const pathFromURL = getStoragePathFromURL(documentToDelete.url);
+            if (pathFromURL) {
+              storagePath = pathFromURL;
+            }
+          }
+
+          if (storagePath) {
+            const storageRef = ref(storage, storagePath);
+            await deleteObject(storageRef);
+            console.log(
+              `Successfully deleted document from storage: ${documentToDelete.name}`
+            );
+          } else {
+            console.warn(
+              `Could not determine storage path for document: ${documentToDelete.name}`
+            );
+          }
         } catch (error) {
           console.error("Error deleting file from storage:", error);
           // Continue with deletion even if storage deletion fails
@@ -1391,15 +1446,30 @@ export default function CandidatesPage() {
             // Delete documents from storage if they exist
             if (candidate.documents && candidate.documents.length > 0) {
               for (const document of candidate.documents) {
-                if (document.path) {
-                  try {
-                    console.log(`Deleting document at path: ${document.path}`);
-                    const storageRef = ref(storage, document.path);
-                    await deleteObject(storageRef);
-                  } catch (error) {
-                    console.error(`Error deleting document:`, error);
-                    // Continue with candidate deletion even if document deletion fails
+                try {
+                  let storagePath = document.path;
+                  if (!storagePath && document.url) {
+                    const pathFromURL = getStoragePathFromURL(document.url);
+                    if (pathFromURL) {
+                      storagePath = pathFromURL;
+                    }
                   }
+
+                  if (storagePath) {
+                    console.log(`Deleting document at path: ${storagePath}`);
+                    const storageRef = ref(storage, storagePath);
+                    await deleteObject(storageRef);
+                    console.log(
+                      `Successfully deleted document: ${document.name}`
+                    );
+                  } else {
+                    console.warn(
+                      `Could not determine storage path for document: ${document.name}`
+                    );
+                  }
+                } catch (error) {
+                  console.error(`Error deleting document:`, error);
+                  // Continue with candidate deletion even if document deletion fails
                 }
               }
             }
@@ -1569,7 +1639,10 @@ export default function CandidatesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+          <Select
+            value={sortBy}
+            onValueChange={(value: any) => setSortBy(value)}
+          >
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>

@@ -1,5 +1,6 @@
 // app/types/index.ts
 // Re-export all types from centralized location
+export * from "./application";
 export * from "./candidate";
 export * from "./communication";
 export * from "./email";

@@ -2,6 +2,7 @@ import {
   BarChart3, // Changed to BarChart3 for better visual
   Briefcase, // Changed from Building2Icon to Briefcase for jobs
   Building2, // For clients/employers
+  FileCheck, // For applications review
   FileText, // Changed from FolderArchive to FileText for categories
   Group,
   Layers3, // Changed from LayersIcon to Layers3
@@ -44,6 +45,12 @@ const data = {
       title: "Dashboard",
       url: "/dashboard", // This will now point to the dashboard index page
       icon: BarChart3, // Using BarChart3 for better visual
+      isActive: false,
+    },
+    {
+      title: "Applications",
+      url: "/dashboard/applications",
+      icon: FileCheck, // For application review
       isActive: false,
     },
     {

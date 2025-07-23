@@ -26,6 +26,10 @@ const navigationGroups = {
     label: "Overview",
     items: ["Dashboard"],
   },
+  applications: {
+    label: "Application Review",
+    items: ["Applications"],
+  },
   jobs: {
     label: "Job Management",
     items: ["Jobs List", "Application Flow", "Stages"],

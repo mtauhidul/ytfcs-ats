@@ -1,5 +1,6 @@
 // app/dashboard/automation/email-automation.tsx
 
+import { collection, getDocs, query, where } from "firebase/firestore";
 import {
   Activity,
   AlertTriangle,
@@ -18,8 +19,6 @@ import {
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "~/lib/firebase";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Switch } from "~/components/ui/switch";
+import { db } from "~/lib/firebase";
 import EmailConnection from "./email-connection";
 
 interface EmailAccount {
@@ -90,6 +90,15 @@ const EmailAutomation: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [recentImports, setRecentImports] = useState<number>(0);
+  const [recentImportsBreakdown, setRecentImportsBreakdown] = useState<{
+    applications: number;
+    candidates: number;
+  }>({ applications: 0, candidates: 0 });
+  const [totalImported, setTotalImported] = useState<number>(0);
+  const [totalImportedBreakdown, setTotalImportedBreakdown] = useState<{
+    applications: number;
+    candidates: number;
+  }>({ applications: 0, candidates: 0 });
   const [recentImportsLoading, setRecentImportsLoading] = useState(false);
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [showAddAccountDialog, setShowAddAccountDialog] = useState(false);
@@ -183,6 +192,45 @@ const EmailAutomation: React.FC = () => {
     );
   };
 
+  // Fetch total imports from Firebase
+  const fetchTotalImports = async () => {
+    try {
+      // Get all candidates
+      const candidatesRef = collection(db, "candidates");
+      const candidatesQuery = query(candidatesRef);
+
+      // Get all applications
+      const applicationsRef = collection(db, "applications");
+      const applicationsQuery = query(applicationsRef);
+
+      const [candidatesSnapshot, applicationsSnapshot] = await Promise.all([
+        getDocs(candidatesQuery),
+        getDocs(applicationsQuery),
+      ]);
+
+      const candidatesCount = candidatesSnapshot.size;
+      const applicationsCount = applicationsSnapshot.size;
+      const total = candidatesCount + applicationsCount;
+
+      setTotalImported(total);
+      setTotalImportedBreakdown({
+        applications: applicationsCount,
+        candidates: candidatesCount,
+      });
+
+      console.log(`Total imports:`, {
+        candidatesCount,
+        applicationsCount,
+        total,
+      });
+
+      return total;
+    } catch (error) {
+      console.error("Error fetching total imports:", error);
+      return 0;
+    }
+  };
+
   // Fetch recent imports from Firebase
   const fetchRecentImports = async (useCache: boolean = true) => {
     const now = Date.now();
@@ -205,17 +253,49 @@ const EmailAutomation: React.FC = () => {
     lastRecentImportsFetch.current = now;
 
     try {
-      // TEMPORARY FIX: Query Firestore directly for recent candidates
+      // Query both applications and candidates from the last 24 hours
       const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
-      
+      const twentyFourHoursAgoISO = twentyFourHoursAgo.toISOString();
+
+      // Get recent candidates
       const candidatesRef = collection(db, "candidates");
-      const recentQuery = query(
+      const recentCandidatesQuery = query(
         candidatesRef,
-        where("createdAt", ">=", twentyFourHoursAgo.toISOString())
+        where("createdAt", ">=", twentyFourHoursAgoISO)
       );
-      
-      const querySnapshot = await getDocs(recentQuery);
-      const count = querySnapshot.size;
+
+      // Get recent applications (imported resumes)
+      const applicationsRef = collection(db, "applications");
+      const recentApplicationsQuery = query(
+        applicationsRef,
+        where("createdAt", ">=", twentyFourHoursAgoISO)
+      );
+
+      const [candidatesSnapshot, applicationsSnapshot] = await Promise.all([
+        getDocs(recentCandidatesQuery),
+        getDocs(recentApplicationsQuery),
+      ]);
+
+      const candidatesCount = candidatesSnapshot.size;
+      const applicationsCount = applicationsSnapshot.size;
+      const count = candidatesCount + applicationsCount;
+
+      // Debug logging
+      console.log(`Recent imports query for last 24h:`, {
+        since: twentyFourHoursAgoISO,
+        now: new Date(now).toISOString(),
+        candidatesCount,
+        applicationsCount,
+        totalCount: count,
+        candidatesData: candidatesSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          createdAt: doc.data().createdAt,
+        })),
+        applicationsData: applicationsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          createdAt: doc.data().createdAt,
+        })),
+      });
 
       // Update cache
       recentImportsCache.current = {
@@ -224,6 +304,10 @@ const EmailAutomation: React.FC = () => {
       };
 
       setRecentImports(count);
+      setRecentImportsBreakdown({
+        applications: applicationsCount,
+        candidates: candidatesCount,
+      });
       return count;
     } catch (error) {
       console.error("Error fetching recent imports:", error);
@@ -240,12 +324,19 @@ const EmailAutomation: React.FC = () => {
   // Fetch automation status and accounts
   const fetchData = async () => {
     try {
+      const statusUrl = `${
+        import.meta.env.VITE_API_URL
+      }/email/automation/status`;
+      const accountsUrl = `${
+        import.meta.env.VITE_API_URL
+      }/email/automation/accounts`;
+
       const [statusResponse, accountsResponse] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_URL}/email/automation/status`, {
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+        fetch(statusUrl, {
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY },
         }),
-        fetch(`${import.meta.env.VITE_API_URL}/email/automation/accounts`, {
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+        fetch(accountsUrl, {
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY },
         }),
       ]);
 
@@ -259,9 +350,16 @@ const EmailAutomation: React.FC = () => {
         if (statusData.data.checkInterval) {
           setCheckInterval(statusData.data.checkInterval);
         }
+      } else {
+        if (statusResponse.status === 429 || accountsResponse.status === 429) {
+          toast.error(
+            "Rate limit exceeded. Please wait a moment and try again."
+          );
+        } else {
+          toast.error("Failed to load automation data");
+        }
       }
     } catch (error) {
-      console.error("Error fetching automation data:", error);
       toast.error("Failed to load automation data");
     } finally {
       setLoading(false);
@@ -276,7 +374,7 @@ const EmailAutomation: React.FC = () => {
         `${import.meta.env.VITE_API_URL}/email/automation/start`,
         {
           method: "POST",
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY },
         }
       );
 
@@ -301,7 +399,7 @@ const EmailAutomation: React.FC = () => {
         `${import.meta.env.VITE_API_URL}/email/automation/stop`,
         {
           method: "POST",
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY },
         }
       );
 
@@ -346,7 +444,7 @@ const EmailAutomation: React.FC = () => {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": import.meta.env.VITE_API_KEY,
+            "X-API-KEY": import.meta.env.VITE_API_KEY,
           },
           body: JSON.stringify({ automationEnabled: enabled }),
         }
@@ -387,7 +485,7 @@ const EmailAutomation: React.FC = () => {
         }/email/automation/accounts/${accountId}/check`,
         {
           method: "POST",
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY },
         }
       );
 
@@ -401,6 +499,7 @@ const EmailAutomation: React.FC = () => {
         await Promise.all([
           fetchData(),
           fetchRecentImports(false), // Force refresh without cache
+          fetchTotalImports(), // Refresh total imports
         ]);
       } else {
         throw new Error("Failed to check account");
@@ -422,7 +521,7 @@ const EmailAutomation: React.FC = () => {
         }/email/automation/accounts/${accountId}`,
         {
           method: "DELETE",
-          headers: { "x-api-key": import.meta.env.VITE_API_KEY },
+          headers: { "X-API-KEY": import.meta.env.VITE_API_KEY },
         }
       );
 
@@ -433,6 +532,7 @@ const EmailAutomation: React.FC = () => {
         await Promise.all([
           fetchData(),
           fetchRecentImports(false), // Force refresh without cache
+          fetchTotalImports(), // Refresh total imports
         ]);
       } else {
         throw new Error("Failed to delete account");
@@ -451,6 +551,7 @@ const EmailAutomation: React.FC = () => {
       await Promise.all([
         fetchData(),
         fetchRecentImports(true), // Use cache on initial load
+        fetchTotalImports(), // Fetch total imports
       ]);
     };
 
@@ -605,7 +706,7 @@ const EmailAutomation: React.FC = () => {
         </div>
 
         {/* Status Overview Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {/* Monitoring Status */}
           <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow bg-white">
             <CardContent className="p-3 sm:p-4">
@@ -646,7 +747,7 @@ const EmailAutomation: React.FC = () => {
           </Card>
 
           {/* Recent Imports */}
-          <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow bg-white sm:col-span-2 lg:col-span-1">
+          <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow bg-white">
             <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
@@ -654,16 +755,49 @@ const EmailAutomation: React.FC = () => {
                     {recentImportsLoading ? (
                       <RefreshCw className="h-5 w-5 sm:h-6 sm:w-6 animate-spin text-blue-500" />
                     ) : (
-                      <span className="text-xl sm:text-2xl font-bold text-gray-900">
-                        {recentImports}
-                      </span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl sm:text-2xl font-bold text-gray-900">
+                          {recentImports}
+                        </span>
+                        {recentImports > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            ({recentImportsBreakdown.applications} apps,{" "}
+                            {recentImportsBreakdown.candidates} candidates)
+                          </span>
+                        )}
+                      </div>
                     )}
                     {recentImports > 0 && (
                       <div className="h-2 w-2 bg-emerald-500 rounded-full animate-pulse flex-shrink-0" />
                     )}
                   </div>
                   <p className="text-[10px] sm:text-xs font-mono text-muted-foreground uppercase tracking-wide">
-                    Recent Imports (24h)
+                    Total Imported (Last 24h)
+                  </p>
+                </div>
+                <Database className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400 flex-shrink-0" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Total Processed */}
+          <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow bg-white">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
+                  <div className="flex items-baseline gap-1 sm:gap-2">
+                    <span className="text-xl sm:text-2xl font-bold text-gray-900">
+                      {totalImported}
+                    </span>
+                    {totalImported > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        ({totalImportedBreakdown.applications} apps,{" "}
+                        {totalImportedBreakdown.candidates} candidates)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] sm:text-xs font-mono text-muted-foreground uppercase tracking-wide">
+                    Total Imported (All Time)
                   </p>
                 </div>
                 <Database className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400 flex-shrink-0" />
@@ -795,6 +929,64 @@ const EmailAutomation: React.FC = () => {
                                 }`}
                               />
                             </Button>
+
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 border-red-200 hover:border-red-300 hover:bg-red-50 text-red-600"
+                                  disabled={
+                                    actionLoading === `delete-${account.id}`
+                                  }
+                                >
+                                  {actionLoading === `delete-${account.id}` ? (
+                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent className="max-w-md mx-4 sm:mx-auto">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle className="flex items-center gap-2 text-base">
+                                    <Trash2 className="h-5 w-5 text-red-500 flex-shrink-0" />
+                                    <span>Remove Email Account</span>
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription className="text-sm leading-relaxed">
+                                    Are you sure you want to remove{" "}
+                                    <strong>{account.username}</strong>? This
+                                    will stop all automation for this account
+                                    and cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                                  <AlertDialogCancel className="w-full sm:w-auto">
+                                    Cancel
+                                  </AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteAccount(account.id)}
+                                    disabled={
+                                      actionLoading === `delete-${account.id}`
+                                    }
+                                    className="w-full sm:w-auto bg-red-500 hover:bg-red-600"
+                                  >
+                                    {actionLoading ===
+                                    `delete-${account.id}` ? (
+                                      <>
+                                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                                        Removing...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Remove Account
+                                      </>
+                                    )}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
 
                           {/* Mobile Dropdown */}
@@ -868,10 +1060,28 @@ const EmailAutomation: React.FC = () => {
                           <div className="flex items-center gap-1 sm:gap-2">
                             <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" />
                             <span className="truncate">
-                              Last checked:{" "}
+                              Last email check:{" "}
                               {account.lastChecked
-                                ? new Date(account.lastChecked).toLocaleString()
-                                : "Never"}
+                                ? (() => {
+                                    const lastCheck = new Date(
+                                      account.lastChecked
+                                    );
+                                    const now = new Date();
+                                    const diffMinutes = Math.floor(
+                                      (now.getTime() - lastCheck.getTime()) /
+                                        (1000 * 60)
+                                    );
+
+                                    if (diffMinutes < 1) return "Just now";
+                                    if (diffMinutes < 60)
+                                      return `${diffMinutes}m ago`;
+                                    if (diffMinutes < 1440)
+                                      return `${Math.floor(
+                                        diffMinutes / 60
+                                      )}h ago`;
+                                    return lastCheck.toLocaleDateString();
+                                  })()
+                                : "Never checked"}
                             </span>
                           </div>
 
@@ -891,14 +1101,13 @@ const EmailAutomation: React.FC = () => {
                             <div
                               className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
                               style={{
-                                width: account.lastChecked ? "100%" : "0%",
-                                opacity: account.lastChecked ? 0.7 : 0.3,
+                                width: account.automationEnabled
+                                  ? "100%"
+                                  : "0%",
+                                opacity: account.automationEnabled ? 0.7 : 0.3,
                               }}
                             />
                           </div>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-                            {account.totalImported} candidates imported
-                          </p>
                         </div>
                       </div>
                     </CardContent>
@@ -941,14 +1150,26 @@ const EmailAutomation: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-2 bg-amber-500 rounded-full animate-pulse flex-shrink-0" />
                             <span className="font-medium text-sm sm:text-base text-gray-900 truncate">
-                              Account {process.accountId}
+                              {emailAccounts.find(
+                                (acc) => acc.id === process.accountId
+                              )?.username || `Account ${process.accountId}`}
                             </span>
                           </div>
                           <Badge
                             variant="outline"
                             className="text-[9px] sm:text-[10px] bg-amber-100 text-amber-700 border-amber-200 rounded-full px-1.5 sm:px-2 py-0.5 flex-shrink-0"
                           >
-                            <span className="truncate">{process.status}</span>
+                            <span className="truncate">
+                              {process.status === "processing"
+                                ? "Processing emails"
+                                : process.status === "checking"
+                                ? "Checking for new emails"
+                                : process.status === "importing"
+                                ? "Importing candidates"
+                                : process.status === "connecting"
+                                ? "Connecting to email"
+                                : process.status}
+                            </span>
                           </Badge>
                         </div>
 

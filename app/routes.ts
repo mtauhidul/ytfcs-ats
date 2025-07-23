@@ -9,6 +9,7 @@ export default [
   ]),
   route("dashboard", "routes/dashboard.tsx", [
     index("dashboard/dashboard/index.tsx"),
+    route("applications", "dashboard/applications/route.tsx"),
     route("jobs", "dashboard/jobs/jobs.tsx"),
     route("profile", "dashboard/profile/profile.tsx"),
     route("import", "dashboard/import/import.tsx"),
