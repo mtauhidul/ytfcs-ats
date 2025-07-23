@@ -17,6 +17,7 @@ import {
 import {
   deleteObject,
   getDownloadURL,
+  listAll,
   ref,
   uploadBytesResumable,
 } from "firebase/storage";
@@ -34,6 +35,7 @@ import {
   MessageCircle,
   MessageSquare,
   MessageSquarePlus,
+  Play,
   Search,
   Shield,
   TagIcon,
@@ -41,6 +43,7 @@ import {
   Upload,
   UserIcon,
   Users,
+  Video,
   X,
   Zap,
 } from "lucide-react";
@@ -814,6 +817,17 @@ export default function CandidatesPage() {
       loadDocumentUrls(cand.documents);
     }
 
+    // Load videos from Firebase Storage and add them to documents
+    loadCandidateVideos(cand.id)
+      .then((videoDocuments) => {
+        if (videoDocuments.length > 0) {
+          setModalDocuments((prev) => [...prev, ...videoDocuments]);
+        }
+      })
+      .catch((error) => {
+        console.warn("Failed to load candidate videos:", error);
+      });
+
     // Fetch feedback for this candidate
     fetchCandidateFeedback(cand.id);
 
@@ -1138,6 +1152,63 @@ export default function CandidatesPage() {
   const handleDocumentPreview = (document: CandidateDocument) => {
     setPreviewDocument(document);
     setShowPreviewDialog(true);
+  };
+
+  // Load videos from Firebase Storage
+  const loadCandidateVideos = async (candidateId: string) => {
+    try {
+      // Create reference to the video folder for this candidate
+      const videosRef = ref(
+        storage,
+        `candidates/${candidateId}/documents/video`
+      );
+
+      // List all files in the video directory
+      const videosList = await listAll(videosRef);
+
+      // Process each video file
+      const videoDocuments: CandidateDocument[] = [];
+
+      for (const videoRef of videosList.items) {
+        try {
+          // Get download URL for the video
+          const url = await getDownloadURL(videoRef);
+
+          // Determine video type based on file extension
+          const fileName = videoRef.name.toLowerCase();
+          let mimeType = "video/mp4"; // default
+          if (fileName.endsWith(".mov")) mimeType = "video/quicktime";
+          else if (fileName.endsWith(".avi")) mimeType = "video/x-msvideo";
+          else if (fileName.endsWith(".webm")) mimeType = "video/webm";
+          else if (fileName.endsWith(".mkv")) mimeType = "video/x-matroska";
+
+          // Get metadata if available (fallback to basic info)
+          const videoDoc: CandidateDocument = {
+            id: `video-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`,
+            name: videoRef.name,
+            type: mimeType,
+            size: 0, // Size not available from listAll, could be fetched separately if needed
+            uploadDate: new Date().toISOString(),
+            url: url,
+            path: videoRef.fullPath,
+          };
+
+          videoDocuments.push(videoDoc);
+        } catch (videoError) {
+          console.warn(`Failed to load video ${videoRef.name}:`, videoError);
+        }
+      }
+
+      return videoDocuments;
+    } catch (error) {
+      console.warn(
+        `No videos found for candidate ${candidateId} or error loading:`,
+        error
+      );
+      return [];
+    }
   };
 
   // Handle document deletion
@@ -1576,9 +1647,23 @@ export default function CandidatesPage() {
       return <FileText className="size-5 text-green-500" />;
     } else if (fileType.includes("image")) {
       return <FileText className="size-5 text-purple-500" />;
+    } else if (isVideoFile(fileType)) {
+      return <Video className="size-5 text-orange-500" />;
     } else {
       return <FileText className="size-5 text-gray-500" />;
     }
+  };
+
+  // Utility function to check if a file is a video
+  const isVideoFile = (fileType: string) => {
+    return (
+      fileType.includes("video") ||
+      fileType.includes("mp4") ||
+      fileType.includes("mov") ||
+      fileType.includes("avi") ||
+      fileType.includes("webm") ||
+      fileType.includes("mkv")
+    );
   };
 
   if (loading) {
@@ -1920,6 +2005,21 @@ export default function CandidatesPage() {
                                 alt={previewDocument.name}
                                 className="max-w-full max-h-full object-contain"
                               />
+                            ) : isVideoFile(previewDocument.type) ? (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <video
+                                  src={previewDocument.url}
+                                  controls
+                                  className="max-w-full max-h-full object-contain rounded-md"
+                                  preload="metadata"
+                                >
+                                  <source
+                                    src={previewDocument.url}
+                                    type={previewDocument.type}
+                                  />
+                                  Your browser does not support the video tag.
+                                </video>
+                              </div>
                             ) : (
                               <div className="text-center p-8">
                                 <FileText className="size-12 mx-auto mb-4 text-muted-foreground" />
@@ -2688,6 +2788,12 @@ export default function CandidatesPage() {
                                   <span className="font-medium truncate flex-1 ml-2">
                                     {doc.name}
                                   </span>
+                                  {isVideoFile(doc.type) && (
+                                    <div className="flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-md">
+                                      <Play className="size-3" />
+                                      Video
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="text-xs text-muted-foreground mb-3">
                                   <div>Size: {formatFileSize(doc.size)}</div>
@@ -2704,8 +2810,17 @@ export default function CandidatesPage() {
                                     variant="ghost"
                                     onClick={() => handleDocumentPreview(doc)}
                                   >
-                                    <Eye className="size-4 mr-1" />
-                                    View
+                                    {isVideoFile(doc.type) ? (
+                                      <>
+                                        <Play className="size-4 mr-1" />
+                                        Play
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Eye className="size-4 mr-1" />
+                                        View
+                                      </>
+                                    )}
                                   </Button>
                                   <div className="flex gap-1">
                                     <Button
