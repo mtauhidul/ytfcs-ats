@@ -1697,6 +1697,7 @@ export default function CollaborationPage() {
                     <SelectItem value="Recruiter">Recruiter</SelectItem>
                     <SelectItem value="Interviewer">Interviewer</SelectItem>
                     <SelectItem value="Team Member">Team Member</SelectItem>
+                    <SelectItem value="Client">Client</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1807,6 +1808,7 @@ export default function CollaborationPage() {
                       <SelectItem value="Recruiter">Recruiter</SelectItem>
                       <SelectItem value="Interviewer">Interviewer</SelectItem>
                       <SelectItem value="Team Member">Team Member</SelectItem>
+                      <SelectItem value="Client">Client</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

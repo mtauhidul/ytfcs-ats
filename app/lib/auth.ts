@@ -42,7 +42,8 @@ export type UserRole =
   | "Hiring Manager"
   | "Recruiter"
   | "Interviewer"
-  | "Team Member";
+  | "Team Member"
+  | "Client";
 
 export interface AuthUser {
   uid: string;
