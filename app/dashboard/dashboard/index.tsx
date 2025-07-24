@@ -4,14 +4,14 @@ import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import {
   Activity,
   AlertCircle,
+  BarChart3,
   Briefcase,
   Calendar,
-  CheckCircle2,
+  CheckCircle,
   Clock,
-  LineChart,
   Target,
   TrendingUp,
-  UserCheck,
+  User,
   Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -293,12 +293,12 @@ export default function DashboardPage() {
   }).length;
 
   const pieColors = [
-    "#0088FE",
-    "#00C49F",
-    "#FFBB28",
-    "#FF8042",
-    "#8884d8",
-    "#82ca9d",
+    "#0088FE", // Original bright blue
+    "#00C49F", // Original teal green
+    "#FFBB28", // Original yellow
+    "#FF8042", // Original orange
+    "#8884d8", // Original purple
+    "#82ca9d", // Original light green
   ];
 
   // Custom tooltip for better mobile experience
@@ -307,9 +307,7 @@ export default function DashboardPage() {
       return (
         <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
           <p className="font-medium text-sm">{`${label}`}</p>
-          <p className="text-blue-600 text-sm">
-            {`Count: ${payload[0].value}`}
-          </p>
+          <p className="text-primary text-sm">{`Count: ${payload[0].value}`}</p>
         </div>
       );
     }
@@ -329,15 +327,13 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto py-3 px-3 sm:py-6 sm:px-6 lg:py-8 lg:px-8 max-w-7xl">
         {/* Header Section */}
         <div className="flex flex-col space-y-3 sm:space-y-0 sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
           <div className="space-y-1">
-            <h1 className="text-lg sm:text-xl lg:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent flex items-center gap-2">
-              <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-lg">
-                <LineChart className="size-4 sm:size-5 text-white" />
-              </div>
+            <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-foreground flex items-center gap-2">
+              <BarChart3 className="h-6 w-6" />
               Analytics Dashboard
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground">
@@ -377,7 +373,7 @@ export default function DashboardPage() {
                       ? "border-l-green-500 bg-green-50/50"
                       : insight.type === "warning"
                       ? "border-l-yellow-500 bg-yellow-50/50"
-                      : "border-l-blue-500 bg-blue-50/50"
+                      : "border-l-primary bg-muted/30"
                   }`}
                 >
                   <CardContent className="p-3 sm:p-4">
@@ -388,7 +384,7 @@ export default function DashboardPage() {
                             ? "text-green-600"
                             : insight.type === "warning"
                             ? "text-yellow-600"
-                            : "text-blue-600"
+                            : "text-primary"
                         }`}
                       />
                       <p className="text-xs sm:text-sm font-medium leading-tight">
@@ -403,8 +399,8 @@ export default function DashboardPage() {
         )}
 
         {/* Enhanced Stats Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 lg:gap-4 mb-6">
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 lg:gap-4 mb-6">
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
             <CardHeader className="pb-0 p-1.5 sm:p-2">
               <CardTitle className="text-xs flex items-center gap-1 min-h-0">
                 <Users className="size-3 text-blue-600 flex-shrink-0" />
@@ -412,95 +408,95 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-1.5 sm:p-2 pt-0.5">
-              <div className="text-lg sm:text-2xl font-bold text-blue-700">
+              <div className="text-base sm:text-2xl font-bold text-blue-900">
                 {totalCandidates}
               </div>
-              <p className="text-xs text-blue-600 truncate">
+              <p className="text-xs text-blue-700 truncate">
                 +{recentCandidates} this month
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
             <CardHeader className="pb-0 p-1.5 sm:p-2">
               <CardTitle className="text-xs flex items-center gap-1 min-h-0">
-                <Calendar className="size-3 text-green-600 flex-shrink-0" />
+                <Calendar className="size-3 text-emerald-600 flex-shrink-0" />
                 <span className="truncate leading-none">Interviews</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-1.5 sm:p-2 pt-0.5">
-              <div className="text-lg sm:text-2xl font-bold text-green-700">
+              <div className="text-base sm:text-2xl font-bold text-emerald-900">
                 {totalInterviews}
               </div>
-              <p className="text-xs text-green-600 truncate">
+              <p className="text-xs text-emerald-700 truncate">
                 +{recentInterviews} this month
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <Card className="bg-gradient-to-br from-amber-50 to-amber-100/50 border-amber-200">
             <CardHeader className="pb-0 p-1.5 sm:p-2">
               <CardTitle className="text-xs flex items-center gap-1 min-h-0">
-                <Target className="size-3 text-purple-600 flex-shrink-0" />
-                <span className="truncate leading-none">Conversion</span>
+                <Activity className="size-3 text-amber-600 flex-shrink-0" />
+                <span className="truncate leading-none">Interview Rate</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-1.5 sm:p-2 pt-0.5">
-              <div className="text-lg sm:text-2xl font-bold text-purple-700">
+              <div className="text-base sm:text-2xl font-bold text-amber-900">
                 {totalCandidates
                   ? Math.round((interviewedCount / totalCandidates) * 100)
                   : 0}
                 %
               </div>
-              <p className="text-xs text-purple-600 truncate">To interview</p>
+              <p className="text-xs text-amber-700 truncate">To interview</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
             <CardHeader className="pb-0 p-1.5 sm:p-2">
               <CardTitle className="text-xs flex items-center gap-1 min-h-0">
-                <CheckCircle2 className="size-3 text-orange-600 flex-shrink-0" />
+                <CheckCircle className="size-3 text-green-600 flex-shrink-0" />
                 <span className="truncate leading-none">Offer Rate</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-1.5 sm:p-2 pt-0.5">
-              <div className="text-lg sm:text-2xl font-bold text-orange-700">
+              <div className="text-base sm:text-2xl font-bold text-green-900">
                 {totalCandidates
                   ? Math.round((offerExtendedCount / totalCandidates) * 100)
                   : 0}
                 %
               </div>
-              <p className="text-xs text-orange-600 truncate">Final stage</p>
+              <p className="text-xs text-green-700 truncate">Final stage</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100 border-cyan-200">
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100/50 border-purple-200">
             <CardHeader className="pb-0 p-1.5 sm:p-2">
               <CardTitle className="text-xs flex items-center gap-1 min-h-0">
-                <Briefcase className="size-3 text-cyan-600 flex-shrink-0" />
+                <Briefcase className="size-3 text-purple-600 flex-shrink-0" />
                 <span className="truncate leading-none">Jobs</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-1.5 sm:p-2 pt-0.5">
-              <div className="text-lg sm:text-2xl font-bold text-cyan-700">
+              <div className="text-base sm:text-2xl font-bold text-purple-900">
                 {activeJobs}
               </div>
-              <p className="text-xs text-cyan-600 truncate">Open positions</p>
+              <p className="text-xs text-purple-700 truncate">Open positions</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+          <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100/50 border-cyan-200">
             <CardHeader className="pb-0 p-1.5 sm:p-2">
               <CardTitle className="text-xs flex items-center gap-1 min-h-0">
-                <UserCheck className="size-3 text-indigo-600 flex-shrink-0" />
+                <User className="size-3 text-cyan-600 flex-shrink-0" />
                 <span className="truncate leading-none">Team</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-1.5 sm:p-2 pt-0.5">
-              <div className="text-lg sm:text-2xl font-bold text-indigo-700">
+              <div className="text-base sm:text-2xl font-bold text-cyan-900">
                 {clientMembers.length}
               </div>
-              <p className="text-xs text-indigo-600 truncate">Members</p>
+              <p className="text-xs text-cyan-700 truncate">Members</p>
             </CardContent>
           </Card>
         </div>
@@ -508,9 +504,9 @@ export default function DashboardPage() {
         {/* Hiring Funnel Progress */}
         <div className="mb-4 sm:mb-6">
           <Card className="bg-gradient-to-br from-slate-50 to-white border-slate-200 shadow-sm">
-            <CardHeader className="p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+            <CardHeader className="p-4 sm:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg border-b border-blue-100">
               <CardTitle className="text-base sm:text-lg flex items-center gap-2 text-slate-800">
-                <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-lg">
+                <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg shadow-sm">
                   <Target className="size-4 sm:size-5 text-white" />
                 </div>
                 Hiring Funnel Progress
@@ -528,17 +524,17 @@ export default function DashboardPage() {
                         <div
                           className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold text-white ${
                             stage.percentage > 0
-                              ? "bg-gradient-to-r from-blue-500 to-indigo-600"
-                              : "bg-gray-300"
+                              ? "bg-gradient-to-r from-blue-500 to-indigo-600 shadow-sm"
+                              : "bg-gray-400"
                           }`}
                         >
                           {index + 1}
                         </div>
                         <div>
-                          <span className="text-sm font-semibold text-slate-800 block">
+                          <span className="text-sm font-semibold text-gray-900 block">
                             {stage.name}
                           </span>
-                          <span className="text-xs text-slate-500">
+                          <span className="text-xs text-gray-600">
                             {stage.count} candidates
                           </span>
                         </div>
@@ -547,18 +543,18 @@ export default function DashboardPage() {
                         <div className="flex flex-col items-end">
                           <Badge
                             variant="secondary"
-                            className={`text-xs font-medium ${
+                            className={`text-xs font-medium border ${
                               stage.percentage > 50
-                                ? "bg-green-100 text-green-700"
+                                ? "bg-green-50 text-green-700 border-green-200"
                                 : stage.percentage > 20
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-red-100 text-red-700"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-red-50 text-red-700 border-red-200"
                             }`}
                           >
                             {stage.percentage}% of total
                           </Badge>
                           {index > 0 && (
-                            <span className="text-xs text-slate-400 mt-1">
+                            <span className="text-xs text-gray-500 mt-1">
                               {stage.conversionRate}% from previous
                             </span>
                           )}
@@ -569,14 +565,13 @@ export default function DashboardPage() {
                       <div className="relative">
                         <Progress
                           value={stage.percentage}
-                          className="h-3 bg-slate-100"
+                          className="h-3 bg-gray-100"
                         />
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 opacity-20"></div>
                       </div>
                     </div>
                     {index < funnelData.length - 1 && (
                       <div className="flex justify-start ml-4 mt-2 mb-1">
-                        <div className="w-px h-4 bg-gradient-to-b from-slate-300 to-transparent"></div>
+                        <div className="w-px h-4 bg-gradient-to-b from-gray-300 to-transparent"></div>
                       </div>
                     )}
                   </div>
@@ -616,7 +611,7 @@ export default function DashboardPage() {
             <Card>
               <CardHeader className="p-4 sm:p-6">
                 <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                  <LineChart className="size-4 sm:size-5" />
+                  <BarChart3 className="size-4 sm:size-5" />
                   Candidates by Stage
                 </CardTitle>
                 <CardDescription className="text-xs sm:text-sm">
@@ -705,7 +700,7 @@ export default function DashboardPage() {
               <Card>
                 <CardHeader className="p-4 sm:p-6">
                   <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                    <CheckCircle2 className="size-4 sm:size-5" />
+                    <CheckCircle className="size-4 sm:size-5" />
                     Interview Outcomes
                   </CardTitle>
                   <CardDescription className="text-xs sm:text-sm">

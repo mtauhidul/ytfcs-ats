@@ -450,7 +450,10 @@ export default function ImportPage() {
       <Toaster position="top-right" />
 
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-2">Import Applications</h1>
+        <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">
+          <Upload className="h-6 w-6" />
+          Import Applications
+        </h1>
         <p className="text-muted-foreground">
           Upload resume files to automatically extract candidate information.
           Applications will be reviewed before becoming candidates.

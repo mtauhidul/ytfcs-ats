@@ -186,8 +186,8 @@ export default function CategoriesPage() {
   // Get a color for category badge (for visual variety)
   const getCategoryColor = (name: string) => {
     const colors = [
-      "bg-blue-50 border-blue-200 text-blue-700",
-      "bg-indigo-50 border-indigo-200 text-indigo-700",
+      "bg-primary/10 border-primary/20 text-primary",
+      "bg-zinc-50 border-zinc-200 text-zinc-700",
       "bg-violet-50 border-violet-200 text-violet-700",
       "bg-purple-50 border-purple-200 text-purple-700",
       "bg-emerald-50 border-emerald-200 text-emerald-700",
