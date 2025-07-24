@@ -855,10 +855,9 @@ export default function CollaborationPage() {
                         <th className="text-left p-3 font-medium">
                           Current Stage
                         </th>
-                        <th className="text-left p-3 font-medium">
+                        <th className="text-left p-3 font-medium w-1/4">
                           Assigned To
                         </th>
-                        <th className="text-left p-3 font-medium">Tags</th>
                         <th className="text-left p-3 font-medium">Rating</th>
                         <th className="text-left p-3 font-medium">Feedback</th>
                         <th className="text-left p-3 font-medium">Actions</th>
@@ -895,51 +894,40 @@ export default function CollaborationPage() {
                               {getStageName(candidate.stageId)}
                             </Badge>
                           </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
+                          <td className="p-3 w-1/4">
+                            <div className="flex items-center gap-3">
                               {candidate.assignedTo ? (
                                 <>
-                                  <Avatar className="size-6">
-                                    <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                                  <Avatar className="size-8">
+                                    <AvatarFallback className="text-sm bg-primary/10 text-primary font-medium">
                                       {getTeamMemberName(candidate.assignedTo)
                                         .split(" ")
                                         .map((n) => n[0])
                                         .join("")}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <span>
-                                    {getTeamMemberName(candidate.assignedTo)}
-                                  </span>
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">
+                                      {getTeamMemberName(candidate.assignedTo)}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {teamMembers.find(
+                                        (m) => m.id === candidate.assignedTo
+                                      )?.role || "Team Member"}
+                                    </span>
+                                  </div>
                                 </>
                               ) : (
-                                <span className="text-muted-foreground">
-                                  Unassigned
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex flex-wrap gap-1 max-w-[180px]">
-                              {candidate.tags && candidate.tags.length > 0 ? (
-                                candidate.tags.slice(0, 2).map((tag, idx) => (
-                                  <Badge
-                                    key={idx}
-                                    variant="outline"
-                                    className="px-1.5 py-0 text-xs"
-                                  >
-                                    {tag}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                              {candidate.tags && candidate.tags.length > 2 && (
-                                <Badge
-                                  variant="outline"
-                                  className="px-1.5 py-0 text-xs"
-                                >
-                                  +{candidate.tags.length - 2}
-                                </Badge>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="size-8">
+                                    <AvatarFallback className="text-sm bg-muted text-muted-foreground">
+                                      ?
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-muted-foreground font-medium">
+                                    Unassigned
+                                  </span>
+                                </div>
                               )}
                             </div>
                           </td>

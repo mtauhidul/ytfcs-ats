@@ -1154,15 +1154,60 @@ export default function JobsPage() {
                       <Input
                         id="create-location"
                         value={createJobData.location}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const value = e.target.value;
                           setCreateJobData({
                             ...createJobData,
-                            location: e.target.value,
-                          })
-                        }
+                            location: value,
+                          });
+
+                          // Auto-suggest "Remote" if certain keywords are detected
+                          const keywords = [
+                            "remote",
+                            "work from home",
+                            "wfh",
+                            "anywhere",
+                            "virtual",
+                            "distributed",
+                          ];
+                          const lowercaseValue = value.toLowerCase();
+
+                          if (
+                            keywords.some((keyword) =>
+                              lowercaseValue.includes(keyword)
+                            ) &&
+                            !lowercaseValue.includes("remote")
+                          ) {
+                            // Don't auto-complete if they're already typing "remote"
+                            if (!lowercaseValue.startsWith("remote")) {
+                              setCreateJobData({
+                                ...createJobData,
+                                location: value + " - Remote",
+                              });
+                            }
+                          }
+                        }}
                         placeholder="e.g. New York, NY or Remote"
                         className="h-10"
                       />
+                      {createJobData.location &&
+                        !createJobData.location
+                          .toLowerCase()
+                          .includes("office") &&
+                        !createJobData.location
+                          .toLowerCase()
+                          .includes("onsite") &&
+                        !createJobData.location
+                          .toLowerCase()
+                          .includes("on-site") && (
+                          <div className="text-xs text-blue-600 flex items-center gap-1">
+                            <span>💡</span>
+                            <span>
+                              Consider adding "Remote" if this position allows
+                              remote work
+                            </span>
+                          </div>
+                        )}
                     </div>
 
                     <div className="space-y-2">
@@ -1546,9 +1591,49 @@ export default function JobsPage() {
                           <Input
                             id="location"
                             value={modalLocation}
-                            onChange={(e) => setModalLocation(e.target.value)}
-                            placeholder="e.g. New York, NY"
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setModalLocation(value);
+
+                              // Auto-suggest "Remote" if certain keywords are detected
+                              const keywords = [
+                                "remote",
+                                "work from home",
+                                "wfh",
+                                "anywhere",
+                                "virtual",
+                                "distributed",
+                              ];
+                              const lowercaseValue = value.toLowerCase();
+
+                              if (
+                                keywords.some((keyword) =>
+                                  lowercaseValue.includes(keyword)
+                                ) &&
+                                !lowercaseValue.includes("remote")
+                              ) {
+                                // Don't auto-complete if they're already typing "remote"
+                                if (!lowercaseValue.startsWith("remote")) {
+                                  setModalLocation(value + " - Remote");
+                                }
+                              }
+                            }}
+                            placeholder="e.g. New York, NY or Remote"
                           />
+                          {modalLocation &&
+                            !modalLocation.toLowerCase().includes("office") &&
+                            !modalLocation.toLowerCase().includes("onsite") &&
+                            !modalLocation
+                              .toLowerCase()
+                              .includes("on-site") && (
+                              <div className="mt-1 text-xs text-blue-600 flex items-center gap-1">
+                                <span>💡</span>
+                                <span>
+                                  Consider adding "Remote" if this position
+                                  allows remote work
+                                </span>
+                              </div>
+                            )}
                         </div>
 
                         <div>
@@ -2009,15 +2094,60 @@ export default function JobsPage() {
                         <Input
                           id="create-location"
                           value={createJobData.location}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const value = e.target.value;
                             setCreateJobData({
                               ...createJobData,
-                              location: e.target.value,
-                            })
-                          }
+                              location: value,
+                            });
+
+                            // Auto-suggest "Remote" if certain keywords are detected
+                            const keywords = [
+                              "remote",
+                              "work from home",
+                              "wfh",
+                              "anywhere",
+                              "virtual",
+                              "distributed",
+                            ];
+                            const lowercaseValue = value.toLowerCase();
+
+                            if (
+                              keywords.some((keyword) =>
+                                lowercaseValue.includes(keyword)
+                              ) &&
+                              !lowercaseValue.includes("remote")
+                            ) {
+                              // Don't auto-complete if they're already typing "remote"
+                              if (!lowercaseValue.startsWith("remote")) {
+                                setCreateJobData({
+                                  ...createJobData,
+                                  location: value + " - Remote",
+                                });
+                              }
+                            }
+                          }}
                           placeholder="e.g. New York, NY or Remote"
                           className="h-10"
                         />
+                        {createJobData.location &&
+                          !createJobData.location
+                            .toLowerCase()
+                            .includes("office") &&
+                          !createJobData.location
+                            .toLowerCase()
+                            .includes("onsite") &&
+                          !createJobData.location
+                            .toLowerCase()
+                            .includes("on-site") && (
+                            <div className="text-xs text-blue-600 flex items-center gap-1">
+                              <span>💡</span>
+                              <span>
+                                Consider adding "Remote" if this position allows
+                                remote work
+                              </span>
+                            </div>
+                          )}
                       </div>
 
                       <div className="space-y-2">
