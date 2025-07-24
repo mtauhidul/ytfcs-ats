@@ -1,28 +1,12 @@
 // app/dashboard/monitoring/email-connection.tsx
 
-import {
-  Bot,
-  Check,
-  Clock,
-  Info,
-  Loader2,
-  Mail,
-  RefreshCw,
-  Shield,
-  X,
-} from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { Bot, Loader2, Mail, Shield } from "lucide-react";
+import React, { useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +19,6 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Progress } from "~/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
-import { Switch } from "~/components/ui/switch";
 
 // Email provider types
 export type EmailProvider = "gmail" | "outlook" | "other";
@@ -149,16 +132,15 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
       setConnectionProgress(100);
 
       toast.success("Email account connected successfully!");
-      
+
       // Reset form and close dialog
       resetForm();
       setIsOpen(false);
-      
+
       // Notify parent component
       if (onConnectionSuccess) {
         onConnectionSuccess();
       }
-
     } catch (error) {
       console.error("Connection error:", error);
       toast.error(
@@ -183,21 +165,25 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
       {/* Only render DialogTrigger when not using external control */}
       {externalIsOpen === undefined && (
         <DialogTrigger asChild>
-          <Button className="w-full sm:w-auto bg-blue-500 hover:bg-blue-600">
+          <Button className="w-full sm:w-auto">
             <Mail className="h-4 w-4 mr-2" />
             Connect Email Account
           </Button>
         </DialogTrigger>
       )}
-      
-      <DialogContent className="sm:max-w-[500px] max-w-[95vw] max-h-[90vh] overflow-y-auto mx-4" onInteractOutside={handleDialogClose}>
+
+      <DialogContent
+        className="sm:max-w-[500px] max-w-[95vw] max-h-[90vh] overflow-y-auto mx-4"
+        onInteractOutside={handleDialogClose}
+      >
         <DialogHeader className="space-y-3">
           <DialogTitle className="flex items-center gap-2 text-lg">
-            <Mail className="h-5 w-5 text-blue-500" />
+            <Mail className="h-5 w-5 text-primary" />
             Connect Email Account
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Connect your email account to automatically monitor for new candidate emails and resumes.
+            Connect your email account to automatically monitor for new
+            candidate emails and resumes.
           </DialogDescription>
         </DialogHeader>
 
@@ -234,7 +220,7 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
                   className="flex items-center gap-2 cursor-pointer text-sm flex-1 min-w-0"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
+                    <div className="w-2 h-2 bg-zinc-500 rounded-full flex-shrink-0"></div>
                     <span>Outlook</span>
                   </div>
                 </Label>
@@ -246,7 +232,7 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
                   className="flex items-center gap-2 cursor-pointer text-sm flex-1 min-w-0"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></div>
+                    <div className="w-2 h-2 bg-zinc-600 rounded-full flex-shrink-0"></div>
                     <span>Other (IMAP)</span>
                   </div>
                 </Label>
@@ -260,7 +246,10 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
               {provider === "other" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="imap-server" className="text-sm font-medium">
+                    <Label
+                      htmlFor="imap-server"
+                      className="text-sm font-medium"
+                    >
                       IMAP Server
                     </Label>
                     <Input
@@ -304,7 +293,9 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
 
               <div>
                 <Label htmlFor="email-password" className="text-sm font-medium">
-                  {provider !== "other" ? "Password / App Password" : "Password"}
+                  {provider !== "other"
+                    ? "Password / App Password"
+                    : "Password"}
                 </Label>
                 <Input
                   id="email-password"
@@ -321,7 +312,8 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
                     <div>
                       <p className="font-medium">Use App Password for Gmail</p>
                       <p className="text-xs mt-1">
-                        For security, use an app-specific password instead of your regular password.{" "}
+                        For security, use an app-specific password instead of
+                        your regular password.{" "}
                         <a
                           href="https://support.google.com/accounts/answer/185833"
                           target="_blank"
@@ -341,9 +333,11 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">
-                      {connectionProgress < 30 ? "Preparing connection..." :
-                       connectionProgress < 80 ? "Validating credentials and testing connection..." :
-                       "Setting up automation..."}
+                      {connectionProgress < 30
+                        ? "Preparing connection..."
+                        : connectionProgress < 80
+                        ? "Validating credentials and testing connection..."
+                        : "Setting up automation..."}
                     </span>
                     <span className="font-medium">{connectionProgress}%</span>
                   </div>
@@ -352,14 +346,17 @@ const EmailConnection: React.FC<EmailConnectionProps> = ({
               )}
 
               {/* Info about automation */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="bg-muted/50 border border-border rounded-lg p-3">
                 <div className="flex items-start gap-2">
-                  <Bot className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <Bot className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
                   <div className="text-sm">
-                    <p className="font-medium text-blue-900">Auto-Monitoring Enabled</p>
-                    <p className="text-blue-700 text-xs mt-1">
-                      Once connected, your email will be automatically monitored for new candidate emails. 
-                      Resumes will be parsed and stored automatically.
+                    <p className="font-medium text-foreground">
+                      Auto-Monitoring Enabled
+                    </p>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      Once connected, your email will be automatically monitored
+                      for new candidate emails. Resumes will be parsed and
+                      stored automatically.
                     </p>
                   </div>
                 </div>
