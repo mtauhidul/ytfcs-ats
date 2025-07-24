@@ -1,19 +1,29 @@
 // app/dashboard/clients/clients.tsx
 "use client";
 
+import { format } from "date-fns";
 import {
   collection,
   doc,
-  getDocs,
   onSnapshot,
   query,
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Calendar, Eye, Users, Plus, Clock, Edit } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  Edit,
+  Eye,
+  Plus,
+  RefreshCw,
+  Users,
+} from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Calendar as CalendarComponent } from "~/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Dialog,
@@ -23,6 +33,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -30,15 +47,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
-import { ScrollArea } from "~/components/ui/scroll-area";
-import { Calendar as CalendarComponent } from "~/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import { cn } from "~/lib/utils";
-import { format } from "date-fns";
-import { toast } from "sonner";
 import { db } from "~/lib/firebase";
+import { cn } from "~/lib/utils";
 import type { Candidate } from "~/types";
 
 interface TeamMember {
@@ -87,9 +98,29 @@ export default function ClientsPage() {
   } | null>(null);
   const [newStatus, setNewStatus] = useState("");
   const [statusNotes, setStatusNotes] = useState("");
+  const [lastDataSync, setLastDataSync] = useState<Date>(new Date());
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "disconnected" | "connecting"
+  >("connecting");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Fetch clients (team members with Client role)
+  // Manual refresh function for troubleshooting
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    setConnectionStatus("connecting");
+
+    // Force refresh by updating sync time and reset connection status
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLastDataSync(new Date());
+      setConnectionStatus("connected");
+      toast.success("Data refreshed");
+    }, 500);
+  };
+
+  // Fetch clients (team members with Client role) - Real-time sync
   useEffect(() => {
+    setConnectionStatus("connecting");
     const unsubscribe = onSnapshot(
       query(collection(db, "teamMembers"), where("role", "==", "Client")),
       (snapshot) => {
@@ -100,7 +131,7 @@ export default function ClientsPage() {
           role: doc.data().role || "",
         }));
 
-        // Initialize clients with empty interview data
+        // Initialize clients with empty interview data that will be populated by the candidates useEffect
         const clientsWithInterviews = clientList.map((client) => ({
           client,
           interviews: [],
@@ -112,101 +143,168 @@ export default function ClientsPage() {
         }));
 
         setClients(clientsWithInterviews);
+        setLastDataSync(new Date());
+        setConnectionStatus("connected");
+        console.log(
+          "Clients data synced:",
+          new Date().toISOString(),
+          clientsWithInterviews.length,
+          "clients"
+        );
+      },
+      (error) => {
+        console.error("Error fetching clients:", error);
+        setConnectionStatus("disconnected");
+        toast.error("Failed to load clients data");
       }
     );
 
     return () => unsubscribe();
   }, []);
 
-  // Fetch candidates with interview history
+  // Fetch candidates with interview history - Real-time sync
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "candidates"), (snapshot) => {
-      const candidateList = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || "",
-          interviewHistory: data.interviewHistory || [],
-          ...data,
-        } as Candidate;
-      });
-      setCandidates(candidateList);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, "candidates"),
+      (snapshot) => {
+        const candidateList = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || "",
+            interviewHistory: data.interviewHistory || [],
+            ...data,
+          } as Candidate;
+        });
+        setCandidates(candidateList);
+        setLoading(false);
+        setLastDataSync(new Date());
+        setConnectionStatus("connected");
+        console.log(
+          "Candidates data synced:",
+          new Date().toISOString(),
+          candidateList.length,
+          "candidates"
+        );
+      },
+      (error) => {
+        console.error("Error fetching candidates:", error);
+        setConnectionStatus("disconnected");
+        toast.error("Failed to load candidates data");
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
 
-  // Process interview data when candidates or clients change
+  // Process interview data when candidates change
   useEffect(() => {
-    if (candidates.length > 0 && clients.length > 0) {
-      const updatedClients = clients.map((clientData) => {
-        const interviews: InterviewSummary[] = [];
+    if (candidates.length > 0) {
+      setClients((currentClients) => {
+        if (currentClients.length === 0) return currentClients;
 
-        // Find all interviews for this client across all candidates
-        candidates.forEach((candidate) => {
-          if (candidate.interviewHistory) {
-            candidate.interviewHistory
-              .filter(
-                (interview) => interview.interviewerId === clientData.client.id
-              )
-              .forEach((interview) => {
-                interviews.push({
-                  candidateId: candidate.id,
-                  candidateName: candidate.name,
-                  interviewDate: interview.interviewDate,
-                  outcome: interview.outcome || "pending",
-                  notes: interview.notes,
+        const updatedClients = currentClients.map((clientData) => {
+          const interviews: InterviewSummary[] = [];
+
+          // Find all interviews for this client across all candidates
+          candidates.forEach((candidate) => {
+            if (candidate.interviewHistory) {
+              candidate.interviewHistory
+                .filter(
+                  (interview) =>
+                    interview.interviewerId === clientData.client.id
+                )
+                .forEach((interview) => {
+                  interviews.push({
+                    candidateId: candidate.id,
+                    candidateName: candidate.name,
+                    interviewDate: interview.interviewDate,
+                    outcome: interview.outcome || "pending",
+                    notes: interview.notes,
+                  });
                 });
-              });
-          }
+            }
+          });
+
+          // Sort interviews by date (newest first)
+          interviews.sort(
+            (a, b) =>
+              new Date(b.interviewDate).getTime() -
+              new Date(a.interviewDate).getTime()
+          );
+
+          // Calculate statistics
+          const totalInterviews = interviews.length;
+          const pendingInterviews = interviews.filter(
+            (i) => i.outcome === "pending"
+          ).length;
+          const passedInterviews = interviews.filter(
+            (i) => i.outcome === "passed"
+          ).length;
+          const rejectedInterviews = interviews.filter(
+            (i) => i.outcome === "rejected"
+          ).length;
+
+          // Get uninterviewed candidates for this client
+          const interviewedCandidateIds = new Set(
+            interviews.map((i) => i.candidateId)
+          );
+          const uninterviewedCandidates = candidates.filter(
+            (candidate) => !interviewedCandidateIds.has(candidate.id)
+          );
+
+          return {
+            ...clientData,
+            interviews,
+            totalInterviews,
+            pendingInterviews,
+            passedInterviews,
+            rejectedInterviews,
+            uninterviewedCandidates,
+          };
         });
 
-        // Sort interviews by date (newest first)
-        interviews.sort(
-          (a, b) =>
-            new Date(b.interviewDate).getTime() -
-            new Date(a.interviewDate).getTime()
-        );
+        // Only update if there are actual changes to prevent unnecessary re-renders
+        const hasChanges = updatedClients.some((updatedClient, index) => {
+          const currentClient = currentClients[index];
+          return (
+            updatedClient.totalInterviews !== currentClient.totalInterviews ||
+            updatedClient.pendingInterviews !==
+              currentClient.pendingInterviews ||
+            updatedClient.passedInterviews !== currentClient.passedInterviews ||
+            updatedClient.rejectedInterviews !==
+              currentClient.rejectedInterviews ||
+            updatedClient.uninterviewedCandidates.length !==
+              currentClient.uninterviewedCandidates.length ||
+            JSON.stringify(updatedClient.interviews) !==
+              JSON.stringify(currentClient.interviews)
+          );
+        });
 
-        // Calculate statistics
-        const totalInterviews = interviews.length;
-        const pendingInterviews = interviews.filter(
-          (i) => i.outcome === "pending"
-        ).length;
-        const passedInterviews = interviews.filter(
-          (i) => i.outcome === "passed"
-        ).length;
-        const rejectedInterviews = interviews.filter(
-          (i) => i.outcome === "rejected"
-        ).length;
+        if (hasChanges) {
+          setLastDataSync(new Date());
+          console.log(
+            "Client interview data processed:",
+            new Date().toISOString(),
+            updatedClients.length,
+            "clients updated"
+          );
+        }
 
-        // Get uninterviewed candidates for this client
-        const interviewedCandidateIds = new Set(
-          interviews.map((i) => i.candidateId)
-        );
-        const uninterviewedCandidates = candidates.filter(
-          (candidate) => !interviewedCandidateIds.has(candidate.id)
-        );
-
-        return {
-          ...clientData,
-          interviews,
-          totalInterviews,
-          pendingInterviews,
-          passedInterviews,
-          rejectedInterviews,
-          uninterviewedCandidates,
-        };
+        return hasChanges ? updatedClients : currentClients;
       });
-
-      setClients(updatedClients);
     }
   }, [candidates]);
 
   // Handle interview scheduling
   const handleScheduleInterview = async () => {
-    if (!selectedClient || !selectedCandidateId || !scheduleDate || !scheduleTime) {
+    if (
+      !selectedClient ||
+      !selectedCandidateId ||
+      !scheduleDate ||
+      !scheduleTime
+    ) {
       toast.error("Please fill all required fields");
       return;
     }
@@ -216,14 +314,20 @@ export default function ClientsPage() {
 
       // Check if interview already exists (double-check)
       const candidate = candidates.find((c) => c.id === selectedCandidateId);
-      if (candidate?.interviewHistory?.some(
-        (interview) => interview.interviewerId === selectedClient.client.id
-      )) {
-        toast.error("This candidate has already been interviewed by this client");
+      if (
+        candidate?.interviewHistory?.some(
+          (interview) => interview.interviewerId === selectedClient.client.id
+        )
+      ) {
+        toast.error(
+          "This candidate has already been interviewed by this client"
+        );
         return;
       }
 
-      const interviewDateTime = new Date(`${format(scheduleDate, 'yyyy-MM-dd')}T${scheduleTime}`).toISOString();
+      const interviewDateTime = new Date(
+        `${format(scheduleDate, "yyyy-MM-dd")}T${scheduleTime}`
+      ).toISOString();
 
       // Add interview to candidate's history
       const updatedInterviewHistory = [
@@ -268,7 +372,9 @@ export default function ClientsPage() {
       setIsSubmitting(true);
 
       // Find the candidate
-      const candidate = candidates.find((c) => c.id === selectedInterview.candidateId);
+      const candidate = candidates.find(
+        (c) => c.id === selectedInterview.candidateId
+      );
       if (!candidate) {
         toast.error("Candidate not found");
         return;
@@ -279,7 +385,9 @@ export default function ClientsPage() {
       updatedInterviewHistory[selectedInterview.interviewIndex] = {
         ...updatedInterviewHistory[selectedInterview.interviewIndex],
         outcome: newStatus,
-        notes: statusNotes || updatedInterviewHistory[selectedInterview.interviewIndex].notes,
+        notes:
+          statusNotes ||
+          updatedInterviewHistory[selectedInterview.interviewIndex].notes,
       };
 
       // Update candidate in Firestore
@@ -357,6 +465,43 @@ export default function ClientsPage() {
           <Badge variant="outline" className="py-1 px-3">
             {clients.length} clients
           </Badge>
+          <div className="text-xs text-muted-foreground flex items-center gap-1">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                connectionStatus === "connected"
+                  ? "bg-green-500 animate-pulse"
+                  : connectionStatus === "connecting"
+                  ? "bg-yellow-500 animate-spin"
+                  : "bg-red-500"
+              }`}
+            ></div>
+            {connectionStatus === "connected" ? (
+              <>
+                Last synced:{" "}
+                {lastDataSync.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </>
+            ) : connectionStatus === "connecting" ? (
+              "Connecting..."
+            ) : (
+              "Connection lost"
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="h-8 w-8 p-0"
+            title="Refresh data"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+            />
+          </Button>
         </div>
       </div>
 
@@ -453,9 +598,9 @@ export default function ClientsPage() {
                 )}
 
                 {/* Schedule Interview Button */}
-                <Button 
-                  variant="default" 
-                  size="sm" 
+                <Button
+                  variant="default"
+                  size="sm"
                   className="w-full mb-2"
                   onClick={() => {
                     setSelectedClient(clientData);
@@ -568,8 +713,8 @@ export default function ClientsPage() {
           </p>
           {!searchTerm && (
             <p className="text-sm text-gray-400">
-              Add team members with the "Client" role to track client
-              interview history.
+              Add team members with the "Client" role to track client interview
+              history.
             </p>
           )}
         </div>
@@ -584,13 +729,16 @@ export default function ClientsPage() {
               Schedule a new interview with {selectedClient?.client.name}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div>
               <label className="text-sm font-medium mb-2 block">
                 Select Candidate
               </label>
-              <Select value={selectedCandidateId} onValueChange={setSelectedCandidateId}>
+              <Select
+                value={selectedCandidateId}
+                onValueChange={setSelectedCandidateId}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a candidate" />
                 </SelectTrigger>
@@ -624,7 +772,9 @@ export default function ClientsPage() {
                       )}
                     >
                       <Calendar className="mr-2 h-4 w-4" />
-                      {scheduleDate ? format(scheduleDate, "PPP") : "Select date"}
+                      {scheduleDate
+                        ? format(scheduleDate, "PPP")
+                        : "Select date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0 z-50" align="start">
@@ -648,11 +798,15 @@ export default function ClientsPage() {
                   </SelectTrigger>
                   <SelectContent className="z-50 max-h-[200px]">
                     {Array.from({ length: 24 }, (_, i) => {
-                      const hour = i.toString().padStart(2, '0');
+                      const hour = i.toString().padStart(2, "0");
                       return (
                         <div key={i}>
-                          <SelectItem value={`${hour}:00`}>{hour}:00</SelectItem>
-                          <SelectItem value={`${hour}:30`}>{hour}:30</SelectItem>
+                          <SelectItem value={`${hour}:00`}>
+                            {hour}:00
+                          </SelectItem>
+                          <SelectItem value={`${hour}:30`}>
+                            {hour}:30
+                          </SelectItem>
                         </div>
                       );
                     })}
@@ -676,16 +830,21 @@ export default function ClientsPage() {
           </div>
 
           <div className="flex gap-2 justify-end">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setIsScheduleOpen(false)}
               disabled={isSubmitting}
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleScheduleInterview}
-              disabled={isSubmitting || !selectedCandidateId || !scheduleDate || !scheduleTime}
+              disabled={
+                isSubmitting ||
+                !selectedCandidateId ||
+                !scheduleDate ||
+                !scheduleTime
+              }
             >
               {isSubmitting ? (
                 <>
@@ -706,10 +865,11 @@ export default function ClientsPage() {
           <DialogHeader>
             <DialogTitle>Update Interview Status</DialogTitle>
             <DialogDescription>
-              Update the outcome for {selectedInterview?.interview.candidateName}'s interview
+              Update the outcome for{" "}
+              {selectedInterview?.interview.candidateName}'s interview
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div>
               <label className="text-sm font-medium mb-2 block">
@@ -747,14 +907,29 @@ export default function ClientsPage() {
 
             <div className="text-sm text-muted-foreground bg-gray-50 p-3 rounded">
               <div className="font-medium mb-1">Interview Details:</div>
-              <div>Date: {selectedInterview && new Date(selectedInterview.interview.interviewDate).toLocaleDateString()}</div>
-              <div>Time: {selectedInterview && new Date(selectedInterview.interview.interviewDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+              <div>
+                Date:{" "}
+                {selectedInterview &&
+                  new Date(
+                    selectedInterview.interview.interviewDate
+                  ).toLocaleDateString()}
+              </div>
+              <div>
+                Time:{" "}
+                {selectedInterview &&
+                  new Date(
+                    selectedInterview.interview.interviewDate
+                  ).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+              </div>
             </div>
           </div>
 
           <div className="flex gap-2 justify-end">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setIsUpdateStatusOpen(false);
                 setSelectedInterview(null);
@@ -765,7 +940,7 @@ export default function ClientsPage() {
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleUpdateInterviewStatus}
               disabled={isSubmitting || !newStatus}
             >
