@@ -39,7 +39,7 @@ export const columns: ColumnDef<Job>[] = [
     cell: ({ row }) => {
       const jobId = row.original.jobId;
       return jobId ? (
-        <div className="font-mono text-xs bg-muted/50 px-2 py-1 rounded text-center min-w-fit max-w-[80px]">
+        <div className="font-mono text-xs bg-muted/50 px-1.5 py-1 rounded text-center min-w-fit max-w-[70px]">
           <span className="hidden lg:inline">{jobId}</span>
           <span className="lg:hidden">{jobId.split("-")[0]}</span>
         </div>
@@ -47,7 +47,10 @@ export const columns: ColumnDef<Job>[] = [
         <span className="text-muted-foreground text-xs">—</span>
       );
     },
-    size: 80,
+    size: 70,
+    meta: {
+      className: "hidden sm:table-cell", // Hide on mobile to save space
+    },
   },
   {
     accessorKey: "title",
@@ -139,17 +142,17 @@ export const columns: ColumnDef<Job>[] = [
       const salary = row.original.salaryRange;
       return (
         <div
-          className="text-xs font-medium min-w-0 max-w-[100px] truncate"
+          className="text-xs font-medium min-w-0 max-w-[90px] truncate"
           title={salary}
         >
           {salary ? (
             <>
-              <span className="hidden lg:inline">{salary}</span>
-              <span className="lg:hidden">
+              <span className="hidden xl:inline">{salary}</span>
+              <span className="xl:hidden">
                 {salary.includes("-")
                   ? `${salary.split("-")[0].trim()}+`
-                  : salary.length > 8
-                  ? `${salary.substring(0, 8)}...`
+                  : salary.length > 6
+                  ? `${salary.substring(0, 6)}...`
                   : salary}
               </span>
             </>
@@ -159,7 +162,10 @@ export const columns: ColumnDef<Job>[] = [
         </div>
       );
     },
-    size: 100,
+    size: 90,
+    meta: {
+      className: "hidden md:table-cell", // Hide on mobile to save space
+    },
   },
   {
     accessorKey: "tags",
@@ -170,34 +176,47 @@ export const columns: ColumnDef<Job>[] = [
         return <span className="text-muted-foreground text-xs">—</span>;
       }
 
-      // Responsive tag display
+      // More aggressive responsive tag display
       const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
-      const displayedTags = tags.slice(0, isMobile ? 1 : 2);
+      const isTablet =
+        typeof window !== "undefined" && window.innerWidth < 1024;
+
+      // Show fewer tags on smaller screens to save space
+      const maxTags = isMobile ? 1 : isTablet ? 1 : 2;
+      const displayedTags = tags.slice(0, maxTags);
       const extraCount = tags.length - displayedTags.length;
 
       return (
-        <div className="flex flex-wrap gap-1 min-w-0 max-w-[120px]">
+        <div
+          className="flex flex-wrap gap-0.5 min-w-0 max-w-[100px]"
+          title={tags.join(", ")}
+        >
           {displayedTags.map((tag) => (
             <Badge
               key={tag}
               variant="outline"
-              className="px-1.5 py-0 text-xs max-w-full truncate"
+              className="px-1 py-0 text-xs max-w-full truncate"
             >
-              <span className="hidden md:inline">{tag}</span>
-              <span className="md:hidden">
-                {tag.length > 4 ? `${tag.substring(0, 4)}...` : tag}
+              <span className="hidden lg:inline">
+                {tag.length > 8 ? `${tag.substring(0, 8)}...` : tag}
+              </span>
+              <span className="lg:hidden">
+                {tag.length > 3 ? `${tag.substring(0, 3)}...` : tag}
               </span>
             </Badge>
           ))}
           {extraCount > 0 && (
-            <Badge variant="outline" className="px-1.5 py-0 text-xs">
+            <Badge
+              variant="outline"
+              className="px-1 py-0 text-xs text-muted-foreground"
+            >
               +{extraCount}
             </Badge>
           )}
         </div>
       );
     },
-    size: 120,
+    size: 100,
   },
   {
     accessorKey: "updatedAt",
@@ -253,6 +272,9 @@ export const columns: ColumnDef<Job>[] = [
       }
     },
     size: 80,
+    meta: {
+      className: "hidden lg:table-cell", // Hide on mobile/tablet to save space
+    },
   },
   {
     id: "actions",
