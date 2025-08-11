@@ -207,7 +207,7 @@ export default function ImportPage() {
 
       // Make the actual API call to the backend
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || ""}/api/resume/parse`,
+        `${import.meta.env.VITE_API_URL || ""}/resume/parse`,
         {
           method: "POST",
           headers: {
