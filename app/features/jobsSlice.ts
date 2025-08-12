@@ -38,6 +38,9 @@ export const jobsSlice = createSlice({
   name: "jobs",
   initialState,
   reducers: {
+    setJobs: (state, action: PayloadAction<Job[]>) => {
+      state.jobs = action.payload;
+    },
     setSearchTerm: (state, action: PayloadAction<string>) => {
       state.searchTerm = action.payload;
     },
@@ -80,6 +83,7 @@ export const jobsSlice = createSlice({
 });
 
 export const {
+  setJobs,
   setSearchTerm,
   setSelectedStatus,
   setSelectedCategory,

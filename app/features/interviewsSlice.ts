@@ -150,6 +150,9 @@ export const interviewsSlice = createSlice({
   name: "interviews",
   initialState,
   reducers: {
+    setInterviews: (state, action: PayloadAction<Interview[]>) => {
+      state.interviews = action.payload;
+    },
     setSelectedInterview: (state, action: PayloadAction<Interview | null>) => {
       state.selectedInterview = action.payload;
     },
@@ -233,6 +236,7 @@ export const interviewsSlice = createSlice({
 });
 
 export const {
+  setInterviews,
   setSelectedInterview,
   setFilterStatus,
   setFilterOutcome,

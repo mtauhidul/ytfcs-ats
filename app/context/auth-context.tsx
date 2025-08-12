@@ -57,11 +57,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const auth = getAuth();
     let isMounted = true;
+    const MIN_LOADING_TIME = 1000; // Minimum 1 second loading to prevent flashing
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!isMounted) return;
 
+      const startTime = Date.now();
       setLoading(true);
+      setError(null); // Clear any previous errors
 
       try {
         if (firebaseUser) {
@@ -92,11 +95,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               hasPassword, // Include the hasPassword property
             };
 
-            setUser(authUser);
+            // Ensure minimum loading time before setting user
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+            setTimeout(() => {
+              if (isMounted) {
+                setUser(authUser);
+                setLoading(false);
+              }
+            }, remainingTime);
+            return;
           } else {
             // User exists in Firebase but not in teamMembers collection
-            console.warn("User authenticated but not found in teamMembers");
-            setUser(null);
+            // Wait minimum time before showing error
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+            setTimeout(() => {
+              if (isMounted) {
+                console.warn("User authenticated but not found in teamMembers collection");
+                setError("User not found in team members. Please contact your administrator.");
+                setUser(null);
+                setLoading(false);
+              }
+            }, remainingTime);
+            return;
           }
         } else {
           // User is signed out
@@ -104,15 +128,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } catch (err) {
         console.error("Error in auth state changed:", err);
-        if (isMounted) {
-          setError("Authentication error");
-          setUser(null);
-        }
-      } finally {
+        
+        // Ensure minimum loading time before showing error
+        const elapsedTime = Date.now() - startTime;
+        const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+        setTimeout(() => {
+          if (isMounted) {
+            setError("Authentication error. Please try again.");
+            setUser(null);
+            setLoading(false);
+          }
+        }, remainingTime);
+        return;
+      }
+
+      // For sign out case, respect minimum loading time
+      const elapsedTime = Date.now() - startTime;
+      const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+      setTimeout(() => {
         if (isMounted) {
           setLoading(false);
         }
-      }
+      }, remainingTime);
     });
 
     // Cleanup subscription

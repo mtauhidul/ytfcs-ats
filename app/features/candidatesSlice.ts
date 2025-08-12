@@ -1,4 +1,3 @@
-// app/features/candidatesSlice.ts
 import type { PayloadAction } from "@reduxjs/toolkit";
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
@@ -13,6 +12,8 @@ interface CandidatesState {
   selectedCategory: string;
   loading: boolean;
   error: string | null;
+  lastFetched: string | null;
+  isInitialized: boolean;
 }
 
 const initialState: CandidatesState = {
@@ -23,9 +24,10 @@ const initialState: CandidatesState = {
   selectedCategory: "all",
   loading: false,
   error: null,
+  lastFetched: null,
+  isInitialized: false,
 };
 
-// Async thunk for fetching candidates
 export const fetchCandidates = createAsyncThunk(
   "candidates/fetchCandidates",
   async () => {
@@ -42,6 +44,11 @@ export const candidatesSlice = createSlice({
   name: "candidates",
   initialState,
   reducers: {
+    setCandidates: (state, action: PayloadAction<Candidate[]>) => {
+      state.candidates = action.payload;
+      state.lastFetched = new Date().toISOString();
+      state.isInitialized = true;
+    },
     setSearchTerm: (state, action: PayloadAction<string>) => {
       state.searchTerm = action.payload;
     },
@@ -86,6 +93,7 @@ export const candidatesSlice = createSlice({
 });
 
 export const {
+  setCandidates,
   setSearchTerm,
   setSelectedStage,
   setSelectedCategory,
