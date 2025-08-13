@@ -85,6 +85,7 @@ export interface Candidate {
   // Metadata
   createdAt?: string;
   updatedAt?: string;
+  importedAt?: string;
   source?: string;
   status?: string;
 

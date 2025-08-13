@@ -33,6 +33,7 @@ export interface Application {
   reviewNotes?: string;
   rejectionReason?: string;
   candidateId?: string; // Set when converted to candidate
+  extractedData?: any; // Extracted data from resume parsing
   createdAt: string;
   updatedAt: string;
 }
