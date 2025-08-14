@@ -8,6 +8,7 @@ import {
   Layers3, // Changed from LayersIcon to Layers3
   Mail,
   MessageSquare, // Changed from MessageSquareText to MessageSquare
+  Settings,
   Tag,
   Upload,
   User,
@@ -78,9 +79,15 @@ const data = {
       isActive: false,
     },
     {
-      title: "Application Flow",
+      title: "Workflow Hub",
       url: "/dashboard/workflow",
       icon: Workflow,
+      isActive: false,
+    },
+    {
+      title: "Workflow Management",
+      url: "/dashboard/workflow/management",
+      icon: Settings,
       isActive: false,
     },
     {

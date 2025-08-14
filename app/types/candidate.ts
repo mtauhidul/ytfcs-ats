@@ -70,6 +70,9 @@ export interface Candidate {
   notes?: string;
   documents: CandidateDocument[];
 
+  // Job relationship
+  jobId?: string; // The job this candidate applied for
+  
   // Legacy resume fields
   resumeFileURL?: string;
   originalFilename?: string;

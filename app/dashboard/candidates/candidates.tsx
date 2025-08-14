@@ -185,6 +185,7 @@ export default function CandidatesPage() {
   const [modalStageId, setModalStageId] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
   const [modalCategory, setModalCategory] = useState("");
+  const [modalJobId, setModalJobId] = useState(""); // Job assignment
   const [modalHistory, setModalHistory] = useState<HistoryEntry[]>([]);
   const [modalNewHistory, setModalNewHistory] = useState("");
   const [modalExperience, setModalExperience] = useState("");
@@ -697,6 +698,16 @@ export default function CandidatesPage() {
       };
     }
 
+    // Check for job assignment changes
+    if (originalState.jobId !== modalJobId) {
+      const oldJobTitle = jobs.find((j) => j.id === originalState.jobId)?.title || "Unassigned";
+      const newJobTitle = jobs.find((j) => j.id === modalJobId)?.title || "Unassigned";
+      changes.jobAssignment = {
+        from: originalState.jobId ? oldJobTitle : "Unassigned",
+        to: modalJobId ? newJobTitle : "Unassigned",
+      };
+    }
+
     // Check for tags changes - handle array comparison
     if (JSON.stringify(originalState.tags) !== JSON.stringify(modalTags)) {
       changes.tags = {
@@ -801,6 +812,7 @@ export default function CandidatesPage() {
     setModalStageId(cand.stageId || UNASSIGNED_VALUE);
     setModalTags(cand.tags || []);
     setModalCategory(cand.category || NONE_CATEGORY_VALUE);
+    setModalJobId(cand.jobId || ""); // Initialize job assignment
     setModalHistory(cand.history || []);
 
     // Initialize with any existing communications from the candidate object
@@ -844,6 +856,7 @@ export default function CandidatesPage() {
       stageId: cand.stageId || UNASSIGNED_VALUE,
       tags: [...(cand.tags || [])],
       category: cand.category || NONE_CATEGORY_VALUE,
+      jobId: cand.jobId || "", // Track job assignment changes
       experience: cand.experience || "",
     });
   };
@@ -921,6 +934,7 @@ export default function CandidatesPage() {
         tags: modalTags,
         // Convert back from NONE_CATEGORY_VALUE to empty string for storage
         category: modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory,
+        jobId: modalJobId, // Save job assignment
         history: modalHistory,
         communications: modalCommunications,
         documents: modalDocuments, // Save documents
@@ -2154,6 +2168,40 @@ export default function CandidatesPage() {
                                 {stages.map((stage) => (
                                   <SelectItem key={stage.id} value={stage.id}>
                                     {stage.title}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <Label
+                              htmlFor="job"
+                              className="text-sm font-medium mb-2 block"
+                            >
+                              Job Assignment
+                            </Label>
+                            <Select
+                              value={modalJobId}
+                              onValueChange={setModalJobId}
+                            >
+                              <SelectTrigger id="job" className="w-full">
+                                <SelectValue placeholder="Select a job" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">
+                                  Unassigned
+                                </SelectItem>
+                                {jobs.map((job) => (
+                                  <SelectItem key={job.id} value={job.id}>
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{job.title}</span>
+                                      {job.department && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {job.department}
+                                        </span>
+                                      )}
+                                    </div>
                                   </SelectItem>
                                 ))}
                               </SelectContent>

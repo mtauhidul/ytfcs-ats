@@ -28,10 +28,16 @@ const initialState: JobsState = {
 export const fetchJobs = createAsyncThunk("jobs/fetchJobs", async () => {
   const q = query(collection(db, "jobs"), orderBy("createdAt", "desc"));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as Job[];
+  return snapshot.docs.map((doc) => {
+    const data = doc.data();
+    // Convert Firestore Timestamps to ISO strings for Redux serialization
+    return {
+      id: doc.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : data.createdAt,
+      updatedAt: data.updatedAt?.toDate?.() ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+    };
+  }) as Job[];
 });
 
 export const jobsSlice = createSlice({
