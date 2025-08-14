@@ -220,6 +220,7 @@ export default function ApplicationsPage() {
         resumeScoringDetails: application.resumeScoringDetails || null,
         scoredAgainstJobId: application.scoredAgainstJobId || null,
         scoredAgainstJobTitle: application.scoredAgainstJobTitle || null,
+        jobId: application.scoredAgainstJobId || undefined, // Add jobId from application
         source: application.source,
         tags: [],
         category: "General",
@@ -334,6 +335,7 @@ export default function ApplicationsPage() {
         resumeScoringDetails: application.resumeScoringDetails || null,
         scoredAgainstJobId: application.scoredAgainstJobId || null,
         scoredAgainstJobTitle: application.scoredAgainstJobTitle || null,
+        jobId: application.scoredAgainstJobId || undefined, // Add jobId from application
         source: application.source,
         tags: [],
         category: "General",

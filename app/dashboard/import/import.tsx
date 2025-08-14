@@ -393,6 +393,7 @@ export default function ImportPage() {
         resumeScoringDetails: parsedData.resumeScoringDetails || null,
         scoredAgainstJobId: selectedJobId || null,
         scoredAgainstJobTitle: selectedJob?.title || null,
+        jobId: selectedJobId || undefined, // Add jobId for job-specific workflows
         source: "manual_upload",
         status: "pending",
         createdAt: new Date().toISOString(),

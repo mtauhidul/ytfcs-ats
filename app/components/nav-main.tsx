@@ -31,8 +31,8 @@ const navigationGroups = {
     items: ["Applications"],
   },
   jobs: {
-    label: "Job Management",
-    items: ["Jobs List", "Application Flow", "Stages"],
+    label: "Job Management", 
+    items: ["Jobs List", "Workflow Hub", "Workflow Management"],
   },
   candidates: {
     label: "Candidate Management",
