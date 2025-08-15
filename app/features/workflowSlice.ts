@@ -13,6 +13,7 @@ import {
   writeBatch
 } from "firebase/firestore";
 import { db } from "~/lib/firebase";
+import { WorkflowErrorHandler, withWorkflowErrorHandling, validateWorkflow } from "~/lib/workflow-error-handler";
 import type { Stage } from "~/types";
 
 // Workflow Template Interface
@@ -70,53 +71,59 @@ const initialState: WorkflowState = {
 // Async thunks for job workflow management
 export const fetchJobWorkflow = createAsyncThunk(
   "workflow/fetchJobWorkflow",
-  async (jobId: string) => {
-    // Fetch job workflow document
-    const jobWorkflowQuery = query(
-      collection(db, "jobWorkflows"),
-      where("jobId", "==", jobId)
-    );
-    const jobWorkflowSnapshot = await getDocs(jobWorkflowQuery);
-    
-    if (jobWorkflowSnapshot.empty) {
-      return { jobId, stages: [] };
+  async (jobId: string, { rejectWithValue }) => {
+    try {
+      return await withWorkflowErrorHandling(async () => {
+        // Fetch job workflow document
+        const jobWorkflowQuery = query(
+          collection(db, "jobWorkflows"),
+          where("jobId", "==", jobId)
+        );
+        const jobWorkflowSnapshot = await getDocs(jobWorkflowQuery);
+        
+        if (jobWorkflowSnapshot.empty) {
+          return { jobId, stages: [] };
+        }
+        
+        const jobWorkflowDoc = jobWorkflowSnapshot.docs[0];
+        const jobWorkflow = {
+          id: jobWorkflowDoc.id,
+          ...jobWorkflowDoc.data()
+        } as JobWorkflow;
+        
+        // Fetch referenced stages
+        if (jobWorkflow.stageIds.length === 0) {
+          return { jobId, stages: [] };
+        }
+        
+        const stagesQuery = query(
+          collection(db, "stages"),
+          where("__name__", "in", jobWorkflow.stageIds)
+        );
+        const stagesSnapshot = await getDocs(stagesQuery);
+        
+        const stages = stagesSnapshot.docs
+          .map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : data.createdAt,
+              updatedAt: data.updatedAt?.toDate?.() ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+            };
+          })
+          .sort((a, b) => {
+            // Sort by the order in stageIds array
+            const aIndex = jobWorkflow.stageIds.indexOf(a.id);
+            const bIndex = jobWorkflow.stageIds.indexOf(b.id);
+            return aIndex - bIndex;
+          }) as Stage[];
+        
+        return { jobId, stages };
+      }, 'fetchWorkflow');
+    } catch (error) {
+      return rejectWithValue(WorkflowErrorHandler.handleError(error, 'fetchWorkflow'));
     }
-    
-    const jobWorkflowDoc = jobWorkflowSnapshot.docs[0];
-    const jobWorkflow = {
-      id: jobWorkflowDoc.id,
-      ...jobWorkflowDoc.data()
-    } as JobWorkflow;
-    
-    // Fetch referenced stages
-    if (jobWorkflow.stageIds.length === 0) {
-      return { jobId, stages: [] };
-    }
-    
-    const stagesQuery = query(
-      collection(db, "stages"),
-      where("__name__", "in", jobWorkflow.stageIds)
-    );
-    const stagesSnapshot = await getDocs(stagesQuery);
-    
-    const stages = stagesSnapshot.docs
-      .map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : data.createdAt,
-          updatedAt: data.updatedAt?.toDate?.() ? data.updatedAt.toDate().toISOString() : data.updatedAt,
-        };
-      })
-      .sort((a, b) => {
-        // Sort by the order in stageIds array
-        const aIndex = jobWorkflow.stageIds.indexOf(a.id);
-        const bIndex = jobWorkflow.stageIds.indexOf(b.id);
-        return aIndex - bIndex;
-      }) as Stage[];
-    
-    return { jobId, stages };
   }
 );
 
@@ -130,49 +137,61 @@ export const createJobWorkflowFromTemplate = createAsyncThunk(
     jobId: string; 
     jobTitle: string; 
     templateId: string; 
-  }) => {
-    // Fetch template by document ID directly
-    const templateDoc = await getDocs(
-      query(collection(db, "workflowTemplates"))
-    );
-    
-    const templateSnapshot = templateDoc.docs.find(doc => doc.id === templateId);
-    
-    if (!templateSnapshot) {
-      throw new Error("Template not found");
+  }, { rejectWithValue }) => {
+    try {
+      return await withWorkflowErrorHandling(async () => {
+        // Fetch template by document ID directly
+        const templateDoc = await getDocs(
+          query(collection(db, "workflowTemplates"))
+        );
+        
+        const templateSnapshot = templateDoc.docs.find(doc => doc.id === templateId);
+        
+        if (!templateSnapshot) {
+          throw new Error("Template not found");
+        }
+        
+        const template = {
+          id: templateSnapshot.id,
+          ...templateSnapshot.data()
+        } as WorkflowTemplate;
+        
+        // Validate template data
+        const validation = validateWorkflow(template, 'template');
+        if (!validation.isValid) {
+          throw new Error(`Invalid template: ${validation.error?.message}`);
+        }
+        
+        // Create job workflow document that references stage IDs (no duplication)
+        const jobWorkflowRef = doc(collection(db, "jobWorkflows"));
+        const jobWorkflow: JobWorkflow = {
+          id: jobWorkflowRef.id,
+          jobId,
+          jobTitle,
+          stageIds: template.stageIds, // Reference existing stages, don't duplicate
+          templateId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        await addDoc(collection(db, "jobWorkflows"), jobWorkflow);
+        
+        // Fetch the actual stage data for the UI (but don't duplicate in DB)
+        const stagesQuery = query(
+          collection(db, "stages"),
+          where("__name__", "in", template.stageIds)
+        );
+        const stagesSnapshot = await getDocs(stagesQuery);
+        const stages = stagesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Stage[];
+        
+        return { jobId, stages };
+      }, 'createWorkflow');
+    } catch (error) {
+      return rejectWithValue(WorkflowErrorHandler.handleError(error, 'createWorkflow'));
     }
-    
-    const template = {
-      id: templateSnapshot.id,
-      ...templateSnapshot.data()
-    } as WorkflowTemplate;
-    
-    // Create job workflow document that references stage IDs (no duplication)
-    const jobWorkflowRef = doc(collection(db, "jobWorkflows"));
-    const jobWorkflow: JobWorkflow = {
-      id: jobWorkflowRef.id,
-      jobId,
-      jobTitle,
-      stageIds: template.stageIds, // Reference existing stages, don't duplicate
-      templateId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    
-    await addDoc(collection(db, "jobWorkflows"), jobWorkflow);
-    
-    // Fetch the actual stage data for the UI (but don't duplicate in DB)
-    const stagesQuery = query(
-      collection(db, "stages"),
-      where("__name__", "in", template.stageIds)
-    );
-    const stagesSnapshot = await getDocs(stagesQuery);
-    const stages = stagesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Stage[];
-    
-    return { jobId, stages };
   }
 );
 
@@ -382,6 +401,34 @@ export const deleteWorkflowTemplate = createAsyncThunk(
   }
 );
 
+export const deleteJobWorkflow = createAsyncThunk(
+  "workflow/deleteJobWorkflow",
+  async (jobId: string, { rejectWithValue }) => {
+    try {
+      return await withWorkflowErrorHandling(async () => {
+        // Find the job workflow document
+        const jobWorkflowQuery = query(
+          collection(db, "jobWorkflows"),
+          where("jobId", "==", jobId)
+        );
+        const jobWorkflowSnapshot = await getDocs(jobWorkflowQuery);
+        
+        if (jobWorkflowSnapshot.empty) {
+          throw new Error("Job workflow not found");
+        }
+        
+        // Delete the job workflow document
+        const jobWorkflowDoc = jobWorkflowSnapshot.docs[0];
+        await deleteDoc(doc(db, "jobWorkflows", jobWorkflowDoc.id));
+        
+        return jobId;
+      }, 'deleteJobWorkflow');
+    } catch (error) {
+      return rejectWithValue(WorkflowErrorHandler.handleError(error, 'deleteJobWorkflow'));
+    }
+  }
+);
+
 export const workflowSlice = createSlice({
   name: "workflow",
   initialState,
@@ -512,6 +559,13 @@ export const workflowSlice = createSlice({
       // Delete template
       .addCase(deleteWorkflowTemplate.fulfilled, (state, action) => {
         state.templates = state.templates.filter(t => t.id !== action.payload);
+      })
+      
+      // Delete job workflow
+      .addCase(deleteJobWorkflow.fulfilled, (state, action) => {
+        const jobId = action.payload;
+        delete state.jobWorkflows[jobId];
+        delete state.lastFetched[jobId];
       });
   },
 });

@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams, useNavigate } from "react-router";
 import { toast, Toaster } from "sonner";
 import { db } from "~/lib/firebase";
 
@@ -97,6 +98,9 @@ interface JobInfo {
 }
 
 export default function WorkflowPage() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  
   const [jobs, setJobs] = useState<JobInfo[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [stages, setStages] = useState<Stage[]>([]);
@@ -111,6 +115,18 @@ export default function WorkflowPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dragScroll, setDragScroll] = useState({ x: 0, y: 0 });
   const boardRef = useRef<HTMLDivElement>(null);
+  
+  // Track if job was set from URL to avoid infinite loops
+  const [jobSetFromUrl, setJobSetFromUrl] = useState(false);
+
+  // Function to handle job selection changes (both from dropdown and URL)
+  const handleJobChange = (jobId: string, updateUrl = true) => {
+    setSelectedJobId(jobId);
+    if (updateUrl && jobId) {
+      // Update URL without causing a page reload
+      navigate(`/dashboard/workflow?job=${jobId}`, { replace: true });
+    }
+  };
 
   // Auto-scroll during drag
   const handleDragMove = (e: MouseEvent) => {
@@ -175,6 +191,33 @@ export default function WorkflowPage() {
     };
   }, [isDragging, dragScroll]);
 
+  // Handle URL parameters for auto-selecting job (only on initial load or URL change)
+  useEffect(() => {
+    const jobIdFromUrl = searchParams.get('job');
+    
+    // Only set from URL if we haven't already set it from URL, or if it's a different job
+    if (jobIdFromUrl && (!jobSetFromUrl || jobIdFromUrl !== selectedJobId)) {
+      // Verify the job exists in the jobs list before selecting it
+      if (jobs.length > 0) {
+        const jobExists = jobs.some(job => job.id === jobIdFromUrl);
+        if (jobExists) {
+          handleJobChange(jobIdFromUrl, false); // Don't update URL since we're reading from URL
+          setJobSetFromUrl(true);
+          console.log("📍 Auto-selected job from URL parameter:", jobIdFromUrl);
+        } else {
+          console.warn("⚠️ Job from URL parameter not found:", jobIdFromUrl);
+          // Clear the invalid job parameter from URL
+          navigate('/dashboard/workflow', { replace: true });
+        }
+      } else if (!jobSetFromUrl) {
+        // Jobs not loaded yet, set the selectedJobId anyway - it will be validated when jobs load
+        setSelectedJobId(jobIdFromUrl);
+        setJobSetFromUrl(true);
+        console.log("📍 Pre-selected job from URL parameter (pending validation):", jobIdFromUrl);
+      }
+    }
+  }, [searchParams, jobs, selectedJobId, jobSetFromUrl, navigate]);
+
   // Subscribe to jobs
   useEffect(() => {
     const q = query(collection(db, "jobs"));
@@ -190,9 +233,10 @@ export default function WorkflowPage() {
       });
       setJobs(jobList);
       
-      // Auto-select first job if none selected and jobs exist
-      if (!selectedJobId && jobList.length > 0) {
-        setSelectedJobId(jobList[0].id);
+      // Auto-select first job if none selected and jobs exist (and no URL parameter)
+      const jobIdFromUrl = searchParams.get('job');
+      if (!selectedJobId && jobList.length > 0 && !jobIdFromUrl) {
+        handleJobChange(jobList[0].id);
       }
       
       setLoading(false);
@@ -510,7 +554,7 @@ export default function WorkflowPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+            <Select value={selectedJobId} onValueChange={handleJobChange}>
               <SelectTrigger className="w-[280px]">
                 <SelectValue placeholder="Select a job" />
               </SelectTrigger>

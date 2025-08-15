@@ -103,7 +103,7 @@ export default function StagesPage() {
     try {
       setIsSubmitting(true);
       const maxOrder = stages.length
-        ? Math.max(...stages.map((s) => s.order))
+        ? Math.max(...stages.map((s) => s.order || 0))
         : 0;
 
       // Generate a default color based on order
@@ -249,7 +249,7 @@ export default function StagesPage() {
       setIsReordering(true);
 
       // Sort stages by current order
-      const orderedStages = [...stages].sort((a, b) => a.order - b.order);
+      const orderedStages = [...stages].sort((a, b) => (a.order || 0) - (b.order || 0));
 
       // Update each stage with sequential order
       const updates = orderedStages.map((stage, index) => {
