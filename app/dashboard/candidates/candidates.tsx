@@ -501,7 +501,7 @@ export default function CandidatesPage() {
   // 3. Real-time Firestore tags
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "tags"), (snapshot) => {
-      const list = snapshot.docs.map((d) => d.data().name) as string[];
+      const list = snapshot.docs.map((d) => d.data().name).filter((name) => name && name.trim() !== "") as string[];
       setAllTags(list);
     });
     return () => unsubscribe();
@@ -2165,7 +2165,7 @@ export default function CandidatesPage() {
                                 <SelectItem value={UNASSIGNED_VALUE}>
                                   Unassigned
                                 </SelectItem>
-                                {stages.map((stage) => (
+                                {stages.filter((stage) => stage.id && stage.id.trim() !== "").map((stage) => (
                                   <SelectItem key={stage.id} value={stage.id}>
                                     {stage.title}
                                   </SelectItem>
@@ -2189,10 +2189,10 @@ export default function CandidatesPage() {
                                 <SelectValue placeholder="Select a job" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">
+                                <SelectItem value={UNASSIGNED_VALUE}>
                                   Unassigned
                                 </SelectItem>
-                                {jobs.map((job) => (
+                                {jobs.filter((job) => job.id && job.id.trim() !== "").map((job) => (
                                   <SelectItem key={job.id} value={job.id}>
                                     <div className="flex flex-col">
                                       <span className="font-medium">{job.title}</span>
@@ -2386,7 +2386,7 @@ export default function CandidatesPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {allTags
-                                    .filter((tag) => !modalTags.includes(tag))
+                                    .filter((tag) => tag && tag.trim() !== "" && !modalTags.includes(tag))
                                     .map((tag) => (
                                       <SelectItem key={tag} value={tag}>
                                         {tag}
@@ -2959,7 +2959,7 @@ export default function CandidatesPage() {
                                   <SelectValue placeholder="Select a job to score against" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {jobs.map((job) => (
+                                  {jobs.filter((job) => job.id && job.id.trim() !== "").map((job) => (
                                     <SelectItem key={job.id} value={job.id}>
                                       {job.title}
                                     </SelectItem>
@@ -3084,7 +3084,7 @@ export default function CandidatesPage() {
                   <SelectValue placeholder="Select a stage" />
                 </SelectTrigger>
                 <SelectContent>
-                  {stages.map((stage) => (
+                  {stages.filter((stage) => stage.id && stage.id.trim() !== "").map((stage) => (
                     <SelectItem key={stage.id} value={stage.id}>
                       {stage.title}
                     </SelectItem>
@@ -3121,7 +3121,7 @@ export default function CandidatesPage() {
                   <SelectValue placeholder="Select tag to add" />
                 </SelectTrigger>
                 <SelectContent>
-                  {allTags.map((tag) => (
+                  {allTags.filter((tag) => tag && tag.trim() !== "").map((tag) => (
                     <SelectItem key={tag} value={tag}>
                       {tag}
                     </SelectItem>

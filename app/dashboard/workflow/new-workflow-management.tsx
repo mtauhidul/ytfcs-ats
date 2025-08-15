@@ -14,6 +14,7 @@ import {
   Copy,
   Edit3,
   Eye,
+  Layers,
   Plus,
   RefreshCw,
   Settings,
@@ -185,7 +186,9 @@ function NewWorkflowManagementBase() {
           console.log("🔄 Real-time job workflows update:", jobWorkflowsData.length, "workflows");
         }, (error) => {
           console.error("❌ Error listening to job workflows:", error);
-          toast.error("Failed to sync job workflows in real-time");
+          toast.error("Failed to sync job workflows in real-time", {
+            description: "Some data may not be up to date"
+          });
         });
 
         // Store the unsubscriber for cleanup
@@ -217,16 +220,22 @@ function NewWorkflowManagementBase() {
           console.log("🔄 Real-time stages update:", stagesData.length, "stages");
         }, (error) => {
           console.error("❌ Error listening to stages:", error);
-          toast.error("Failed to sync stages in real-time");
+          toast.error("Failed to sync stages in real-time", {
+            description: "Stage data may not be up to date"
+          });
         });
 
         // Store stages unsubscriber for cleanup as well
         setStagesUnsubscriber(() => unsubscribeStages);
         
-        toast.success("Workflow management initialized with real-time updates");
+        toast.success("Workflow management initialized with real-time updates", {
+          description: "Real-time synchronization is now active"
+        });
       } catch (error) {
         console.error("Failed to initialize workflow data:", error);
-        toast.error("Failed to initialize workflow management");
+        toast.error("Failed to initialize workflow management", {
+          description: "Please refresh the page or contact support"
+        });
       }
     };
 
@@ -267,11 +276,15 @@ function NewWorkflowManagementBase() {
   // Handle stage creation
   const handleCreateStage = async () => {
     if (!newStage.title.trim()) {
-      toast.error("Please enter a stage title");
+      toast.error("Stage title is required", {
+        description: "Please enter a descriptive name for the stage"
+      });
       return;
     }
 
     try {
+      toast.loading("Creating stage...", { id: "create-stage" });
+      
       // Calculate the next order
       const maxOrder = stages.length > 0 
         ? Math.max(...stages.map(s => s.order || 0)) 
@@ -297,10 +310,16 @@ function NewWorkflowManagementBase() {
       });
       setIsCreatingStage(false);
       
-      toast.success(`Stage "${newStage.title}" created successfully`);
+      toast.success(`Stage "${newStage.title}" created successfully`, {
+        id: "create-stage",
+        description: "Stage is now available for workflow templates"
+      });
     } catch (error) {
       console.error("Failed to create stage:", error);
-      toast.error("Failed to create stage. Please try again.");
+      toast.error("Failed to create stage", {
+        id: "create-stage",
+        description: "Please try again or contact support if the issue persists"
+      });
     }
   };
 
@@ -308,14 +327,26 @@ function NewWorkflowManagementBase() {
   const handleDeleteStage = async (stageId: string) => {
     const stageToDelete = stages.find(s => s.id === stageId);
     
+    if (!confirm(`Are you sure you want to delete the stage "${stageToDelete?.title || 'Unknown'}"?\n\nThis action cannot be undone and will remove the stage from all templates.`)) {
+      return;
+    }
+    
     try {
+      toast.loading("Deleting stage...", { id: "delete-stage" });
+      
       await deleteDoc(doc(db, "stages", stageId));
       dispatch(setStages(stages.filter((stage) => stage.id !== stageId)));
       
-      toast.success(`Stage "${stageToDelete?.title || 'Unknown'}" deleted successfully`);
+      toast.success(`Stage "${stageToDelete?.title || 'Unknown'}" deleted successfully`, {
+        id: "delete-stage",
+        description: "Stage has been removed from all templates"
+      });
     } catch (error) {
       console.error("Failed to delete stage:", error);
-      toast.error("Failed to delete stage. Please try again.");
+      toast.error("Failed to delete stage", {
+        id: "delete-stage",
+        description: "Please try again or contact support if the issue persists"
+      });
     }
   };
 
@@ -342,16 +373,22 @@ function NewWorkflowManagementBase() {
   // Handle template creation
   const handleCreateTemplate = async () => {
     if (!newTemplate.name.trim()) {
-      toast.error("Please enter a template name");
+      toast.error("Template name is required", {
+        description: "Please enter a descriptive name for the template"
+      });
       return;
     }
 
     if (newTemplate.stages.length === 0) {
-      toast.error("Please select at least one stage for the template");
+      toast.error("At least one stage is required", {
+        description: "Please select workflow stages for the template"
+      });
       return;
     }
 
     try {
+      toast.loading("Creating template...", { id: "create-template" });
+      
       const templateData = {
         name: newTemplate.name,
         description: newTemplate.description,
@@ -367,10 +404,16 @@ function NewWorkflowManagementBase() {
       setNewTemplate({ name: "", description: "", category: "", stages: [] });
       setIsCreatingTemplate(false);
       
-      toast.success(`Template "${newTemplate.name}" created successfully`);
+      toast.success(`Template "${newTemplate.name}" created successfully`, {
+        id: "create-template",
+        description: `Template with ${newTemplate.stages.length} stages is ready to use`
+      });
     } catch (error) {
       console.error("Failed to create template:", error);
-      toast.error("Failed to create template. Please try again.");
+      toast.error("Failed to create template", {
+        id: "create-template",
+        description: "Please try again or contact support if the issue persists"
+      });
     }
   };
 
@@ -495,7 +538,9 @@ function NewWorkflowManagementBase() {
   // Handle job workflow setup
   const handleSetupJobWorkflow = async () => {
     if (!selectedJob || !selectedTemplate) {
-      toast.error("Please select both a job and a template");
+      toast.error("Job and template selection required", {
+        description: "Please select both a job position and a workflow template"
+      });
       return;
     }
 
@@ -504,14 +549,20 @@ function NewWorkflowManagementBase() {
       const template = templates.find((t) => t.id === selectedTemplate);
       
       if (!job) {
-        toast.error("Selected job not found");
+        toast.error("Selected job not found", {
+          description: "The job position may have been deleted"
+        });
         return;
       }
       
       if (!template) {
-        toast.error("Selected template not found");
+        toast.error("Selected template not found", {
+          description: "The workflow template may have been deleted"
+        });
         return;
       }
+
+      toast.loading("Setting up workflow...", { id: "setup-workflow" });
 
       await dispatch(
         createJobWorkflowFromTemplate({
@@ -528,102 +579,160 @@ function NewWorkflowManagementBase() {
       setSelectedTemplate("");
       setIsSettingUpWorkflow(false);
       
-      toast.success(`Workflow setup completed for "${job.title}" using "${template.name}" template`);
+      toast.success(`Workflow setup completed for "${job.title}"`, {
+        id: "setup-workflow",
+        description: `Using "${template.name}" template with ${template.stageIds?.length || 0} stages`
+      });
     } catch (error) {
       console.error("Failed to setup job workflow:", error);
-      toast.error("Failed to setup job workflow. Please try again.");
+      toast.error("Failed to setup job workflow", {
+        id: "setup-workflow",
+        description: "Please try again or contact support if the issue persists"
+      });
     }
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Workflow Management</h1>
-          <p className="text-muted-foreground">
-            Manage workflow templates and job workflows
-          </p>
+    <div className="space-y-8 p-6">
+      {/* Clean Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 border-b border-gray-200">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Workflow className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Workflow Management</h1>
+            <p className="text-sm text-gray-600 hidden sm:block">
+              Configure recruitment workflows and templates
+            </p>
+          </div>
         </div>
-        <Badge variant="secondary" className="px-3 py-1">
-          <Activity className="h-4 w-4 mr-1" />
-          {Object.keys(jobWorkflows).length} Active
-        </Badge>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Badge variant="secondary" className="px-2 py-1 bg-gray-100 text-gray-700 border-0">
+            {Object.keys(jobWorkflows).length} Active
+          </Badge>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleInitializeWorkflowData}
+            disabled={isInitializing}
+            className="bg-white hover:bg-gray-50 border-gray-300 text-sm"
+          >
+            {isInitializing ? (
+              <>
+                <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                <span className="hidden sm:inline">Initializing...</span>
+                <span className="sm:hidden">Init...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-3 w-3 mr-1" />
+                <span className="hidden sm:inline">Initialize</span>
+                <span className="sm:hidden">Init</span>
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="dashboard" className="flex items-center gap-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+        <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 bg-muted/30 p-1 h-auto">
+          <TabsTrigger 
+            value="dashboard" 
+            className="flex items-center gap-2 text-sm font-medium h-10 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
             <BarChart3 className="h-4 w-4" />
-            Overview
+            <span className="hidden sm:inline">Overview</span>
+            <span className="sm:hidden">Home</span>
           </TabsTrigger>
-          <TabsTrigger value="templates" className="flex items-center gap-2">
+          <TabsTrigger 
+            value="templates" 
+            className="flex items-center gap-2 text-sm font-medium h-10 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
             <Copy className="h-4 w-4" />
-            Templates ({templates.length})
+            <span className="hidden sm:inline">Templates ({templates.length})</span>
+            <span className="sm:hidden">Templates</span>
           </TabsTrigger>
-          <TabsTrigger value="jobs" className="flex items-center gap-2">
+          <TabsTrigger 
+            value="jobs" 
+            className="flex items-center gap-2 text-sm font-medium h-10 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
             <Target className="h-4 w-4" />
-            Jobs ({loadedJobWorkflows.length})
+            <span className="hidden sm:inline">Jobs ({loadedJobWorkflows.length})</span>
+            <span className="sm:hidden">Jobs</span>
           </TabsTrigger>
-          <TabsTrigger value="stages" className="flex items-center gap-2">
+          <TabsTrigger 
+            value="stages" 
+            className="flex items-center gap-2 text-sm font-medium h-10 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+          >
             <Settings className="h-4 w-4" />
-            Stages ({stages.length})
+            <span className="hidden sm:inline">Stages ({stages.length})</span>
+            <span className="sm:hidden">Stages</span>
           </TabsTrigger>
         </TabsList>
 
         {/* Dashboard Tab */}
-        <TabsContent value="dashboard" className="space-y-6">
+        <TabsContent value="dashboard" className="space-y-8">
           {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5" />
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Zap className="h-5 w-5 text-primary" />
+                </div>
                 Quick Actions
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                 <Button
                   variant="outline"
-                  className="h-auto p-4 flex flex-col items-center gap-2"
+                  className="h-auto p-6 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-200 border-border/60 hover:border-primary/30 bg-gradient-to-br from-background to-accent/10"
                   onClick={() => {
                     setActiveTab("templates");
                     setTimeout(() => setIsCreatingTemplate(true), 100);
                   }}
                 >
-                  <Plus className="h-6 w-6" />
+                  <div className="p-3 bg-primary/10 rounded-xl">
+                    <Plus className="h-6 w-6 text-primary" />
+                  </div>
                   <div className="text-center">
-                    <p className="font-medium">Create Template</p>
-                    <p className="text-xs text-muted-foreground">
-                      Build workflow template
+                    <p className="font-semibold text-foreground">Create Template</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Build reusable workflow template
                     </p>
                   </div>
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-auto p-4 flex flex-col items-center gap-2"
+                  className="h-auto p-6 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-200 border-border/60 hover:border-primary/30 bg-gradient-to-br from-background to-accent/10"
                   onClick={() => {
                     setActiveTab("jobs");
                     setTimeout(() => setIsSettingUpWorkflow(true), 100);
                   }}
                 >
-                  <Target className="h-6 w-6" />
+                  <div className="p-3 bg-primary/10 rounded-xl">
+                    <Target className="h-6 w-6 text-primary" />
+                  </div>
                   <div className="text-center">
-                    <p className="font-medium">Setup Workflow</p>
-                    <p className="text-xs text-muted-foreground">
-                      Configure job pipeline
+                    <p className="font-semibold text-foreground">Setup Workflow</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Configure job recruitment pipeline
                     </p>
                   </div>
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-auto p-4 flex flex-col items-center gap-2"
+                  className="h-auto p-6 flex flex-col items-center gap-3 hover:shadow-md transition-all duration-200 border-border/60 hover:border-primary/30 bg-gradient-to-br from-background to-accent/10"
                   onClick={() => setActiveTab("stages")}
                 >
-                  <Settings className="h-6 w-6" />
+                  <div className="p-3 bg-primary/10 rounded-xl">
+                    <Settings className="h-6 w-6 text-primary" />
+                  </div>
                   <div className="text-center">
-                    <p className="font-medium">Manage Stages</p>
-                    <p className="text-xs text-muted-foreground">
-                      Configure stages
+                    <p className="font-semibold text-foreground">Manage Stages</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Configure workflow stages
                     </p>
                   </div>
                 </Button>
@@ -632,54 +741,68 @@ function NewWorkflowManagementBase() {
           </Card>
 
           {/* Statistics */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card className="border-border/60 shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Total Jobs</p>
-                    <p className="text-2xl font-bold">{workflowStats.totalJobs}</p>
+                    <p className="text-3xl font-bold text-foreground mt-1">{workflowStats.totalJobs}</p>
                   </div>
-                  <Users className="h-8 w-8 text-muted-foreground" />
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-xl">
+                    <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-border/60 shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">With Workflows</p>
-                    <p className="text-2xl font-bold">{workflowStats.jobsWithWorkflow}</p>
+                    <p className="text-3xl font-bold text-foreground mt-1">{workflowStats.jobsWithWorkflow}</p>
                   </div>
-                  <CheckCircle className="h-8 w-8 text-muted-foreground" />
+                  <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-xl">
+                    <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-border/60 shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Templates</p>
-                    <p className="text-2xl font-bold">{workflowStats.totalTemplates}</p>
+                    <p className="text-3xl font-bold text-foreground mt-1">{workflowStats.totalTemplates}</p>
                   </div>
-                  <Copy className="h-8 w-8 text-muted-foreground" />
+                  <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-xl">
+                    <Copy className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-border/60 shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Coverage</p>
-                    <p className="text-2xl font-bold">{workflowStats.workflowCoverage}%</p>
+                    <p className="text-3xl font-bold text-foreground mt-1">{workflowStats.workflowCoverage}%</p>
                   </div>
-                  <TrendingUp className="h-8 w-8 text-muted-foreground" />
+                  <div className="p-3 bg-orange-100 dark:bg-orange-900/20 rounded-xl">
+                    <TrendingUp className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                  </div>
                 </div>
                 <div className="mt-4">
-                  <Progress value={workflowStats.workflowCoverage} className="h-2" />
+                  <Progress 
+                    value={workflowStats.workflowCoverage} 
+                    className="h-2" 
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {workflowStats.jobsWithWorkflow} of {workflowStats.totalJobs} jobs configured
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -689,41 +812,50 @@ function NewWorkflowManagementBase() {
         {/* Templates Tab */}
         <TabsContent value="templates" className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Workflow Templates</h2>
-            <Button onClick={() => setIsCreatingTemplate(true)}>
+            <div>
+              <h2 className="text-2xl font-semibold text-foreground">Workflow Templates</h2>
+              <p className="text-muted-foreground">Create and manage reusable workflow templates</p>
+            </div>
+            <Button onClick={() => setIsCreatingTemplate(true)} className="bg-primary hover:bg-primary/90">
               <Plus className="h-4 w-4 mr-2" />
               Create Template
             </Button>
           </div>
 
           {templatesLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="h-6 w-6 animate-spin mr-2" />
-              <span>Loading templates...</span>
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center">
+                <div className="bg-gradient-to-br from-primary/10 to-primary/5 p-4 rounded-xl mb-4 w-fit mx-auto">
+                  <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                </div>
+                <span className="text-muted-foreground font-medium">Loading templates...</span>
+              </div>
             </div>
           ) : templates.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <Workflow className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Templates</h3>
-                <p className="text-muted-foreground mb-4">
-                  Create your first workflow template
+            <Card className="border-border/60 shadow-sm">
+              <CardContent className="text-center py-16">
+                <div className="bg-gradient-to-br from-primary/10 to-primary/5 p-6 rounded-2xl mb-6 w-fit mx-auto">
+                  <Workflow className="h-12 w-12 text-primary" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-foreground">No Templates Yet</h3>
+                <p className="text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
+                  Create your first workflow template to standardize recruitment processes across different job positions.
                 </p>
-                <Button onClick={() => setIsCreatingTemplate(true)}>
+                <Button onClick={() => setIsCreatingTemplate(true)} className="bg-primary hover:bg-primary/90">
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Template
+                  Create First Template
                 </Button>
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
               {templates.map((template) => (
-                <Card key={template.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h4 className="font-semibold">{template.name}</h4>
-                        <Badge variant="secondary" className="text-xs mt-1">
+                <Card key={template.id} className="border border-gray-200 hover:border-gray-300 transition-colors group bg-white">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 text-lg mb-2">{template.name}</h4>
+                        <Badge variant="secondary" className="text-xs px-2 py-1 bg-gray-100 text-gray-700 border-0">
                           {template.category}
                         </Badge>
                       </div>
@@ -731,22 +863,24 @@ function NewWorkflowManagementBase() {
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDeleteTemplate(template.id)}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="text-gray-500 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-2"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                     
                     {template.description && (
-                      <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                      <p className="text-sm text-gray-600 mb-4 line-clamp-2 leading-relaxed">
                         {template.description}
                       </p>
                     )}
                     
-                    <div className="space-y-2">
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Stages:</span>
-                        <span>{template.stageIds?.length || 0}</span>
+                        <span className="text-gray-600 font-medium">Stages:</span>
+                        <Badge variant="outline" className="text-xs border-gray-300">
+                          {template.stageIds?.length || 0} stages
+                        </Badge>
                       </div>
                       
                       <div className="flex gap-1 flex-wrap">
@@ -754,23 +888,23 @@ function NewWorkflowManagementBase() {
                           const stage = stages.find(s => s.id === stageId);
                           if (!stage) return null;
                           return (
-                            <Badge key={stageId} variant="outline" className="text-xs">
+                            <Badge key={stageId} variant="outline" className="text-xs border-gray-300 bg-gray-100">
                               {stage.title}
                             </Badge>
                           );
                         })}
                         {(template.stageIds?.length || 0) > 3 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{(template.stageIds?.length || 0) - 3}
+                          <Badge variant="outline" className="text-xs border-gray-300 bg-gray-100">
+                            +{(template.stageIds?.length || 0) - 3} more
                           </Badge>
                         )}
                       </div>
                       
-                      <div className="flex gap-2 pt-2">
+                      <div className="flex gap-2 pt-3 border-t border-gray-200">
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          className="flex-1"
+                          className="flex-1 bg-white hover:bg-gray-50 border-gray-300"
                           onClick={() => handleViewTemplate(template)}
                         >
                           <Eye className="h-3 w-3 mr-1" />
@@ -779,7 +913,7 @@ function NewWorkflowManagementBase() {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          className="flex-1"
+                          className="flex-1 bg-white hover:bg-gray-50 border-gray-300"
                           onClick={() => handleEditTemplate(template)}
                         >
                           <Edit3 className="h-3 w-3 mr-1" />
@@ -797,29 +931,34 @@ function NewWorkflowManagementBase() {
         {/* Job Workflows Tab */}
         <TabsContent value="jobs" className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Job Workflows</h2>
-            <Button onClick={() => setIsSettingUpWorkflow(true)}>
+            <div>
+              <h2 className="text-2xl font-semibold text-foreground">Job Workflows</h2>
+              <p className="text-muted-foreground">Manage workflows for specific job positions</p>
+            </div>
+            <Button onClick={() => setIsSettingUpWorkflow(true)} className="bg-primary hover:bg-primary/90">
               <Plus className="h-4 w-4 mr-2" />
               Setup Workflow
             </Button>
           </div>
 
           {loadedJobWorkflows.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Job Workflows</h3>
-                <p className="text-muted-foreground mb-4">
-                  Set up workflows for your job positions
+            <Card className="border-border/60 shadow-sm">
+              <CardContent className="text-center py-16">
+                <div className="bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-900/20 dark:to-orange-800/10 p-6 rounded-2xl mb-6 w-fit mx-auto border border-orange-200 dark:border-orange-800/30">
+                  <Target className="h-12 w-12 text-orange-600 dark:text-orange-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-foreground">No Job Workflows</h3>
+                <p className="text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
+                  Configure workflows for your job positions to manage candidates through structured recruitment stages.
                 </p>
-                <Button onClick={() => setIsSettingUpWorkflow(true)}>
+                <Button onClick={() => setIsSettingUpWorkflow(true)} className="bg-primary hover:bg-primary/90">
                   <Plus className="h-4 w-4 mr-2" />
-                  Setup Workflow
+                  Setup First Workflow
                 </Button>
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
               {loadedJobWorkflows.map((jobWorkflow) => {
                 const job = jobs.find((j) => j.id === jobWorkflow.jobId);
                 const template = templates.find((t) => t.id === jobWorkflow.templateId);
@@ -828,39 +967,51 @@ function NewWorkflowManagementBase() {
                   [];
                 
                 return (
-                  <Card key={jobWorkflow.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h4 className="font-semibold">{job?.title || "Unknown Job"}</h4>
+                  <Card key={jobWorkflow.id} className="border border-gray-200 hover:border-gray-300 transition-colors group bg-white">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-900 text-lg mb-1">{job?.title || "Unknown Job"}</h4>
                           {job?.department && (
-                            <p className="text-sm text-muted-foreground">{job.department}</p>
+                            <p className="text-sm text-gray-600 mb-2">{job.department}</p>
                           )}
                           {template && (
-                            <p className="text-xs text-muted-foreground">Template: {template.name}</p>
+                            <Badge variant="secondary" className="text-xs px-2 py-1 bg-gray-100 text-gray-700 border-0">
+                              {template.name}
+                            </Badge>
                           )}
                         </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {workflowStages.length} stages
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-xs border-border/60 bg-accent/20">
+                            {workflowStages.length} stages
+                          </Badge>
+                          <Button 
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteJobWorkflow(jobWorkflow.jobId)}
+                            className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity p-2"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                       
-                      <div className="space-y-2">
+                      <div className="space-y-4">
                         <div className="flex gap-1 flex-wrap">
                           {workflowStages.slice(0, 3).map((stage: any, index: number) => (
-                            <Badge key={index} variant="outline" className="text-xs">
+                            <Badge key={index} variant="outline" className="text-xs border-border/60 bg-accent/20">
                               {stage?.title || 'Unknown Stage'}
                             </Badge>
                           ))}
                           {workflowStages.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{workflowStages.length - 3}
+                            <Badge variant="outline" className="text-xs border-border/60 bg-muted/30">
+                              +{workflowStages.length - 3} more
                             </Badge>
                           )}
                         </div>
                         
                         <div className="flex gap-2 pt-2">
-                          <Button variant="outline" size="sm" className="flex-1" asChild>
+                          <Button variant="outline" size="sm" className="flex-1 bg-background/80 hover:bg-accent/80" asChild>
                             <Link to={`/dashboard/workflow?job=${jobWorkflow.jobId}`}>
                               <Eye className="h-3 w-3 mr-1" />
                               View Board
@@ -869,19 +1020,11 @@ function NewWorkflowManagementBase() {
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            className="flex-1"
+                            className="flex-1 bg-background/80 hover:bg-accent/80"
                             onClick={() => handleEditJobWorkflow(jobWorkflow)}
                           >
                             <Edit3 className="h-3 w-3 mr-1" />
                             Edit
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleDeleteJobWorkflow(jobWorkflow.jobId)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>
@@ -897,19 +1040,19 @@ function NewWorkflowManagementBase() {
         <TabsContent value="stages" className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold">Stages</h2>
-              <p className="text-sm text-muted-foreground">
-                Manage global stages for workflow templates
+              <h2 className="text-2xl font-semibold text-foreground">Workflow Stages</h2>
+              <p className="text-muted-foreground">
+                Create and manage stages for building workflow templates
               </p>
             </div>
-            <Button onClick={() => setIsCreatingStage(true)}>
+            <Button onClick={() => setIsCreatingStage(true)} className="bg-primary hover:bg-primary/90">
               <Plus className="h-4 w-4 mr-2" />
               Create Stage
             </Button>
           </div>
 
           {stages.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
               {stages
                 .filter((stage, index, self) => {
                   if (!stage || !stage.id) return false;
@@ -928,12 +1071,12 @@ function NewWorkflowManagementBase() {
                   if (isHexColor) {
                     // New format: hex color
                     borderColor = stage.color;
-                    bgColor = stage.color + '10'; // Very light background
+                    bgColor = stage.color + '08'; // Very subtle background
                     textColor = stage.color;
-                    cardClasses = 'relative p-3 rounded-lg border-2 hover:shadow-sm transition-all duration-200 bg-opacity-10';
+                    cardClasses = 'relative p-4 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors group bg-white';
                   } else {
                     // Existing format: CSS classes
-                    cardClasses = `${stage.color || 'bg-gray-50 border-gray-200 text-gray-700'} relative p-3 rounded-lg border-2 hover:shadow-sm transition-all duration-200`;
+                    cardClasses = `${stage.color || 'bg-gray-50 border-gray-200 text-gray-700'} relative p-4 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors group bg-white`;
                     // Extract border color from CSS classes for consistency
                     const borderColorMatch = stage.color?.match(/border-(\w+)-(\d+)/);
                     borderColor = borderColorMatch ? `var(--${borderColorMatch[1]}-${borderColorMatch[2]})` : '#e5e7eb';
@@ -944,66 +1087,58 @@ function NewWorkflowManagementBase() {
                       key={stage.id}
                       className={cardClasses}
                       style={isHexColor ? { 
-                        borderLeftColor: borderColor,
-                        borderLeftWidth: '4px',
-                        backgroundColor: bgColor,
-                        color: textColor
+                        borderTopColor: borderColor,
+                        borderTopWidth: '3px',
+                        backgroundColor: bgColor
                       } : { 
-                        borderLeftWidth: '4px'
+                        borderTopWidth: '3px'
                       }}
                     >
-                      {/* Header */}
-                      <div className="flex items-start justify-between mb-2">
+                      {/* Compact Header */}
+                      <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div
                             className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: isHexColor ? borderColor : undefined }}
+                            style={{ backgroundColor: isHexColor ? borderColor : '#6b7280' }}
                           />
-                          <h4 className="font-medium text-xs truncate">{stage.title}</h4>
+                          <h4 className="font-medium text-sm text-gray-900 truncate">{stage.title}</h4>
+                          <Badge variant="secondary" className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 border-0 ml-auto">
+                            {templateCount}
+                          </Badge>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteStage(stage.id)}
-                            className="h-5 w-5 p-0 text-gray-400 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteStage(stage.id)}
+                          className="h-6 w-6 p-0 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
                       
                       {/* Description */}
                       {stage.description && (
-                        <p className="text-xs opacity-70 mb-2 line-clamp-1">
+                        <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
                           {stage.description}
                         </p>
                       )}
-                      
-                      {/* Footer */}
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono opacity-60 text-xs">
-                          {templateCount} {templateCount === 1 ? 'template' : 'templates'}
-                        </span>
-                        <span className="text-xs opacity-50" title={stage.color}>
-                          {isHexColor ? 'color' : 'styled'}
-                        </span>
-                      </div>
                     </div>
                   );
                 })}
             </div>
           ) : (
-            <Card>
-              <CardContent className="text-center py-12">
-                <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Stages</h3>
-                <p className="text-muted-foreground mb-4">
-                  Create global stages for your workflow templates
+            <Card className="border-border/60 shadow-sm">
+              <CardContent className="text-center py-16">
+                <div className="bg-gradient-to-br from-primary/10 to-primary/5 p-6 rounded-2xl mb-6 w-fit mx-auto">
+                  <Settings className="h-12 w-12 text-primary" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3 text-foreground">No Stages Created</h3>
+                <p className="text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
+                  Create global stages that can be reused across multiple workflow templates to standardize your recruitment process.
                 </p>
-                <Button onClick={() => setIsCreatingStage(true)}>
+                <Button onClick={() => setIsCreatingStage(true)} className="bg-primary hover:bg-primary/90">
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Stage
+                  Create First Stage
                 </Button>
               </CardContent>
             </Card>
@@ -1013,57 +1148,70 @@ function NewWorkflowManagementBase() {
 
       {/* Template Creation Modal */}
       <Dialog open={isCreatingTemplate} onOpenChange={setIsCreatingTemplate}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader className="pb-4">
-            <DialogTitle>Create Workflow Template</DialogTitle>
+        <DialogContent className="max-w-2xl border-border/40 shadow-2xl">
+          <DialogHeader className="pb-8 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-4 text-xl font-bold">
+              <div className="p-3 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl border border-primary/20">
+                <Copy className="h-6 w-6 text-primary" />
+              </div>
+              Create Workflow Template
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Create a reusable workflow template that can be applied to multiple jobs
+            </p>
           </DialogHeader>
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="template-name">Template Name</Label>
+          <div className="space-y-8 py-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <Label htmlFor="template-name" className="text-sm font-semibold text-foreground">Template Name</Label>
                 <Input
                   id="template-name"
-                  placeholder="Engineering Workflow"
+                  placeholder="e.g., Engineering Workflow"
                   value={newTemplate.name}
                   onChange={(e) =>
                     setNewTemplate({ ...newTemplate, name: e.target.value })
                   }
+                  className="bg-background/90 border-border/50 focus:border-primary/70 h-11 rounded-lg shadow-sm transition-all duration-200"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="template-category">Category</Label>
+              <div className="space-y-3">
+                <Label htmlFor="template-category" className="text-sm font-semibold text-foreground">Category</Label>
                 <Input
                   id="template-category"
-                  placeholder="Engineering"
+                  placeholder="e.g., Engineering, Sales"
                   value={newTemplate.category}
                   onChange={(e) =>
                     setNewTemplate({ ...newTemplate, category: e.target.value })
                   }
+                  className="bg-background/90 border-border/50 focus:border-primary/70 h-11 rounded-lg shadow-sm transition-all duration-200"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="template-description">Description</Label>
+            <div className="space-y-3">
+              <Label htmlFor="template-description" className="text-sm font-semibold text-foreground">Description</Label>
               <Textarea
                 id="template-description"
-                placeholder="Describe this workflow template..."
+                placeholder="Describe the purpose and use case of this workflow template..."
                 value={newTemplate.description}
                 onChange={(e) =>
                   setNewTemplate({ ...newTemplate, description: e.target.value })
                 }
-                rows={3}
+                rows={4}
+                className="bg-background/90 border-border/50 focus:border-primary/70 rounded-lg shadow-sm resize-none transition-all duration-200"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>Select Stages</Label>
-              <div className="grid grid-cols-2 gap-3 mt-2 max-h-48 overflow-y-auto border rounded-lg p-4 bg-gray-50">
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-semibold text-foreground">Select Workflow Stages</Label>
+                <p className="text-xs text-muted-foreground mt-1">Choose stages that will be part of this template</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-3 max-h-56 overflow-y-auto border border-border/40 rounded-xl p-5 bg-gradient-to-br from-muted/10 to-muted/5 shadow-inner">
                 {stages.map((stage) => (
-                  <div key={stage.id} className="flex items-center space-x-3 p-2 hover:bg-white rounded">
+                  <label key={stage.id} className="flex items-center space-x-3 p-3 hover:bg-background/90 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-sm border border-transparent hover:border-border/30">
                     <input
                       type="checkbox"
-                      id={`stage-${stage.id}`}
                       checked={newTemplate.stages.includes(stage.id)}
                       onChange={(e) => {
                         if (e.target.checked) {
@@ -1080,33 +1228,37 @@ function NewWorkflowManagementBase() {
                           });
                         }
                       }}
-                      className="rounded border-gray-300"
+                      className="rounded border-border/60 text-primary focus:ring-primary"
                     />
-                    <label
-                      htmlFor={`stage-${stage.id}`}
-                      className="text-sm cursor-pointer flex items-center gap-2"
-                    >
+                    <div className="flex items-center gap-2 flex-1">
                       <div
                         className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: stage.color }}
                       />
-                      {stage.title}
-                    </label>
-                  </div>
+                      <span className="text-sm font-medium">{stage.title}</span>
+                    </div>
+                  </label>
                 ))}
               </div>
+              {newTemplate.stages.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {newTemplate.stages.length} stage{newTemplate.stages.length !== 1 ? 's' : ''} selected
+                </p>
+              )}
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex justify-end gap-4 pt-8 border-t border-border/40">
               <Button
                 variant="outline"
                 onClick={() => setIsCreatingTemplate(false)}
+                className="px-6 h-11 border-border/50 hover:bg-accent/80 transition-all duration-200 font-medium"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleCreateTemplate}
                 disabled={!newTemplate.name.trim() || newTemplate.stages.length === 0}
+                className="px-6 h-11 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 shadow-md hover:shadow-lg transition-all duration-200 font-medium"
               >
                 Create Template
               </Button>
@@ -1118,14 +1270,19 @@ function NewWorkflowManagementBase() {
       {/* Job Workflow Setup Modal */}
       <Dialog open={isSettingUpWorkflow} onOpenChange={setIsSettingUpWorkflow}>
         <DialogContent className="max-w-md">
-          <DialogHeader className="pb-4">
-            <DialogTitle>Setup Job Workflow</DialogTitle>
+          <DialogHeader className="pb-6">
+            <DialogTitle className="flex items-center gap-3 text-xl">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Target className="h-5 w-5 text-primary" />
+              </div>
+              Setup Job Workflow
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="job-select">Select Job</Label>
+            <div className="space-y-3">
+              <Label htmlFor="job-select" className="text-sm font-medium">Select Job Position</Label>
               <Select value={selectedJob} onValueChange={setSelectedJob}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-background/80 border-border/60 focus:border-primary">
                   <SelectValue placeholder="Choose a job position" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1134,11 +1291,13 @@ function NewWorkflowManagementBase() {
                       .filter((job) => !jobWorkflows[job.id])
                       .map((job) => (
                         <SelectItem key={job.id} value={job.id}>
-                          <div className="flex flex-col items-start">
+                          <div className="flex flex-col items-start py-1">
                             <div className="font-medium">{job.title}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {job.department}
-                            </div>
+                            {job.department && (
+                              <div className="text-xs text-muted-foreground">
+                                {job.department}
+                              </div>
+                            )}
                           </div>
                         </SelectItem>
                       ))
@@ -1151,20 +1310,20 @@ function NewWorkflowManagementBase() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="template-select">Select Template</Label>
+            <div className="space-y-3">
+              <Label htmlFor="template-select" className="text-sm font-medium">Select Workflow Template</Label>
               <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-background/80 border-border/60 focus:border-primary">
                   <SelectValue placeholder="Choose a workflow template" />
                 </SelectTrigger>
                 <SelectContent>
                   {templates && templates.length > 0 ? (
                     templates.map((template) => (
                       <SelectItem key={template.id} value={template.id}>
-                        <div className="flex flex-col items-start">
+                        <div className="flex flex-col items-start py-1">
                           <div className="font-medium">{template.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            {template.stageIds?.length || 0} stages
+                            {template.stageIds?.length || 0} stages • {template.category}
                           </div>
                         </div>
                       </SelectItem>
@@ -1178,16 +1337,30 @@ function NewWorkflowManagementBase() {
               </Select>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            {selectedJob && selectedTemplate && (
+              <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium text-foreground">Ready to Setup</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This will create a workflow for the selected job using the chosen template.
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-6 border-t border-border/30">
               <Button
                 variant="outline"
                 onClick={() => setIsSettingUpWorkflow(false)}
+                className="hover:bg-accent/80"
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleSetupJobWorkflow}
                 disabled={!selectedJob || !selectedTemplate}
+                className="bg-primary hover:bg-primary/90"
               >
                 Setup Workflow
               </Button>
@@ -1199,37 +1372,44 @@ function NewWorkflowManagementBase() {
       {/* Stage Creation Modal */}
       <Dialog open={isCreatingStage} onOpenChange={setIsCreatingStage}>
         <DialogContent className="max-w-lg">
-          <DialogHeader className="pb-4">
-            <DialogTitle>Create New Stage</DialogTitle>
+          <DialogHeader className="pb-6">
+            <DialogTitle className="flex items-center gap-3 text-xl">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Settings className="h-5 w-5 text-primary" />
+              </div>
+              Create New Stage
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="stage-title">Stage Title</Label>
+            <div className="space-y-3">
+              <Label htmlFor="stage-title" className="text-sm font-medium">Stage Name</Label>
               <Input
                 id="stage-title"
-                placeholder="Application Review"
+                placeholder="e.g., Application Review, Phone Screen"
                 value={newStage.title}
                 onChange={(e) =>
                   setNewStage({ ...newStage, title: e.target.value })
                 }
+                className="bg-background/80 border-border/60 focus:border-primary"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="stage-description">Description</Label>
+            <div className="space-y-3">
+              <Label htmlFor="stage-description" className="text-sm font-medium">Description (Optional)</Label>
               <Textarea
                 id="stage-description"
-                placeholder="Describe this stage..."
+                placeholder="Describe the purpose and activities in this stage..."
                 value={newStage.description}
                 onChange={(e) =>
                   setNewStage({ ...newStage, description: e.target.value })
                 }
                 rows={3}
+                className="bg-background/80 border-border/60 focus:border-primary resize-none"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="stage-color">Color</Label>
+            <div className="space-y-3">
+              <Label htmlFor="stage-color" className="text-sm font-medium">Stage Color</Label>
               <div className="flex items-center gap-3">
                 <Input
                   id="stage-color"
@@ -1238,7 +1418,7 @@ function NewWorkflowManagementBase() {
                   onChange={(e) =>
                     setNewStage({ ...newStage, color: e.target.value })
                   }
-                  className="w-16 h-10 p-1 border rounded"
+                  className="w-16 h-10 p-1 border rounded-lg cursor-pointer"
                 />
                 <Input
                   value={newStage.color}
@@ -1246,28 +1426,39 @@ function NewWorkflowManagementBase() {
                     setNewStage({ ...newStage, color: e.target.value })
                   }
                   placeholder="#3b82f6"
-                  className="flex-1 text-sm font-mono"
+                  className="flex-1 text-sm font-mono bg-background/80 border-border/60 focus:border-primary"
                 />
               </div>
               <div 
-                className="p-3 rounded border text-center text-sm"
+                className="p-4 rounded-xl border-2 text-center text-sm font-medium transition-all"
                 style={{ 
-                  backgroundColor: newStage.color + '20', // 20% opacity
+                  backgroundColor: newStage.color + '15', // 15% opacity
                   borderColor: newStage.color,
                   color: newStage.color
                 }}
               >
-                Preview: {newStage.title || "Stage Name"}
+                <div className="flex items-center justify-center gap-2">
+                  <div 
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: newStage.color }}
+                  />
+                  Preview: {newStage.title || "Stage Name"}
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button variant="outline" onClick={() => setIsCreatingStage(false)}>
+            <div className="flex justify-end gap-3 pt-6 border-t border-border/30">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsCreatingStage(false)}
+                className="hover:bg-accent/80"
+              >
                 Cancel
               </Button>
               <Button
                 onClick={handleCreateStage}
                 disabled={!newStage.title.trim()}
+                className="bg-primary hover:bg-primary/90"
               >
                 Create Stage
               </Button>
@@ -1278,27 +1469,41 @@ function NewWorkflowManagementBase() {
 
       {/* Template View Modal */}
       <Dialog open={!!viewingTemplate} onOpenChange={() => setViewingTemplate(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader className="pb-4">
-            <DialogTitle>View Template: {viewingTemplate?.name}</DialogTitle>
+        <DialogContent className="max-w-2xl border-border/40 shadow-2xl">
+          <DialogHeader className="pb-8 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-4 text-xl font-bold">
+              <div className="p-3 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl border border-primary/20">
+                <Eye className="h-6 w-6 text-primary" />
+              </div>
+              View Template: {viewingTemplate?.name}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Review the details and configuration of this workflow template
+            </p>
           </DialogHeader>
           {viewingTemplate && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium">Template Name</Label>
-                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{viewingTemplate.name}</p>
+            <div className="space-y-8 py-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-foreground">Template Name</Label>
+                  <div className="p-4 bg-gradient-to-br from-muted/10 to-muted/5 rounded-lg border border-border/30">
+                    <p className="text-sm font-medium">{viewingTemplate.name}</p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-sm font-medium">Category</Label>
-                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{viewingTemplate.category || 'General'}</p>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-foreground">Category</Label>
+                  <div className="p-4 bg-gradient-to-br from-muted/10 to-muted/5 rounded-lg border border-border/30">
+                    <p className="text-sm font-medium">{viewingTemplate.category || 'General'}</p>
+                  </div>
                 </div>
               </div>
               
               {viewingTemplate.description && (
-                <div>
-                  <Label className="text-sm font-medium">Description</Label>
-                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{viewingTemplate.description}</p>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-foreground">Description</Label>
+                  <div className="p-4 bg-gradient-to-br from-muted/10 to-muted/5 rounded-lg border border-border/30">
+                    <p className="text-sm leading-relaxed">{viewingTemplate.description}</p>
+                  </div>
                 </div>
               )}
               
@@ -1326,15 +1531,23 @@ function NewWorkflowManagementBase() {
 
       {/* Template Edit Modal */}
       <Dialog open={!!editingTemplate} onOpenChange={() => setEditingTemplate(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader className="pb-4">
-            <DialogTitle>Edit Template</DialogTitle>
+        <DialogContent className="max-w-2xl border-border/40 shadow-2xl">
+          <DialogHeader className="pb-8 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-4 text-xl font-bold">
+              <div className="p-3 bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl border border-primary/20">
+                <Edit3 className="h-6 w-6 text-primary" />
+              </div>
+              Edit Template
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Modify the template name, category, description and stages
+            </p>
           </DialogHeader>
           {editingTemplate && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-template-name">Template Name</Label>
+            <div className="space-y-8 py-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <Label htmlFor="edit-template-name" className="text-sm font-semibold text-foreground">Template Name</Label>
                   <Input
                     id="edit-template-name"
                     placeholder="Engineering Workflow"
@@ -1342,10 +1555,11 @@ function NewWorkflowManagementBase() {
                     onChange={(e) =>
                       setEditingTemplate({ ...editingTemplate, name: e.target.value })
                     }
+                    className="bg-background/90 border-border/50 focus:border-primary/70 h-11 rounded-lg shadow-sm transition-all duration-200"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-template-category">Category</Label>
+                <div className="space-y-3">
+                  <Label htmlFor="edit-template-category" className="text-sm font-semibold text-foreground">Category</Label>
                   <Input
                     id="edit-template-category"
                     placeholder="Engineering"
