@@ -301,13 +301,13 @@ export const initializeDefaultTemplates = async (db: any) => {
   try {
     // Check if templates already exist
     const { getDocs, collection } = await import("firebase/firestore");
-    const templatesSnapshot = await getDocs(collection(db, "workflow_templates"));
+    const templatesSnapshot = await getDocs(collection(db, "workflowTemplates"));
     
     if (templatesSnapshot.empty) {
       // Add default templates
       const { addDoc } = await import("firebase/firestore");
       const promises = DEFAULT_WORKFLOW_TEMPLATES.map(template => 
-        addDoc(collection(db, "workflow_templates"), {
+        addDoc(collection(db, "workflowTemplates"), {
           ...template,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),

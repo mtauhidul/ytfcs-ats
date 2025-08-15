@@ -101,19 +101,79 @@ export const defaultStages = [
   { title: "Withdrawn", color: "#6b7280", order: 21 },
 ];
 
-// Seed the database with default stages and templates - DISABLED TO PREVENT AUTO-POPULATION
+// Seed the database with default stages and templates
 export async function seedWorkflowData() {
   try {
-    console.log("Auto-seeding disabled to prevent unwanted data population");
-    return { success: true, message: "Auto-seeding disabled" };
+    console.log("🌱 Starting workflow data seeding...");
+
+    // First, seed stages if they don't exist
+    const stagesQuery = query(collection(db, "stages"));
+    const stagesSnapshot = await getDocs(stagesQuery);
+    
+    if (stagesSnapshot.empty) {
+      console.log("📝 Seeding default stages...");
+      const stagePromises = defaultStages.map(stage => 
+        addDoc(collection(db, "stages"), {
+          ...stage,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+      );
+      await Promise.all(stagePromises);
+      console.log("✅ Default stages created successfully");
+    } else {
+      console.log("📋 Stages already exist, skipping stage creation");
+    }
+
+    // Then, seed workflow templates if they don't exist
+    const templatesQuery = query(collection(db, "workflowTemplates"));
+    const templatesSnapshot = await getDocs(templatesQuery);
+    
+    if (templatesSnapshot.empty) {
+      console.log("📋 Seeding default workflow templates...");
+      
+      // Get all stages to map stage titles to IDs
+      const allStages = stagesSnapshot.empty 
+        ? await getDocs(query(collection(db, "stages")))
+        : stagesSnapshot;
+      
+      const stageMap = allStages.docs.reduce((acc, doc) => {
+        const stage = doc.data();
+        const key = stage.title.toLowerCase().replace(/\s+/g, "-");
+        acc[key] = doc.id;
+        return acc;
+      }, {} as Record<string, string>);
+
+      // Create templates with actual stage IDs
+      const templatePromises = defaultWorkflowTemplates.map(template => {
+        const stageIds = template.stages
+          .map(stage => stageMap[stage.stageId] || allStages.docs[0]?.id)
+          .filter(Boolean);
+
+        return addDoc(collection(db, "workflowTemplates"), {
+          ...template,
+          stageIds, // Convert stage references to actual IDs
+          stages: undefined, // Remove the old stages array
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      });
+
+      await Promise.all(templatePromises);
+      console.log("✅ Default workflow templates created successfully");
+    } else {
+      console.log("📋 Templates already exist, skipping template creation");
+    }
+
+    return { success: true, message: "Workflow data seeded successfully" };
   } catch (error) {
-    console.error("Error in disabled seeder:", error);
+    console.error("❌ Error seeding workflow data:", error);
     return { success: false, error };
   }
 }
 
-// Function to call from the UI to initialize data - DISABLED
+// Function to call from the UI to initialize data
 export function initializeWorkflowData() {
-  console.log("Manual data initialization disabled - create stages manually");
-  return { success: true, message: "Auto-initialization disabled" };
+  console.log("🚀 Manually initializing workflow data...");
+  return seedWorkflowData();
 }

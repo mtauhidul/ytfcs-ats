@@ -1,76 +1,76 @@
 // app/types/workflow.ts
 
-// Global Stages (existing, no changes needed)
+// Global Stages (existing, updated for consistency)
 export interface Stage {
   id: string;
   title: string;
+  description?: string;
   order: number;
-  color: string;
-  // Note: No jobId - stages are global building blocks
+  color: string; // Should be hex color for consistency
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Workflow Templates (new)
+// Workflow Templates (updated to match implementation)
 export interface WorkflowTemplate {
   id: string;
   name: string;
   description?: string;
   category?: string; // e.g., "Engineering", "Sales", "Marketing"
-  stages: TemplateStage[];
+  stageIds: string[]; // Reference to stage IDs, not full stage objects
   isDefault?: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
 }
 
-export interface TemplateStage {
-  stageId: string; // Reference to global stage
-  order: number;
-  customTitle?: string; // Override stage title if needed
-  customColor?: string; // Override stage color if needed
-}
+// DEPRECATED - Remove TemplateStage as it's not used in current implementation
+// export interface TemplateStage {
+//   stageId: string;
+//   order: number;
+//   customTitle?: string;
+//   customColor?: string;
+// }
 
-// Job-Specific Workflows (new)
+// Job-Specific Workflows (updated to match implementation)
 export interface JobWorkflow {
   id: string;
   jobId: string;
-  name?: string; // Optional custom name
+  jobTitle: string;
+  stageIds: string[]; // Reference to stage IDs
   templateId?: string; // Reference to template used (if any)
-  stages: JobWorkflowStage[];
-  isActive: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
 }
 
-export interface JobWorkflowStage {
-  id: string; // Unique ID for this workflow stage instance
-  stageId: string; // Reference to global stage
-  jobId: string;
-  order: number;
-  title: string; // Can be customized from global stage
-  color: string; // Can be customized from global stage
-  isActive: boolean;
-  createdAt: string;
-}
+// DEPRECATED - Remove JobWorkflowStage as stages are referenced, not duplicated
+// export interface JobWorkflowStage {
+//   id: string;
+//   stageId: string;
+//   jobId: string;
+//   order: number;
+//   title: string;
+//   color: string;
+//   isActive: boolean;
+//   createdAt: string;
+// }
 
-// For Redux state management
+// For Redux state management (updated to match actual implementation)
 export interface WorkflowState {
-  // Global stages
-  stages: Stage[];
-  stagesLoading: boolean;
-  stagesError: string | null;
+  // Job-specific workflows - maps jobId to array of stages
+  jobWorkflows: { [jobId: string]: Stage[] };
   
   // Templates
   templates: WorkflowTemplate[];
   templatesLoading: boolean;
   templatesError: string | null;
   
-  // Job workflows
-  jobWorkflows: { [jobId: string]: JobWorkflow };
-  jobWorkflowsLoading: boolean;
-  jobWorkflowsError: string | null;
+  // Loading states
+  loading: boolean;
+  error: string | null;
   
-  // Current active workflow
-  activeJobId: string | null;
-  activeWorkflow: JobWorkflow | null;
+  // Cache management
+  lastFetched: { [jobId: string]: number };
+  isInitialized: boolean;
 }

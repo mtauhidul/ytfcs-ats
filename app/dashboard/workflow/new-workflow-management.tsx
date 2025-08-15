@@ -4,6 +4,8 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  onSnapshot,
+  updateDoc,
 } from "firebase/firestore";
 import {
   Activity,
@@ -54,15 +56,19 @@ import {
   createWorkflowTemplate,
   createJobWorkflowFromTemplate,
   deleteWorkflowTemplate,
+  deleteJobWorkflow,
   removeStageFromJobWorkflow,
   addStageToJobWorkflow,
 } from "~/features/workflowSlice";
 import { db } from "~/lib/firebase";
+import { seedWorkflowData } from "~/lib/workflow-templates-seeder";
+import { WorkflowErrorHandler, withWorkflowErrorHandling } from "~/lib/workflow-error-handler";
+import WorkflowErrorBoundary from "./components/WorkflowErrorBoundary";
 import { workflowRealtimeService } from "~/services/workflowRealtimeService";
 import type { AppDispatch, RootState } from "~/store";
 import type { Stage } from "~/types";
 
-export default function NewWorkflowManagement() {
+function NewWorkflowManagementBase() {
   const dispatch = useDispatch<AppDispatch>();
   const { templates, jobWorkflows, loading, templatesLoading } = useSelector(
     (state: RootState) => state.workflow
@@ -85,42 +91,44 @@ export default function NewWorkflowManagement() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [loadedJobWorkflows, setLoadedJobWorkflows] = useState<any[]>([]);
 
+  // Real-time listener cleanup functions
+  const [jobWorkflowsUnsubscriber, setJobWorkflowsUnsubscriber] = useState<(() => void) | null>(null);
+  const [stagesUnsubscriber, setStagesUnsubscriber] = useState<(() => void) | null>(null);
+
   // Tab state
   const [activeTab, setActiveTab] = useState("dashboard");
 
   // State for stage management
   const [isCreatingStage, setIsCreatingStage] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [newStage, setNewStage] = useState({
     title: "",
     description: "",
     color: "#3b82f6", // Hex color for the color picker
   });
 
-  // Initialize real-time service and load data
-  useEffect(() => {
-    const initializeData = async () => {
-      try {
-        await workflowRealtimeService.initialize();
-        workflowRealtimeService.setupTemplatesListener();
-        workflowRealtimeService.setupConnectionMonitoring();
+  // State for template viewing/editing
+  const [viewingTemplate, setViewingTemplate] = useState<any>(null);
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
 
-        // Load essential data (removed auto-seeding)
+  // State for job workflow editing
+  const [editingJobWorkflow, setEditingJobWorkflow] = useState<any>(null);
+
+  // Manual workflow data initialization function
+  const handleInitializeWorkflowData = async () => {
+    setIsInitializing(true);
+    try {
+      const result = await withWorkflowErrorHandling(async () => {
+        return await seedWorkflowData();
+      }, 'seedWorkflowData');
+
+      if (result.success) {
+        toast.success("Workflow data initialized successfully!");
+        // Refresh data after seeding
         dispatch(fetchWorkflowTemplates());
         dispatch(fetchJobs());
-
-        // Load all job workflows
-        const jobWorkflowsCollection = collection(db, "jobWorkflows");
-        const jobWorkflowsSnapshot = await getDocs(jobWorkflowsCollection);
-        const jobWorkflowsData = jobWorkflowsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Store job workflows in local state
-        setLoadedJobWorkflows(jobWorkflowsData);
-        console.log("Loaded job workflows:", jobWorkflowsData);
-
-        // Load stages from stagesSlice
+        
+        // Reload stages
         const stagesCollection = collection(db, "stages");
         const stagesSnapshot = await getDocs(stagesCollection);
         const stagesData = stagesSnapshot.docs
@@ -130,7 +138,7 @@ export default function NewWorkflowManagement() {
               id: doc.id,
               title: data.title,
               description: data.description,
-              color: data.color, // This contains the CSS classes like "bg-yellow-50 border-yellow-200 text-yellow-700"
+              color: data.color,
               order: data.order,
               createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : data.createdAt,
               updatedAt: data.updatedAt?.toDate?.() ? data.updatedAt.toDate().toISOString() : data.updatedAt,
@@ -143,15 +151,97 @@ export default function NewWorkflowManagement() {
           ) as Stage[];
 
         dispatch(setStages(stagesData));
+      } else {
+        const errorMessage = typeof result.error === 'string' 
+          ? result.error 
+          : (result.error as any)?.message || 'Failed to initialize workflow data';
+        throw new Error(errorMessage);
+      }
+    } catch (error) {
+      WorkflowErrorHandler.handleError(error, 'seedWorkflowData');
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  // Initialize real-time service and load data
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        // Load essential data with proper error handling
+        dispatch(fetchWorkflowTemplates());
+        dispatch(fetchJobs());
+
+        // Set up real-time listener for job workflows
+        const jobWorkflowsCollection = collection(db, "jobWorkflows");
+        const unsubscribeJobWorkflows = onSnapshot(jobWorkflowsCollection, (snapshot) => {
+          const jobWorkflowsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+
+          // Store job workflows in local state with real-time updates
+          setLoadedJobWorkflows(jobWorkflowsData);
+          console.log("🔄 Real-time job workflows update:", jobWorkflowsData.length, "workflows");
+        }, (error) => {
+          console.error("❌ Error listening to job workflows:", error);
+          toast.error("Failed to sync job workflows in real-time");
+        });
+
+        // Store the unsubscriber for cleanup
+        setJobWorkflowsUnsubscriber(() => unsubscribeJobWorkflows);
+
+        // Set up real-time listener for stages
+        const stagesCollection = collection(db, "stages");
+        const unsubscribeStages = onSnapshot(stagesCollection, (snapshot) => {
+          const stagesData = snapshot.docs
+            .map((doc) => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                title: data.title,
+                description: data.description,
+                color: data.color, // This contains the CSS classes like "bg-yellow-50 border-yellow-200 text-yellow-700"
+                order: data.order,
+                createdAt: data.createdAt?.toDate?.() ? data.createdAt.toDate().toISOString() : data.createdAt,
+                updatedAt: data.updatedAt?.toDate?.() ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+              };
+            })
+            .filter((stage) => 
+              stage.id && 
+              stage.title && 
+              typeof stage.title === 'string'
+            ) as Stage[];
+
+          dispatch(setStages(stagesData));
+          console.log("🔄 Real-time stages update:", stagesData.length, "stages");
+        }, (error) => {
+          console.error("❌ Error listening to stages:", error);
+          toast.error("Failed to sync stages in real-time");
+        });
+
+        // Store stages unsubscriber for cleanup as well
+        setStagesUnsubscriber(() => unsubscribeStages);
+        
+        toast.success("Workflow management initialized with real-time updates");
       } catch (error) {
-        console.error("Failed to initialize workflow management:", error);
+        console.error("Failed to initialize workflow data:", error);
+        toast.error("Failed to initialize workflow management");
       }
     };
 
     initializeData();
 
+    // Cleanup function
     return () => {
-      workflowRealtimeService.cleanup();
+      if (jobWorkflowsUnsubscriber) {
+        jobWorkflowsUnsubscriber();
+        console.log("🧹 Cleaned up job workflows real-time listener");
+      }
+      if (stagesUnsubscriber) {
+        stagesUnsubscriber();
+        console.log("🧹 Cleaned up stages real-time listener");
+      }
     };
   }, [dispatch]);
 
@@ -182,8 +272,14 @@ export default function NewWorkflowManagement() {
     }
 
     try {
+      // Calculate the next order
+      const maxOrder = stages.length > 0 
+        ? Math.max(...stages.map(s => s.order || 0)) 
+        : 0;
+
       const stageData = {
         ...newStage,
+        order: maxOrder + 1, // Add the required order property
         jobId: "global",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -220,6 +316,26 @@ export default function NewWorkflowManagement() {
     } catch (error) {
       console.error("Failed to delete stage:", error);
       toast.error("Failed to delete stage. Please try again.");
+    }
+  };
+
+  // Function to manually refresh job workflows (now mostly for fallback)
+  const loadJobWorkflows = async () => {
+    try {
+      // Note: Real-time listener should handle updates automatically
+      // This function is kept for manual refresh if needed
+      console.log("📱 Manual refresh triggered (real-time should handle this automatically)");
+      
+      const jobWorkflowsCollection = collection(db, "jobWorkflows");
+      const jobWorkflowsSnapshot = await getDocs(jobWorkflowsCollection);
+      const jobWorkflowsData = jobWorkflowsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setLoadedJobWorkflows(jobWorkflowsData);
+    } catch (error) {
+      console.error("Failed to manually load job workflows:", error);
+      toast.error("Failed to refresh job workflows");
     }
   };
 
@@ -272,6 +388,107 @@ export default function NewWorkflowManagement() {
     } catch (error) {
       console.error("Failed to delete template:", error);
       toast.error("Failed to delete template. Please try again.");
+    }
+  };
+
+  // Handle job workflow deletion
+  const handleDeleteJobWorkflow = async (jobId: string) => {
+    const job = jobs.find(j => j.id === jobId);
+    const jobTitle = job?.title || 'Unknown Job';
+    
+    if (!confirm(`Are you sure you want to delete the workflow for "${jobTitle}"?\n\nThis will remove all workflow stages for this job position. This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await dispatch(deleteJobWorkflow(jobId)).unwrap();
+      toast.success(`Workflow for "${jobTitle}" deleted successfully`);
+      
+      // Real-time listener will automatically update the list
+      // No need for manual refresh
+    } catch (error) {
+      console.error("Failed to delete job workflow:", error);
+      toast.error("Failed to delete job workflow. Please try again.");
+    }
+  };
+
+  // Handle template viewing
+  const handleViewTemplate = (template: any) => {
+    setViewingTemplate(template);
+  };
+
+  // Handle template editing
+  const handleEditTemplate = (template: any) => {
+    setEditingTemplate({
+      ...template,
+      stages: template.stageIds || []
+    });
+  };
+
+  // Handle template update
+  const handleUpdateTemplate = async () => {
+    if (!editingTemplate.name.trim()) {
+      toast.error("Please enter a template name");
+      return;
+    }
+
+    if (editingTemplate.stages.length === 0) {
+      toast.error("Please select at least one stage for the template");
+      return;
+    }
+
+    try {
+      const templateData = {
+        ...editingTemplate,
+        stageIds: editingTemplate.stages,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Use Firebase update instead of Redux since we don't have updateWorkflowTemplate
+      await updateDoc(doc(db, "workflowTemplates", editingTemplate.id), templateData);
+
+      setEditingTemplate(null);
+      toast.success(`Template "${editingTemplate.name}" updated successfully`);
+      
+      // Refresh templates
+      dispatch(fetchWorkflowTemplates());
+    } catch (error) {
+      console.error("Failed to update template:", error);
+      toast.error("Failed to update template. Please try again.");
+    }
+  };
+
+  // Handle job workflow editing
+  const handleEditJobWorkflow = (jobWorkflow: any) => {
+    const job = jobs.find(j => j.id === jobWorkflow.jobId);
+    setEditingJobWorkflow({
+      ...jobWorkflow,
+      jobTitle: job?.title || 'Unknown Job',
+      stages: jobWorkflow.stageIds || []
+    });
+  };
+
+  // Handle job workflow update
+  const handleUpdateJobWorkflow = async () => {
+    if (!editingJobWorkflow.stages.length) {
+      toast.error("Please select at least one stage for the workflow");
+      return;
+    }
+
+    try {
+      // Update job workflow in Firestore
+      await updateDoc(doc(db, "jobWorkflows", editingJobWorkflow.id), {
+        stageIds: editingJobWorkflow.stages,
+        updatedAt: new Date().toISOString(),
+      });
+
+      setEditingJobWorkflow(null);
+      toast.success(`Workflow for "${editingJobWorkflow.jobTitle}" updated successfully`);
+      
+      // Real-time listener will automatically update the list
+    } catch (error) {
+      console.error("Failed to update job workflow:", error);
+      toast.error("Failed to update job workflow. Please try again.");
     }
   };
 
@@ -550,11 +767,21 @@ export default function NewWorkflowManagement() {
                       </div>
                       
                       <div className="flex gap-2 pt-2">
-                        <Button variant="outline" size="sm" className="flex-1">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => handleViewTemplate(template)}
+                        >
                           <Eye className="h-3 w-3 mr-1" />
                           View
                         </Button>
-                        <Button variant="outline" size="sm" className="flex-1">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => handleEditTemplate(template)}
+                        >
                           <Edit3 className="h-3 w-3 mr-1" />
                           Edit
                         </Button>
@@ -639,9 +866,22 @@ export default function NewWorkflowManagement() {
                               View Board
                             </Link>
                           </Button>
-                          <Button variant="outline" size="sm" className="flex-1">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={() => handleEditJobWorkflow(jobWorkflow)}
+                          >
                             <Edit3 className="h-3 w-3 mr-1" />
                             Edit
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleDeleteJobWorkflow(jobWorkflow.jobId)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>
@@ -1035,6 +1275,254 @@ export default function NewWorkflowManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Template View Modal */}
+      <Dialog open={!!viewingTemplate} onOpenChange={() => setViewingTemplate(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="pb-4">
+            <DialogTitle>View Template: {viewingTemplate?.name}</DialogTitle>
+          </DialogHeader>
+          {viewingTemplate && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium">Template Name</Label>
+                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{viewingTemplate.name}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Category</Label>
+                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{viewingTemplate.category || 'General'}</p>
+                </div>
+              </div>
+              
+              {viewingTemplate.description && (
+                <div>
+                  <Label className="text-sm font-medium">Description</Label>
+                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{viewingTemplate.description}</p>
+                </div>
+              )}
+              
+              <div>
+                <Label className="text-sm font-medium">Stages ({viewingTemplate.stageIds?.length || 0})</Label>
+                <div className="grid grid-cols-2 gap-2 mt-2 p-4 bg-gray-50 rounded max-h-48 overflow-y-auto">
+                  {viewingTemplate.stageIds?.map((stageId: string) => {
+                    const stage = stages.find(s => s.id === stageId);
+                    return stage ? (
+                      <div key={stage.id} className="flex items-center gap-2 p-2 bg-white rounded">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: stage.color }}
+                        />
+                        <span className="text-sm">{stage.title}</span>
+                      </div>
+                    ) : null;
+                  }) || <p className="text-sm text-muted-foreground">No stages assigned</p>}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Template Edit Modal */}
+      <Dialog open={!!editingTemplate} onOpenChange={() => setEditingTemplate(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="pb-4">
+            <DialogTitle>Edit Template</DialogTitle>
+          </DialogHeader>
+          {editingTemplate && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-template-name">Template Name</Label>
+                  <Input
+                    id="edit-template-name"
+                    placeholder="Engineering Workflow"
+                    value={editingTemplate.name}
+                    onChange={(e) =>
+                      setEditingTemplate({ ...editingTemplate, name: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-template-category">Category</Label>
+                  <Input
+                    id="edit-template-category"
+                    placeholder="Engineering"
+                    value={editingTemplate.category || ''}
+                    onChange={(e) =>
+                      setEditingTemplate({ ...editingTemplate, category: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-template-description">Description</Label>
+                <Textarea
+                  id="edit-template-description"
+                  placeholder="Describe this workflow template..."
+                  value={editingTemplate.description || ''}
+                  onChange={(e) =>
+                    setEditingTemplate({ ...editingTemplate, description: e.target.value })
+                  }
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Select Stages</Label>
+                <div className="grid grid-cols-2 gap-3 mt-2 max-h-48 overflow-y-auto border rounded-lg p-4 bg-gray-50">
+                  {stages.map((stage) => (
+                    <div key={stage.id} className="flex items-center space-x-3 p-2 hover:bg-white rounded">
+                      <input
+                        type="checkbox"
+                        id={`edit-stage-${stage.id}`}
+                        checked={editingTemplate.stages.includes(stage.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditingTemplate({
+                              ...editingTemplate,
+                              stages: [...editingTemplate.stages, stage.id],
+                            });
+                          } else {
+                            setEditingTemplate({
+                              ...editingTemplate,
+                              stages: editingTemplate.stages.filter(
+                                (id: string) => id !== stage.id
+                              ),
+                            });
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <label
+                        htmlFor={`edit-stage-${stage.id}`}
+                        className="text-sm cursor-pointer flex items-center gap-2"
+                      >
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: stage.color }}
+                        />
+                        {stage.title}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setEditingTemplate(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpdateTemplate}
+                  disabled={!editingTemplate.name.trim() || editingTemplate.stages.length === 0}
+                >
+                  Update Template
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Job Workflow Edit Modal */}
+      <Dialog open={!!editingJobWorkflow} onOpenChange={() => setEditingJobWorkflow(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="pb-4">
+            <DialogTitle>Edit Job Workflow: {editingJobWorkflow?.jobTitle}</DialogTitle>
+          </DialogHeader>
+          {editingJobWorkflow && (
+            <div className="space-y-6">
+              <div className="p-4 bg-gray-50 rounded">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">{editingJobWorkflow.jobTitle}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Job ID: {editingJobWorkflow.jobId}
+                    </p>
+                  </div>
+                  <Badge variant="secondary">
+                    {editingJobWorkflow.stages.length} stages selected
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Select Workflow Stages</Label>
+                <p className="text-sm text-muted-foreground">
+                  Choose which stages should be part of this job's workflow
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-2 max-h-64 overflow-y-auto border rounded-lg p-4 bg-gray-50">
+                  {stages.map((stage) => (
+                    <div key={stage.id} className="flex items-center space-x-3 p-2 hover:bg-white rounded">
+                      <input
+                        type="checkbox"
+                        id={`job-edit-stage-${stage.id}`}
+                        checked={editingJobWorkflow.stages.includes(stage.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditingJobWorkflow({
+                              ...editingJobWorkflow,
+                              stages: [...editingJobWorkflow.stages, stage.id],
+                            });
+                          } else {
+                            setEditingJobWorkflow({
+                              ...editingJobWorkflow,
+                              stages: editingJobWorkflow.stages.filter(
+                                (id: string) => id !== stage.id
+                              ),
+                            });
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <label
+                        htmlFor={`job-edit-stage-${stage.id}`}
+                        className="text-sm cursor-pointer flex items-center gap-2"
+                      >
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: stage.color }}
+                        />
+                        {stage.title}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setEditingJobWorkflow(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpdateJobWorkflow}
+                  disabled={editingJobWorkflow.stages.length === 0}
+                >
+                  Update Workflow
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+// Wrap the component with error boundary for production safety
+export default function NewWorkflowManagement() {
+  return (
+    <WorkflowErrorBoundary>
+      <NewWorkflowManagementBase />
+    </WorkflowErrorBoundary>
   );
 }

@@ -4,7 +4,7 @@ export interface Stage {
   title: string;
   color: string; // Can be hex color (#3b82f6) OR CSS classes (bg-yellow-50 border-yellow-200 text-yellow-700)
   description?: string;
-  order?: number; // Stage order for workflow positioning
+  order: number; // Stage order for workflow positioning - now required for consistency
   isDefault?: boolean;
   isActive?: boolean;
   jobId?: string; // Optional: if stage is specific to a job, null for global stages

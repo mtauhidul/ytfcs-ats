@@ -160,7 +160,7 @@ export default function DashboardPage() {
   }
 
   // Hiring funnel metrics
-  const sortedStages = candidatesByStage.sort((a, b) => a.order - b.order);
+  const sortedStages = candidatesByStage.sort((a, b) => (a.order || 0) - (b.order || 0));
   const funnelData = sortedStages.map((stage, index) => ({
     ...stage,
     conversionRate:
@@ -284,12 +284,12 @@ export default function DashboardPage() {
   // Calculate hiring funnel metrics for existing stats
   const interviewedCount = candidates.filter((c) => {
     const stageInfo = stages.find((s) => s.id === c.stageId);
-    return stageInfo && stageInfo.order > 1;
+    return stageInfo && (stageInfo.order || 0) > 1;
   }).length;
 
   const offerExtendedCount = candidates.filter((c) => {
     const stageInfo = stages.find((s) => s.id === c.stageId);
-    return stageInfo && stageInfo.order > 3;
+    return stageInfo && (stageInfo.order || 0) > 3;
   }).length;
 
   const pieColors = [
