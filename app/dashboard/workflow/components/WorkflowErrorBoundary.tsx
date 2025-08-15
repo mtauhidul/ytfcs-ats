@@ -97,21 +97,21 @@ class WorkflowErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryS
     }
 
     return (
-      <details className="mt-4 p-4 bg-gray-50 rounded-lg">
-        <summary className="cursor-pointer font-medium text-gray-700 mb-2">
+      <details className="mt-6 p-4 bg-muted/20 rounded-xl border border-border/30">
+        <summary className="cursor-pointer font-medium text-foreground mb-3">
           Error Details (Development Only)
         </summary>
-        <div className="space-y-2 text-sm">
+        <div className="space-y-3 text-sm">
           <div>
-            <strong>Error:</strong>
-            <pre className="mt-1 p-2 bg-red-50 rounded text-red-800 overflow-auto">
+            <strong className="text-foreground">Error:</strong>
+            <pre className="mt-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg text-destructive overflow-auto text-xs">
               {this.state.error?.toString()}
             </pre>
           </div>
           {this.state.errorInfo && (
             <div>
-              <strong>Component Stack:</strong>
-              <pre className="mt-1 p-2 bg-red-50 rounded text-red-800 overflow-auto">
+              <strong className="text-foreground">Component Stack:</strong>
+              <pre className="mt-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg text-destructive overflow-auto text-xs">
                 {this.state.errorInfo.componentStack}
               </pre>
             </div>
@@ -130,32 +130,38 @@ class WorkflowErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryS
 
       // Default error UI
       return (
-        <div className="min-h-[400px] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
+        <div className="min-h-[400px] flex items-center justify-center p-6">
+          <Card className="w-full max-w-lg border-border/60 shadow-lg">
+            <CardHeader className="text-center pb-4">
               <div className="flex justify-center mb-4">
-                <AlertTriangle className="h-12 w-12 text-red-500" />
+                <div className="p-4 bg-destructive/10 rounded-2xl">
+                  <AlertTriangle className="h-12 w-12 text-destructive" />
+                </div>
               </div>
-              <CardTitle className="text-red-600">
+              <CardTitle className="text-destructive text-xl">
                 Workflow Error
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-center text-gray-600">
-                Something went wrong with the workflow component. 
+            <CardContent className="space-y-6">
+              <div className="text-center space-y-2">
+                <p className="text-muted-foreground">
+                  Something went wrong with the workflow component. This is usually temporary.
+                </p>
                 {this.state.retryCount > 0 && (
-                  <span className="block mt-2 text-sm">
-                    Retry attempt: {this.state.retryCount}/{this.maxRetries}
-                  </span>
+                  <div className="p-3 bg-muted/30 rounded-lg">
+                    <span className="text-sm font-medium">
+                      Retry attempt: {this.state.retryCount}/{this.maxRetries}
+                    </span>
+                  </div>
                 )}
-              </p>
+              </div>
               
-              <div className="flex gap-2 justify-center">
+              <div className="flex gap-3 justify-center">
                 {this.state.retryCount < this.maxRetries ? (
                   <Button 
                     onClick={this.handleRetry}
                     variant="outline"
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 hover:bg-accent/80"
                   >
                     <RefreshCw className="h-4 w-4" />
                     Try Again
@@ -164,7 +170,7 @@ class WorkflowErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryS
                   <Button 
                     onClick={this.handleReload}
                     variant="default"
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 bg-primary hover:bg-primary/90"
                   >
                     <RefreshCw className="h-4 w-4" />
                     Reload Page

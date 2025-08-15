@@ -19,9 +19,11 @@ import {
 import {
   BellIcon,
   BriefcaseIcon,
+  BuildingIcon,
   ChevronDown,
   GripHorizontalIcon,
   InfoIcon,
+  KanbanSquareIcon,
   LayersIcon,
   Loader2Icon,
   MoreHorizontal,
@@ -359,6 +361,8 @@ export default function WorkflowPage() {
 
   // Create default stages for a job if none exist
   const createDefaultStagesForJob = async (jobId: string) => {
+    const selectedJobTitle = jobs.find(j => j.id === jobId)?.title || 'Selected Job';
+    
     const defaultStages = [
       { title: "Applied", color: "bg-blue-50 border-blue-200 text-blue-700", order: 1 },
       { title: "Phone Screen", color: "bg-yellow-50 border-yellow-200 text-yellow-700", order: 2 },
@@ -368,6 +372,8 @@ export default function WorkflowPage() {
     ];
 
     try {
+      toast.loading("Creating workflow stages...", { id: "create-stages" });
+      
       const promises = defaultStages.map((stage) =>
         addDoc(collection(db, "stages"), {
           ...stage,
@@ -377,10 +383,17 @@ export default function WorkflowPage() {
       );
       
       await Promise.all(promises);
-      toast.success("Created default workflow stages for this job");
+      
+      toast.success(`Created default workflow for "${selectedJobTitle}"`, { 
+        id: "create-stages",
+        description: `Added ${defaultStages.length} workflow stages`
+      });
     } catch (error) {
       console.error("Error creating default stages:", error);
-      toast.error("Failed to create default stages");
+      toast.error("Failed to create workflow stages", { 
+        id: "create-stages",
+        description: "Please try again or contact support if the issue persists"
+      });
     }
   };
 
@@ -412,17 +425,17 @@ export default function WorkflowPage() {
 
       if (sourceStage !== destStage) {
         toast.success(
-          `Moved ${candidateName} from "${sourceStage}" to "${destStage}"`,
+          `Moved ${candidateName} successfully`,
           {
+            description: `From "${sourceStage}" to "${destStage}"`,
             duration: 3000,
-            position: "bottom-right",
           }
         );
       }
     } catch (error) {
       console.error("Error updating candidate stage:", error);
-      toast.error("Failed to update candidate stage", {
-        position: "bottom-right",
+      toast.error("Failed to move candidate", {
+        description: "Please try again or refresh the page",
       });
     }
   };
@@ -497,22 +510,47 @@ export default function WorkflowPage() {
 
   if (loading) {
     return (
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-4">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-8 w-24" />
+      <div className="p-6">
+        <div className="mb-6">
+          <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-lg" />
+                <div>
+                  <Skeleton className="h-6 w-32 mb-2" />
+                  <Skeleton className="h-4 w-24" />
+                </div>
+              </div>
+              <Skeleton className="h-10 w-80" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-64" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="h-[600px]">
-              <CardHeader className="flex-row items-center justify-between p-4">
-                <Skeleton className="h-6 w-24" />
-                <Skeleton className="h-6 w-12" />
+            <Card key={i} className="h-[600px] border-border/60">
+              <CardHeader className="flex-row items-center justify-between p-6 border-b border-border/30">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-5 w-8 rounded-full" />
+                </div>
+                <Skeleton className="h-6 w-6 rounded" />
               </CardHeader>
-              <CardContent className="p-4 space-y-3">
+              <CardContent className="p-6 space-y-4">
                 {[1, 2, 3].map((j) => (
-                  <Skeleton key={j} className="h-28 w-full" />
+                  <div key={j} className="p-4 border border-border/30 rounded-lg">
+                    <Skeleton className="h-4 w-32 mb-3" />
+                    <div className="flex gap-2 mb-3">
+                      <Skeleton className="h-4 w-12" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                    <Skeleton className="h-3 w-full mb-2" />
+                    <Skeleton className="h-3 w-3/4" />
+                  </div>
                 ))}
               </CardContent>
             </Card>
@@ -525,15 +563,18 @@ export default function WorkflowPage() {
   if (!jobs.length) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] p-6">
-        <div className="bg-muted/50 p-4 rounded-full mb-4">
-          <BriefcaseIcon className="size-10 text-muted-foreground/50" />
+        <div className="p-6 bg-gray-50 rounded-lg mb-6 border border-gray-200">
+          <BriefcaseIcon className="size-12 text-gray-600 mx-auto" />
         </div>
-        <h2 className="text-xl font-medium mb-2">No jobs found</h2>
-        <p className="text-muted-foreground text-center max-w-md mb-6">
-          You need to create jobs before you can manage workflows.
+        <h2 className="text-2xl font-semibold mb-3 text-foreground">No Jobs Available</h2>
+        <p className="text-muted-foreground text-center max-w-md mb-8 leading-relaxed">
+          You need to create job positions before you can manage workflows. Start by creating your first job posting.
         </p>
-        <Button asChild>
-          <a href="/dashboard/jobs">Go to Jobs</a>
+        <Button asChild className="bg-primary hover:bg-primary/90">
+          <a href="/dashboard/jobs">
+            <Plus className="size-4 mr-2" />
+            Create First Job
+          </a>
         </Button>
       </div>
     );
@@ -545,116 +586,126 @@ export default function WorkflowPage() {
     <div className="flex-grow overflow-hidden p-2">
       <Toaster />
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border rounded-lg p-4">
-        <div className="flex items-center gap-4 min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <BriefcaseIcon className="size-5 text-primary" />
-            <h1 className="text-lg font-semibold">Workflow</h1>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Select value={selectedJobId} onValueChange={handleJobChange}>
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Select a job" />
-              </SelectTrigger>
-              <SelectContent>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={job.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{job.title}</span>
-                      {job.department && (
-                        <span className="text-xs text-muted-foreground">
-                          {job.department}
-                        </span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {selectedJob && (
-              <Badge variant="outline">
-                {candidates.length} candidates
-              </Badge>
-            )}
-          </div>
-        </div>
+      {/* Clean Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="flex flex-col gap-4">
+            {/* Title Row */}
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gray-100 rounded-lg">
+                <KanbanSquareIcon className="size-5 text-gray-600" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold text-gray-900">Job Workflow</h1>
+                <p className="text-sm text-gray-600">
+                  Track candidates through your hiring pipeline
+                </p>
+              </div>
+            </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Button variant="outline" size="sm" asChild>
-            <a href="/dashboard/workflow/management">
-              <Settings className="h-4 w-4 mr-2" />
-              Manage Workflows
-            </a>
-          </Button>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground size-4" />
-            <Input
-              placeholder="Search candidates..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 w-64"
-            />
-            {searchQuery && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-                onClick={() => setSearchQuery("")}
-              >
-                <X className="size-3" />
+            {/* Controls Row */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full">
+              <Select value={selectedJobId} onValueChange={handleJobChange}>
+                <SelectTrigger className="w-full sm:w-64 bg-white border-gray-300">
+                  <SelectValue placeholder="Select a job..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      <div className="flex flex-col items-start py-1">
+                        <span className="font-medium text-gray-900">{job.title}</span>
+                        {job.department && (
+                          <span className="text-xs text-gray-500">
+                            {job.department}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="relative flex-1 sm:flex-none">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 size-4" />
+                <Input
+                  placeholder="Search candidates..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 w-full sm:w-48 bg-white border-gray-300"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    <X className="size-3" />
+                  </Button>
+                )}
+              </div>
+              
+              <Button variant="outline" size="sm" asChild className="bg-white hover:bg-gray-50">
+                <a href="/dashboard/workflow/management">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Manage Workflows
+                </a>
               </Button>
-            )}
+              
+              {selectedJobId && stages.length === 0 && !stagesLoading && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => createDefaultStagesForJob(selectedJobId)}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  <Plus className="size-4 mr-2" />
+                  Create Stages
+                </Button>
+              )}
+            </div>
           </div>
-          
-          {selectedJobId && stages.length === 0 && !stagesLoading && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => createDefaultStagesForJob(selectedJobId)}
-            >
-              <Plus className="size-4 mr-1" />
-              Create Stages
-            </Button>
-          )}
         </div>
       </div>
 
       {!selectedJobId ? (
         <div className="flex flex-col items-center justify-center h-[50vh] p-6">
-          <div className="bg-muted/50 p-4 rounded-full mb-4">
-            <BriefcaseIcon className="size-10 text-muted-foreground/50" />
+          <div className="p-6 bg-gray-50 rounded-lg mb-6 border border-gray-200">
+            <BriefcaseIcon className="size-12 text-gray-600 mx-auto" />
           </div>
-          <h2 className="text-xl font-medium mb-2">Select a job</h2>
-          <p className="text-muted-foreground text-center max-w-md">
-            Choose a job from the dropdown above to view and manage its specific workflow stages and candidates.
+          <h2 className="text-2xl font-semibold mb-3 text-foreground">Select a Job Position</h2>
+          <p className="text-muted-foreground text-center max-w-md leading-relaxed">
+            Choose a job from the dropdown above to view and manage its workflow stages and candidates.
           </p>
         </div>
       ) : stagesLoading ? (
         <div className="flex items-center justify-center h-[50vh]">
           <div className="text-center">
-            <Loader2Icon className="size-8 animate-spin mx-auto mb-2" />
-            <p className="text-muted-foreground">Loading workflow...</p>
+            <div className="p-4 bg-gray-50 rounded-lg mb-4 w-fit mx-auto border border-gray-200">
+              <Loader2Icon className="size-8 animate-spin text-gray-600" />
+            </div>
+            <p className="text-muted-foreground font-medium">Loading workflow...</p>
           </div>
         </div>
       ) : !stages.length ? (
         <div className="flex flex-col items-center justify-center h-[50vh] p-6">
-          <div className="bg-muted/50 p-4 rounded-full mb-4">
-            <LayersIcon className="size-10 text-muted-foreground/50" />
+          <div className="p-6 bg-gray-50 rounded-lg mb-6 border border-gray-200">
+            <LayersIcon className="size-12 text-gray-600 mx-auto" />
           </div>
-          <h2 className="text-xl font-medium mb-2">No workflow stages found</h2>
-          <p className="text-muted-foreground text-center max-w-md mb-6">
-            This job doesn't have any workflow stages. You can create a default workflow or use a template from the workflow management page.
+          <h2 className="text-2xl font-semibold mb-3 text-foreground">No Workflow Stages</h2>
+          <p className="text-muted-foreground text-center max-w-md mb-8 leading-relaxed">
+            This job doesn't have any workflow stages configured. Create a default workflow or use a template to get started.
           </p>
-          <div className="flex gap-3">
-            <Button onClick={() => createDefaultStagesForJob(selectedJobId)}>
+          <div className="flex gap-4">
+            <Button 
+              onClick={() => createDefaultStagesForJob(selectedJobId)}
+              className="bg-primary hover:bg-primary/90"
+            >
               <Plus className="size-4 mr-2" />
               Create Default Workflow
             </Button>
-            <Button variant="outline" asChild>
-              <a href="/dashboard/workflow-management">
+            <Button variant="outline" asChild className="bg-white hover:bg-gray-50">
+              <a href="/dashboard/workflow/management">
                 <Settings className="size-4 mr-2" />
                 Use Template
               </a>
@@ -665,34 +716,37 @@ export default function WorkflowPage() {
         /* Kanban Board */
         <div
           ref={boardRef}
-          className="overflow-x-auto overflow-y-hidden h-[calc(100vh-200px)] pb-4"
+          className="overflow-x-auto overflow-y-hidden h-[calc(100vh-240px)] pb-6"
         >
           <DragDropContext onDragEnd={onDragEnd} onDragStart={onDragStart}>
-            <div className="flex gap-4 min-w-max p-1">
+            <div className="flex gap-6 min-w-max p-2">
               {stages.map((stage) => {
                 const stageItems = getCandidatesForStage(stage.id);
                 const headerBgClass = getBoardHeaderColor(stage.color);
 
                 return (
-                  <div key={stage.id} className="w-full min-w-[280px] md:min-w-[320px]">
+                  <div key={stage.id} className="w-full min-w-[300px] md:min-w-[340px] lg:min-w-[360px]">
                     <Droppable droppableId={stage.id}>
                       {(droppableProvided, snapshot) => (
                         <div
                           className={cn(
-                            "flex flex-col rounded-lg border shadow-sm h-[calc(100vh-200px)] bg-card",
-                            snapshot.isDraggingOver && "ring-2 ring-primary/50"
+                            "flex flex-col rounded-lg border border-gray-200 h-[calc(100vh-240px)] bg-white",
+                            snapshot.isDraggingOver && "border-blue-300 bg-blue-50"
                           )}
                         >
                           {/* Stage Header */}
                           <div
                             className={cn(
-                              "p-3 text-center font-medium rounded-t-lg flex items-center justify-between",
+                              "p-4 flex items-center justify-between border-b border-gray-200",
                               headerBgClass
                             )}
                           >
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium">{stage.title}</span>
-                              <Badge variant="secondary" className="text-xs px-1.5 py-0.5">
+                              <Badge 
+                                variant="secondary" 
+                                className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 border-0"
+                              >
                                 {stageItems.length}
                               </Badge>
                             </div>
@@ -702,9 +756,9 @@ export default function WorkflowPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+                                  className="h-7 w-7 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                                 >
-                                  <MoreHorizontal className="size-3" />
+                                  <MoreHorizontal className="size-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
@@ -732,18 +786,19 @@ export default function WorkflowPage() {
                           <div
                             ref={droppableProvided.innerRef}
                             {...droppableProvided.droppableProps}
-                            className="flex-1 overflow-y-auto p-2 space-y-2"
+                            className="flex-1 overflow-y-auto p-4 space-y-3"
                             style={{
-                              maxHeight: "calc(100vh - 300px)",
+                              maxHeight: "calc(100vh - 340px)",
                               overflowY: "auto",
                             }}
                           >
                             {stageItems.length === 0 && !snapshot.isDraggingOver && (
-                              <div className="flex flex-col items-center justify-center text-center py-8 text-sm text-muted-foreground bg-muted/10 rounded-md">
-                                <UserIcon className="size-6 mb-2 opacity-40" />
-                                <p>No candidates</p>
+                              <div className="flex flex-col items-center justify-center text-center py-12 text-sm text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                                <UserIcon className="size-8 mb-3 text-gray-400" />
+                                <p className="font-medium">No candidates yet</p>
+                                <p className="text-xs mt-1">Drag candidates here</p>
                                 {isDragging && (
-                                  <p className="text-xs mt-1">
+                                  <p className="text-xs mt-3 text-blue-600 font-medium bg-blue-50 px-3 py-1 rounded border border-blue-200">
                                     Drop here to move to {stage.title}
                                   </p>
                                 )}
@@ -762,29 +817,27 @@ export default function WorkflowPage() {
                                     {...draggableProvided.draggableProps}
                                     {...draggableProvided.dragHandleProps}
                                     className={cn(
-                                      "bg-background p-3 rounded-md border shadow-sm cursor-grab active:cursor-grabbing transition-all duration-200",
+                                      "bg-white border border-gray-200 p-4 rounded-lg cursor-grab active:cursor-grabbing transition-colors duration-200 hover:border-gray-300",
                                       draggableSnapshot.isDragging &&
-                                        "shadow-lg rotate-2 scale-105 ring-2 ring-primary/50"
+                                        "border-blue-300 bg-blue-50"
                                     )}
                                   >
                                     {/* Header */}
-                                    <div className="flex items-start justify-between mb-2">
-                                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <h4 className="font-medium text-sm truncate">
-                                          {candidate.name}
-                                        </h4>
-                                        <GripHorizontalIcon className="size-3 text-muted-foreground/50 flex-shrink-0" />
-                                      </div>
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="font-medium text-sm text-gray-900 truncate">
+                                        {candidate.name}
+                                      </h4>
+                                      <GripHorizontalIcon className="size-3 text-gray-400 flex-shrink-0" />
                                     </div>
 
                                     {/* Tags */}
                                     {candidate.tags && candidate.tags.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mb-2">
+                                      <div className="flex flex-wrap gap-1.5 mb-3">
                                         {candidate.tags.slice(0, 3).map((tag) => (
                                           <Badge
                                             key={tag}
                                             variant="secondary"
-                                            className="text-[10px] px-1.5 py-0.5 h-5"
+                                            className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 border-0"
                                           >
                                             {tag}
                                           </Badge>
@@ -792,7 +845,7 @@ export default function WorkflowPage() {
                                         {candidate.tags.length > 3 && (
                                           <Badge
                                             variant="outline"
-                                            className="text-[10px] px-1.5 py-0.5 h-5"
+                                            className="text-xs px-2 py-0.5 border-gray-300"
                                           >
                                             +{candidate.tags.length - 3}
                                           </Badge>
@@ -802,23 +855,26 @@ export default function WorkflowPage() {
 
                                     {/* Additional Info */}
                                     {(candidate.company || candidate.position) && (
-                                      <div className="text-xs text-muted-foreground mb-2">
+                                      <div className="text-xs text-gray-600 mb-3 space-y-1">
                                         {candidate.position && (
-                                          <div>{candidate.position}</div>
+                                          <div className="font-medium">
+                                            {candidate.position}
+                                          </div>
                                         )}
                                         {candidate.company && (
-                                          <div>at {candidate.company}</div>
+                                          <div>
+                                            at {candidate.company}
+                                          </div>
                                         )}
                                       </div>
                                     )}
 
                                     {/* Footer */}
-                                    <div className="flex items-center justify-between mt-3 pt-2 border-t">
+                                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
                                       <RatingStars rating={candidate.rating} />
 
                                       {candidate.updatedAt && (
-                                        <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                          <InfoIcon className="size-2.5" />
+                                        <div className="text-xs text-gray-500">
                                           {new Date(
                                             candidate.updatedAt
                                           ).toLocaleDateString()}
@@ -834,13 +890,13 @@ export default function WorkflowPage() {
                           </div>
 
                           {/* Stage Footer */}
-                          <div className="p-2 border-t text-xs text-muted-foreground text-center bg-muted/20">
+                          <div className="p-3 border-t border-border/30 text-xs text-muted-foreground text-center bg-muted/10 rounded-b-xl">
                             {isDragging && snapshot.isDraggingOver ? (
-                              <div className="font-medium text-primary">
+                              <div className="font-semibold text-primary animate-pulse">
                                 Drop to move to {stage.title}
                               </div>
                             ) : (
-                              <div>
+                              <div className="font-medium">
                                 {stageItems.length}{" "}
                                 {stageItems.length === 1
                                   ? "candidate"
@@ -864,34 +920,44 @@ export default function WorkflowPage() {
         open={Boolean(openAutomationFor)}
         onOpenChange={() => setOpenAutomationFor(null)}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <BellIcon className="size-5" />
-              Stage Automations
+            <AlertDialogTitle className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <BellIcon className="size-5 text-primary" />
+              </div>
+              <div>
+                <div>Stage Automations</div>
+                <div className="text-sm font-normal text-muted-foreground">
+                  {openAutomationFor?.title}
+                </div>
+              </div>
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Configure alerts or automations for the{" "}
-              <strong>{openAutomationFor?.title}</strong> stage. Set up
-              notifications, email templates, or actions to be triggered
-              automatically.
+            <AlertDialogDescription className="text-sm leading-relaxed">
+              Configure automated notifications, email templates, or custom actions for this stage.
+              Set up workflows to streamline your recruitment process.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="py-4">
-            <div className="flex items-center justify-center h-32">
+          <div className="py-6">
+            <div className="flex items-center justify-center h-32 bg-gray-50 rounded-lg border border-dashed border-gray-300">
               <div className="text-center">
-                <Loader2Icon className="size-10 text-muted-foreground/40 mx-auto mb-3 animate-spin" />
-                <p className="text-muted-foreground">
+                <div className="p-3 bg-white rounded-lg mb-3 w-fit mx-auto border border-gray-200">
+                  <Loader2Icon className="size-8 text-gray-400 animate-spin" />
+                </div>
+                <p className="text-muted-foreground font-medium">
                   Automation features coming soon
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  Advanced workflow automation in development
                 </p>
               </div>
             </div>
           </div>
 
-          <AlertDialogFooter>
-            <AlertDialogCancel>Close</AlertDialogCancel>
-            <AlertDialogAction disabled>
+          <AlertDialogFooter className="gap-3">
+            <AlertDialogCancel className="hover:bg-accent/80">Close</AlertDialogCancel>
+            <AlertDialogAction disabled className="bg-primary/50">
               Configure Automations
             </AlertDialogAction>
           </AlertDialogFooter>
