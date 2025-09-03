@@ -2,6 +2,7 @@
 // Re-export all types from centralized location
 export * from "./application";
 export * from "./candidate";
+export * from "./client";
 export * from "./communication";
 export * from "./email";
 export * from "./interview";

@@ -3,6 +3,10 @@ export interface Interview {
   id: string;
   candidateId: string;
   candidateName: string;
+  jobId?: string; // Link to specific job
+  jobTitle?: string;
+  clientId?: string; // Link to client (derived from job)
+  clientName?: string; // Cached client name
   interviewerId: string;
   interviewerName: string;
   interviewerEmail?: string;
@@ -24,6 +28,10 @@ export interface InterviewFeedback {
   interviewId: string;
   candidateId: string;
   candidateName: string;
+  jobId?: string;
+  jobTitle?: string;
+  clientId?: string; // Link to client for feedback tracking
+  clientName?: string;
   interviewerId: string;
   interviewerName: string;
 

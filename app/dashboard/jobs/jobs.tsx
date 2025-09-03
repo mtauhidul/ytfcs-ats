@@ -81,6 +81,8 @@ import { Textarea } from "~/components/ui/textarea";
 import { db } from "~/lib/firebase";
 import { cn } from "~/lib/utils";
 import type { Job } from "~/types";
+import type { ClientBasic } from "~/types/client";
+import { clientService } from "~/services/clientService";
 import { columns } from "./columns";
 
 interface Status {
@@ -127,6 +129,7 @@ const DEFAULT_JOB_STATUSES = [
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
+  const [clients, setClients] = useState<ClientBasic[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -136,6 +139,7 @@ export default function JobsPage() {
 
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
+  const [clientFilter, setClientFilter] = useState("all"); // New client filter
 
   // For shared tags & categories
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -157,9 +161,10 @@ export default function JobsPage() {
     salaryRange: "",
     department: "",
     employmentType: "",
-    statusId: "",
+    statusId: UNASSIGNED_VALUE,
     tags: [] as string[],
-    category: "",
+    category: NONE_CATEGORY_VALUE,
+    clientId: "",
   });
 
   // For detail modal
@@ -174,6 +179,7 @@ export default function JobsPage() {
   const [modalStatusId, setModalStatusId] = useState("");
   const [modalTags, setModalTags] = useState<string[]>([]);
   const [modalCategory, setModalCategory] = useState("");
+  const [modalClientId, setModalClientId] = useState(""); // Client selection in edit modal
   const [modalHistory, setModalHistory] = useState<HistoryEntry[]>([]);
   const [activeTab, setActiveTab] = useState("details");
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -217,6 +223,19 @@ export default function JobsPage() {
     initializeJobStatuses();
   }, []);
 
+  // Load clients for job assignment
+  useEffect(() => {
+    const loadClients = async () => {
+      try {
+        const clientsData = await clientService.getActiveClients();
+        setClients(clientsData);
+      } catch (error) {
+        console.error("Error loading clients:", error);
+      }
+    };
+    loadClients();
+  }, []);
+
   // Real-time Firestore jobs
   useEffect(() => {
     const q = query(collection(db, "jobs"));
@@ -236,6 +255,10 @@ export default function JobsPage() {
           tags: data.tags || [],
           category: data.category || "",
           statusId: data.statusId || "",
+          // Client information - CRITICAL for client-job relationship
+          clientId: data.clientId || "",
+          clientName: data.clientName || "",
+          clientCompany: data.clientCompany || "",
           history: data.history || [],
           createdAt: data.createdAt,
           updatedAt: data.updatedAt || "",
@@ -293,14 +316,22 @@ export default function JobsPage() {
 
   // Filter logic
   const filteredJobs = useMemo(() => {
+    let filtered = jobs;
+
+    // Apply client filter first
+    if (clientFilter && clientFilter !== "all") {
+      filtered = filtered.filter((job) => job.clientId === clientFilter);
+    }
+
+    // Apply text search filter
     const f = globalFilter.trim().toLowerCase();
-    if (!f) return jobs;
+    if (!f) return filtered;
 
     const statusTitleMap = new Map(
       statuses.map((s) => [s.id, s.title.toLowerCase()])
     );
 
-    return jobs.filter((job) => {
+    return filtered.filter((job) => {
       const statusTitle = statusTitleMap.get(job.statusId) || "";
 
       // Ensure tags is always an array and normalize them
@@ -330,6 +361,12 @@ export default function JobsPage() {
         String(job.employmentType || "")
           .toLowerCase()
           .trim(),
+        String(job.clientName || "")
+          .toLowerCase()
+          .trim(),
+        String(job.clientCompany || "")
+          .toLowerCase()
+          .trim(),
         tagsText,
         String(job.category || "")
           .toLowerCase()
@@ -350,7 +387,7 @@ export default function JobsPage() {
         combined.includes(f) || normalizedTags.some((tag) => tag.includes(f))
       );
     });
-  }, [jobs, globalFilter, statuses]);
+  }, [jobs, globalFilter, clientFilter, statuses]);
 
   // Helper functions
   const detectChanges = () => {
@@ -435,6 +472,16 @@ export default function JobsPage() {
       }
     });
 
+    // Detect client changes
+    if (originalState.clientId !== modalClientId) {
+      const oldClient = clients.find(c => c.id === originalState.clientId);
+      const newClient = clients.find(c => c.id === modalClientId);
+      changes.client = {
+        from: oldClient ? `${oldClient.name} (${oldClient.companyName})` : "None",
+        to: newClient ? `${newClient.name} (${newClient.companyName})` : "None",
+      };
+    }
+
     return changes;
   };
 
@@ -499,10 +546,18 @@ export default function JobsPage() {
       return;
     }
 
+    if (!createJobData.clientId) {
+      toast.error("Please select a client for this job");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const createLoading = toast.loading("Creating job...");
       const customJobId = generateJobId();
+
+      // Get client info for caching
+      const selectedClient = clients.find(c => c.id === createJobData.clientId);
 
       const newJob = {
         jobId: customJobId,
@@ -513,6 +568,9 @@ export default function JobsPage() {
         salaryRange: createJobData.salaryRange.trim(),
         department: createJobData.department.trim(),
         employmentType: createJobData.employmentType,
+        clientId: createJobData.clientId,
+        clientName: selectedClient?.name || "",
+        clientCompany: selectedClient?.companyName || "",
         statusId:
           createJobData.statusId === UNASSIGNED_VALUE
             ? ""
@@ -547,6 +605,7 @@ export default function JobsPage() {
         statusId: "",
         tags: [],
         category: "",
+        clientId: "",
       });
       setCreateJobOpen(false);
     } catch (err) {
@@ -569,6 +628,7 @@ export default function JobsPage() {
     setModalStatusId(job.statusId || UNASSIGNED_VALUE);
     setModalTags(job.tags || []);
     setModalCategory(job.category || NONE_CATEGORY_VALUE);
+    setModalClientId(job.clientId || ""); // Initialize client selection
     setModalHistory(job.history || []);
     setActiveTab("details");
 
@@ -583,11 +643,23 @@ export default function JobsPage() {
       statusId: job.statusId || UNASSIGNED_VALUE,
       tags: [...(job.tags || [])],
       category: job.category || NONE_CATEGORY_VALUE,
+      clientId: job.clientId || "", // Track client changes
     });
   };
 
   const handleSaveDetail = async () => {
     if (!detailJob) return;
+
+    // Validate required fields
+    if (!modalClientId) {
+      toast.error("Please select a client for this job");
+      return;
+    }
+
+    if (!modalTitle.trim()) {
+      toast.error("Job title is required");
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -596,6 +668,9 @@ export default function JobsPage() {
       const changes = detectChanges();
       const hasChanges = Object.keys(changes).length > 0;
       const changeHistoryEntries = generateHistoryEntries(changes);
+
+      // Get updated client info for caching
+      const selectedClient = clients.find(c => c.id === modalClientId);
 
       const ref = doc(db, "jobs", detailJob.id);
       const updatedData = {
@@ -609,6 +684,10 @@ export default function JobsPage() {
         statusId: modalStatusId === UNASSIGNED_VALUE ? "" : modalStatusId,
         tags: modalTags,
         category: modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory,
+        // Update client relationship
+        clientId: modalClientId,
+        clientName: selectedClient?.name || "",
+        clientCompany: selectedClient?.companyName || "",
         history: modalHistory,
         updatedAt: new Date().toISOString(),
       };
@@ -962,6 +1041,28 @@ export default function JobsPage() {
               <X className="h-4 w-4" />
             </Button>
           )}
+        </div>
+
+        {/* Client Filter */}
+        <div className="w-full sm:w-auto min-w-[200px]">
+          <Select value={clientFilter} onValueChange={setClientFilter}>
+            <SelectTrigger className="h-9 sm:h-10">
+              <SelectValue placeholder="All clients" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All clients</SelectItem>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{client.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {client.companyName}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex items-center gap-3">
@@ -1358,6 +1459,51 @@ export default function JobsPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label
+                        htmlFor="create-client"
+                        className="text-sm font-medium"
+                      >
+                        Client *
+                      </Label>
+                      <Select
+                        value={createJobData.clientId}
+                        onValueChange={(value) =>
+                          setCreateJobData({
+                            ...createJobData,
+                            clientId: value,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder="Select client" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients.length > 0 ? (
+                            clients.map((client) => (
+                              <SelectItem key={client.id} value={client.id}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{client.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {client.companyName}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                              No clients available. Please create a client first.
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {!createJobData.clientId && (
+                        <p className="text-xs text-red-500">
+                          Please select a client for this job
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label
                         htmlFor="create-category"
                         className="text-sm font-medium"
                       >
@@ -1466,7 +1612,7 @@ export default function JobsPage() {
                 </Button>
                 <Button
                   onClick={handleCreateJob}
-                  disabled={isSubmitting || !createJobData.title.trim()}
+                  disabled={isSubmitting || !createJobData.title.trim() || !createJobData.clientId}
                   className="order-1 sm:order-2"
                 >
                   {isSubmitting ? (
@@ -1649,6 +1795,35 @@ export default function JobsPage() {
                             onChange={(e) => setModalDepartment(e.target.value)}
                             placeholder="e.g. Engineering"
                           />
+                        </div>
+
+                        <div>
+                          <Label
+                            htmlFor="client"
+                            className="text-sm font-medium mb-2 block"
+                          >
+                            Client *
+                          </Label>
+                          <Select
+                            value={modalClientId}
+                            onValueChange={setModalClientId}
+                          >
+                            <SelectTrigger id="client">
+                              <SelectValue placeholder="Select client" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {clients.map((client) => (
+                                <SelectItem key={client.id} value={client.id}>
+                                  {client.name} - {client.companyName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {!modalClientId && (
+                            <p className="text-sm text-red-500 mt-1">
+                              Client selection is required
+                            </p>
+                          )}
                         </div>
 
                         <div>
@@ -1999,7 +2174,7 @@ export default function JobsPage() {
                 </Button>
                 <Button
                   onClick={handleSaveDetail}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !modalClientId || !modalTitle.trim()}
                   size="sm"
                   className="flex-1 sm:flex-initial"
                 >

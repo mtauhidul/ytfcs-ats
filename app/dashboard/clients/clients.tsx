@@ -3,27 +3,27 @@
 
 import { format } from "date-fns";
 import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import {
+  Building2,
   Calendar,
   Clock,
   Edit,
   Eye,
+  FileText,
+  Mail,
+  MessageSquare,
+  Phone,
   Plus,
   RefreshCw,
+  Star,
+  TrendingUp,
+  Trash2,
   Users,
+  Briefcase,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Calendar as CalendarComponent } from "~/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Dialog,
@@ -34,11 +34,7 @@ import {
   DialogTrigger,
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+import { Label } from "~/components/ui/label";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import {
   Select,
@@ -48,652 +44,726 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
-import { db } from "~/lib/firebase";
-import { cn } from "~/lib/utils";
-import type { Candidate } from "~/types";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { Progress } from "~/components/ui/progress";
+import { clientService } from "~/services/clientService";
+import type { 
+  Client, 
+  ClientFeedback, 
+  ClientCommunicationEntry 
+} from "~/types/client";
+import type { Job, Candidate } from "~/types";
 
-interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
-
-interface InterviewSummary {
-  candidateId: string;
-  candidateName: string;
-  interviewDate: string;
-  outcome: string;
-  notes?: string;
-}
-
-interface ClientWithInterviews {
-  client: TeamMember;
-  interviews: InterviewSummary[];
-  totalInterviews: number;
-  pendingInterviews: number;
-  passedInterviews: number;
-  rejectedInterviews: number;
-  uninterviewedCandidates: Candidate[];
+interface ClientWithStats extends Client {
+  jobs: Job[];
+  candidates: Candidate[];
+  recentFeedback: ClientFeedback[];
+  recentCommunications: ClientCommunicationEntry[];
 }
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientWithInterviews[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [clients, setClients] = useState<ClientWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClient, setSelectedClient] =
-    useState<ClientWithInterviews | null>(null);
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
-  const [selectedCandidateId, setSelectedCandidateId] = useState("");
-  const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined);
-  const [scheduleTime, setScheduleTime] = useState("");
-  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [selectedClient, setSelectedClient] = useState<ClientWithStats | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [isCommunicationOpen, setIsCommunicationOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<ClientWithStats | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUpdateStatusOpen, setIsUpdateStatusOpen] = useState(false);
-  const [selectedInterview, setSelectedInterview] = useState<{
-    candidateId: string;
-    interviewIndex: number;
-    interview: InterviewSummary;
-  } | null>(null);
-  const [newStatus, setNewStatus] = useState("");
-  const [statusNotes, setStatusNotes] = useState("");
-  const [lastDataSync, setLastDataSync] = useState<Date>(new Date());
-  const [connectionStatus, setConnectionStatus] = useState<
-    "connected" | "disconnected" | "connecting"
-  >("connecting");
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [isSubmittingCommunication, setIsSubmittingCommunication] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected">("connected");
+  
+  // Form states
+  const [newClient, setNewClient] = useState({
+    name: "",
+    companyName: "",
+    contactEmail: "",
+    contactPhone: "",
+    industry: "",
+    status: "active" as const,
+  });
+  
+  const [editClient, setEditClient] = useState({
+    name: "",
+    companyName: "",
+    contactEmail: "",
+    contactPhone: "",
+    industry: "",
+    status: "active" as "active" | "inactive" | "prospect" | "archived",
+  });
+  
+  const [newFeedback, setNewFeedback] = useState({
+    feedbackType: "general" as const,
+    feedback: "",
+    rating: 5,
+    receivedVia: "email" as const,
+    receivedBy: "",
+  });
+  
+  const [newCommunication, setNewCommunication] = useState({
+    type: "email" as const,
+    subject: "",
+    summary: "",
+    details: "",
+    teamMember: "",
+    followUpRequired: false,
+  });
 
-  // Manual refresh function for troubleshooting
-  const handleManualRefresh = async () => {
-    setIsRefreshing(true);
-    setConnectionStatus("connecting");
-
-    // Force refresh by updating sync time and reset connection status
-    setTimeout(() => {
-      setIsRefreshing(false);
-      setLastDataSync(new Date());
-      setConnectionStatus("connected");
-      toast.success("Data refreshed");
-    }, 500);
-  };
-
-  // Fetch clients (team members with Client role) - Real-time sync
+  // Load clients with their related data
   useEffect(() => {
-    setConnectionStatus("connecting");
-    const unsubscribe = onSnapshot(
-      query(collection(db, "teamMembers"), where("role", "==", "Client")),
-      (snapshot) => {
-        const clientList = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          name: doc.data().name || "",
-          email: doc.data().email || "",
-          role: doc.data().role || "",
-        }));
-
-        // Initialize clients with empty interview data that will be populated by the candidates useEffect
-        const clientsWithInterviews = clientList.map((client) => ({
-          client,
-          interviews: [],
-          totalInterviews: 0,
-          pendingInterviews: 0,
-          passedInterviews: 0,
-          rejectedInterviews: 0,
-          uninterviewedCandidates: [],
-        }));
-
-        setClients(clientsWithInterviews);
-        setLastDataSync(new Date());
+    const unsubscribe = clientService.subscribeToClients(async (clientsData) => {
+      try {
         setConnectionStatus("connected");
-        console.log(
-          "Clients data synced:",
-          new Date().toISOString(),
-          clientsWithInterviews.length,
-          "clients"
+        
+        // Enrich each client with jobs, candidates, and recent activity
+        const enrichedClients = await Promise.all(
+          clientsData.map(async (client) => {
+            const { jobs, candidates } = await clientService.getClientJobsAndCandidates(client.id);
+            const recentFeedback = await clientService.getClientFeedback(client.id);
+            const recentCommunications = await clientService.getClientCommunications(client.id);
+            
+            return {
+              ...client,
+              jobs: (jobs || []) as Job[],
+              candidates: (candidates || []) as Candidate[],
+              recentFeedback: (recentFeedback || []).slice(0, 5),
+              recentCommunications: (recentCommunications || []).slice(0, 5),
+            } as ClientWithStats;
+          })
         );
-      },
-      (error) => {
-        console.error("Error fetching clients:", error);
+        
+        setClients(enrichedClients);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading client data:", error);
         setConnectionStatus("disconnected");
-        toast.error("Failed to load clients data");
+        toast.error("Failed to load client data");
+        setLoading(false);
       }
-    );
+    });
 
     return () => unsubscribe();
   }, []);
 
-  // Fetch candidates with interview history - Real-time sync
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "candidates"),
-      (snapshot) => {
-        const candidateList = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name || "",
-            interviewHistory: data.interviewHistory || [],
-            ...data,
-          } as Candidate;
-        });
-        setCandidates(candidateList);
-        setLoading(false);
-        setLastDataSync(new Date());
-        setConnectionStatus("connected");
-        console.log(
-          "Candidates data synced:",
-          new Date().toISOString(),
-          candidateList.length,
-          "candidates"
-        );
-      },
-      (error) => {
-        console.error("Error fetching candidates:", error);
-        setConnectionStatus("disconnected");
-        toast.error("Failed to load candidates data");
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  // Process interview data when candidates change
-  useEffect(() => {
-    if (candidates.length > 0) {
-      setClients((currentClients) => {
-        if (currentClients.length === 0) return currentClients;
-
-        const updatedClients = currentClients.map((clientData) => {
-          const interviews: InterviewSummary[] = [];
-
-          // Find all interviews for this client across all candidates
-          candidates.forEach((candidate) => {
-            if (candidate.interviewHistory) {
-              candidate.interviewHistory
-                .filter(
-                  (interview) =>
-                    interview.interviewerId === clientData.client.id
-                )
-                .forEach((interview) => {
-                  interviews.push({
-                    candidateId: candidate.id,
-                    candidateName: candidate.name,
-                    interviewDate: interview.interviewDate,
-                    outcome: interview.outcome || "pending",
-                    notes: interview.notes,
-                  });
-                });
-            }
-          });
-
-          // Sort interviews by date (newest first)
-          interviews.sort(
-            (a, b) =>
-              new Date(b.interviewDate).getTime() -
-              new Date(a.interviewDate).getTime()
-          );
-
-          // Calculate statistics
-          const totalInterviews = interviews.length;
-          const pendingInterviews = interviews.filter(
-            (i) => i.outcome === "pending"
-          ).length;
-          const passedInterviews = interviews.filter(
-            (i) => i.outcome === "passed"
-          ).length;
-          const rejectedInterviews = interviews.filter(
-            (i) => i.outcome === "rejected"
-          ).length;
-
-          // Get uninterviewed candidates for this client
-          const interviewedCandidateIds = new Set(
-            interviews.map((i) => i.candidateId)
-          );
-          const uninterviewedCandidates = candidates.filter(
-            (candidate) => !interviewedCandidateIds.has(candidate.id)
-          );
-
-          return {
-            ...clientData,
-            interviews,
-            totalInterviews,
-            pendingInterviews,
-            passedInterviews,
-            rejectedInterviews,
-            uninterviewedCandidates,
-          };
-        });
-
-        // Only update if there are actual changes to prevent unnecessary re-renders
-        const hasChanges = updatedClients.some((updatedClient, index) => {
-          const currentClient = currentClients[index];
-          return (
-            updatedClient.totalInterviews !== currentClient.totalInterviews ||
-            updatedClient.pendingInterviews !==
-              currentClient.pendingInterviews ||
-            updatedClient.passedInterviews !== currentClient.passedInterviews ||
-            updatedClient.rejectedInterviews !==
-              currentClient.rejectedInterviews ||
-            updatedClient.uninterviewedCandidates.length !==
-              currentClient.uninterviewedCandidates.length ||
-            JSON.stringify(updatedClient.interviews) !==
-              JSON.stringify(currentClient.interviews)
-          );
-        });
-
-        if (hasChanges) {
-          setLastDataSync(new Date());
-          console.log(
-            "Client interview data processed:",
-            new Date().toISOString(),
-            updatedClients.length,
-            "clients updated"
-          );
-        }
-
-        return hasChanges ? updatedClients : currentClients;
-      });
-    }
-  }, [candidates]);
-
-  // Handle interview scheduling
-  const handleScheduleInterview = async () => {
-    if (
-      !selectedClient ||
-      !selectedCandidateId ||
-      !scheduleDate ||
-      !scheduleTime
-    ) {
-      toast.error("Please fill all required fields");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-
-      // Check if interview already exists (double-check)
-      const candidate = candidates.find((c) => c.id === selectedCandidateId);
-      if (
-        candidate?.interviewHistory?.some(
-          (interview) => interview.interviewerId === selectedClient.client.id
-        )
-      ) {
-        toast.error(
-          "This candidate has already been interviewed by this client"
-        );
-        return;
-      }
-
-      const interviewDateTime = new Date(
-        `${format(scheduleDate, "yyyy-MM-dd")}T${scheduleTime}`
-      ).toISOString();
-
-      // Add interview to candidate's history
-      const updatedInterviewHistory = [
-        ...(candidate?.interviewHistory || []),
-        {
-          interviewerId: selectedClient.client.id,
-          interviewDate: interviewDateTime,
-          outcome: "pending",
-          notes: scheduleNotes,
-        },
-      ];
-
-      // Update candidate in Firestore
-      const candidateRef = doc(db, "candidates", selectedCandidateId);
-      await updateDoc(candidateRef, {
-        interviewHistory: updatedInterviewHistory,
-        updatedAt: new Date().toISOString(),
-      });
-
-      toast.success("Interview scheduled successfully");
-      setIsScheduleOpen(false);
-      setSelectedCandidateId("");
-      setScheduleDate(undefined);
-      setScheduleTime("");
-      setScheduleNotes("");
-    } catch (error) {
-      console.error("Error scheduling interview:", error);
-      toast.error("Failed to schedule interview");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Handle interview status update
-  const handleUpdateInterviewStatus = async () => {
-    if (!selectedInterview || !newStatus) {
-      toast.error("Please select a status");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-
-      // Find the candidate
-      const candidate = candidates.find(
-        (c) => c.id === selectedInterview.candidateId
-      );
-      if (!candidate) {
-        toast.error("Candidate not found");
-        return;
-      }
-
-      // Update the specific interview in the history
-      const updatedInterviewHistory = [...(candidate.interviewHistory || [])];
-      updatedInterviewHistory[selectedInterview.interviewIndex] = {
-        ...updatedInterviewHistory[selectedInterview.interviewIndex],
-        outcome: newStatus,
-        notes:
-          statusNotes ||
-          updatedInterviewHistory[selectedInterview.interviewIndex].notes,
-      };
-
-      // Update candidate in Firestore
-      const candidateRef = doc(db, "candidates", selectedInterview.candidateId);
-      await updateDoc(candidateRef, {
-        interviewHistory: updatedInterviewHistory,
-        updatedAt: new Date().toISOString(),
-      });
-
-      toast.success("Interview status updated successfully");
-      setIsUpdateStatusOpen(false);
-      setSelectedInterview(null);
-      setNewStatus("");
-      setStatusNotes("");
-    } catch (error) {
-      console.error("Error updating interview status:", error);
-      toast.error("Failed to update interview status");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const filteredClients = clients.filter(
-    (clientData) =>
-      clientData.client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      clientData.client.email.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredClients = clients.filter((client) =>
+    client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    client.contactEmail.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getOutcomeBadge = (outcome: string) => {
-    switch (outcome) {
-      case "passed":
-        return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800">
-            Passed
-          </Badge>
-        );
-      case "rejected":
-        return (
-          <Badge variant="secondary" className="bg-red-100 text-red-800">
-            Rejected
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-            Pending
-          </Badge>
-        );
+  const handleCreateClient = async () => {
+    if (!newClient.name || !newClient.companyName || !newClient.contactEmail) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (isSubmitting) {
+      return; // Prevent duplicate submissions
+    }
+
+    try {
+      setIsSubmitting(true);
+      await clientService.createClient({
+        ...newClient,
+        status: newClient.status,
+        createdBy: "current-user", // TODO: Get from auth context
+      });
+      
+      setIsCreateOpen(false);
+      setNewClient({
+        name: "",
+        companyName: "",
+        contactEmail: "",
+        contactPhone: "",
+        industry: "",
+        status: "active",
+      });
+      toast.success("Client created successfully");
+    } catch (error) {
+      console.error("Error creating client:", error);
+      toast.error("Failed to create client");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditClient = async () => {
+    if (!selectedClient || !editClient.name || !editClient.companyName || !editClient.contactEmail) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (isSubmitting) {
+      return; // Prevent duplicate submissions
+    }
+
+    try {
+      setIsSubmitting(true);
+      await clientService.updateClient(selectedClient.id, {
+        name: editClient.name,
+        companyName: editClient.companyName,
+        contactEmail: editClient.contactEmail,
+        contactPhone: editClient.contactPhone,
+        industry: editClient.industry,
+        status: editClient.status,
+      });
+      
+      setIsEditOpen(false);
+      setSelectedClient(null);
+      toast.success("Client updated successfully");
+    } catch (error) {
+      console.error("Error updating client:", error);
+      toast.error("Failed to update client");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteClient = async () => {
+    if (!clientToDelete) return;
+
+    if (isDeleting) {
+      return; // Prevent duplicate submissions
+    }
+
+    try {
+      setIsDeleting(true);
+      await clientService.deleteClient(clientToDelete.id);
+      
+      setIsDeleteOpen(false);
+      setClientToDelete(null);
+      toast.success("Client deleted successfully");
+    } catch (error) {
+      console.error("Error deleting client:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete client");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleAddFeedback = async () => {
+    if (!selectedClient || !newFeedback.feedback || !newFeedback.receivedBy) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (isSubmittingFeedback) {
+      return; // Prevent duplicate submissions
+    }
+
+    try {
+      setIsSubmittingFeedback(true);
+      await clientService.addClientFeedback(selectedClient.id, {
+        ...newFeedback,
+        feedbackDate: new Date().toISOString(),
+      });
+      
+      setIsFeedbackOpen(false);
+      setNewFeedback({
+        feedbackType: "general",
+        feedback: "",
+        rating: 5,
+        receivedVia: "email",
+        receivedBy: "",
+      });
+      toast.success("Feedback added successfully");
+    } catch (error) {
+      console.error("Error adding feedback:", error);
+      toast.error("Failed to add feedback");
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
+
+  const handleLogCommunication = async () => {
+    if (!selectedClient || !newCommunication.summary || !newCommunication.teamMember) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (isSubmittingCommunication) {
+      return; // Prevent duplicate submissions
+    }
+
+    try {
+      setIsSubmittingCommunication(true);
+      await clientService.logCommunication(selectedClient.id, {
+        ...newCommunication,
+        date: new Date().toISOString(),
+        initiatedBy: "internal",
+      });
+      
+      setIsCommunicationOpen(false);
+      setNewCommunication({
+        type: "email",
+        subject: "",
+        summary: "",
+        details: "",
+        teamMember: "",
+        followUpRequired: false,
+      });
+      toast.success("Communication logged successfully");
+    } catch (error) {
+      console.error("Error logging communication:", error);
+      toast.error("Failed to log communication");
+    } finally {
+      setIsSubmittingCommunication(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "active": return "bg-green-100 text-green-800";
+      case "inactive": return "bg-gray-100 text-gray-800";
+      case "prospect": return "bg-blue-100 text-blue-800";
+      case "archived": return "bg-red-100 text-red-800";
+      default: return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getPriorityColor = (priority?: string) => {
+    switch (priority) {
+      case "high": return "text-red-600";
+      case "medium": return "text-yellow-600";
+      case "low": return "text-green-600";
+      default: return "text-gray-600";
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="text-muted-foreground">Loading clients...</div>
+      <div className="p-6">
+        <div className="flex items-center justify-center h-64">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-lg">Loading clients...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-full">
-      <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0 mb-6">
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="h-6 w-6" />
-            Clients
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Track client interview history and prevent duplicate interviews
+          <h1 className="text-3xl font-bold">Client Management</h1>
+          <p className="text-muted-foreground">
+            Manage client relationships, track feedback, and monitor hiring progress
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="py-1 px-3">
-            {clients.length} clients
-          </Badge>
-          <div className="text-xs text-muted-foreground flex items-center gap-1">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                connectionStatus === "connected"
-                  ? "bg-green-500 animate-pulse"
-                  : connectionStatus === "connecting"
-                  ? "bg-yellow-500 animate-spin"
-                  : "bg-red-500"
-              }`}
-            ></div>
-            {connectionStatus === "connected" ? (
-              <>
-                Last synced:{" "}
-                {lastDataSync.toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}
-              </>
-            ) : connectionStatus === "connecting" ? (
-              "Connecting..."
-            ) : (
-              "Connection lost"
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-            className="h-8 w-8 p-0"
-            title="Refresh data"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
-            />
+        <div className="flex gap-2">
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Client
           </Button>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <Input
-          placeholder="Search clients by name or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-md"
-        />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium">Total Clients</span>
+            </div>
+            <div className="text-2xl font-bold">{clients.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium">Active Clients</span>
+            </div>
+            <div className="text-2xl font-bold">
+              {clients.filter(c => c.status === "active").length}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-purple-600" />
+              <span className="text-sm font-medium">Total Jobs</span>
+            </div>
+            <div className="text-2xl font-bold">
+              {clients.reduce((sum, c) => sum + (c.jobs || []).length, 0)}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-orange-600" />
+              <span className="text-sm font-medium">Total Candidates</span>
+            </div>
+            <div className="text-2xl font-bold">
+              {clients.reduce((sum, c) => sum + (c.candidates || []).length, 0)}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Clients Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredClients.map((clientData) => (
-          <Card
-            key={clientData.client.id}
-            className="hover:shadow-md transition-shadow"
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center justify-between">
-                <div>
-                  <div className="font-semibold">{clientData.client.name}</div>
-                  <div className="text-sm text-muted-foreground font-normal">
-                    {clientData.client.email}
+      {/* Search */}
+      <div className="flex gap-4">
+        <Input
+          placeholder="Search clients by name, company, or email..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-1"
+        />
+        {connectionStatus === "disconnected" && (
+          <Badge variant="destructive">Disconnected</Badge>
+        )}
+      </div>
+
+      {/* Client Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {filteredClients.map((client) => (
+          <Card key={client.id} className="hover:shadow-lg transition-shadow">
+            <CardHeader className="pb-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <Avatar>
+                    <AvatarFallback className="bg-blue-100 text-blue-600">
+                      {(client.companyName || "").slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <CardTitle className="text-lg">{client.name}</CardTitle>
+                    <p className="text-sm text-muted-foreground">{client.companyName}</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  {clientData.client.role}
+                <Badge className={getStatusColor(client.status)}>
+                  {client.status}
                 </Badge>
-              </CardTitle>
+              </div>
+              
+              {client.priority && (
+                <div className="flex items-center gap-1">
+                  <Star className={`h-3 w-3 ${getPriorityColor(client.priority)}`} />
+                  <span className={`text-xs ${getPriorityColor(client.priority)}`}>
+                    {client.priority} priority
+                  </span>
+                </div>
+              )}
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {/* Statistics */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="text-center p-2 bg-gray-50 rounded">
-                    <div className="font-semibold text-lg">
-                      {clientData.totalInterviews}
-                    </div>
-                    <div className="text-muted-foreground">Total</div>
-                  </div>
-                  <div className="text-center p-2 bg-yellow-50 rounded">
-                    <div className="font-semibold text-lg text-yellow-700">
-                      {clientData.pendingInterviews}
-                    </div>
-                    <div className="text-muted-foreground">Pending</div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="text-center p-2 bg-green-50 rounded">
-                    <div className="font-semibold text-lg text-green-700">
-                      {clientData.passedInterviews}
-                    </div>
-                    <div className="text-muted-foreground">Passed</div>
-                  </div>
-                  <div className="text-center p-2 bg-red-50 rounded">
-                    <div className="font-semibold text-lg text-red-700">
-                      {clientData.rejectedInterviews}
-                    </div>
-                    <div className="text-muted-foreground">Rejected</div>
-                  </div>
+            <CardContent className="space-y-4">
+              {/* Contact Info */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <Mail className="h-3 w-3 text-muted-foreground" />
+                  <span className="truncate">{client.contactEmail}</span>
                 </div>
-
-                {/* Recent Interviews Preview */}
-                {clientData.interviews.length > 0 && (
-                  <div className="pt-2">
-                    <div className="text-sm font-medium mb-2">
-                      Recent Interviews:
-                    </div>
-                    <div className="space-y-1">
-                      {clientData.interviews
-                        .slice(0, 2)
-                        .map((interview, idx) => (
-                          <div
-                            key={idx}
-                            className="text-xs flex items-center justify-between p-2 bg-gray-50 rounded"
-                          >
-                            <span className="font-medium">
-                              {interview.candidateName}
-                            </span>
-                            {getOutcomeBadge(interview.outcome)}
-                          </div>
-                        ))}
-                      {clientData.interviews.length > 2 && (
-                        <div className="text-xs text-muted-foreground text-center">
-                          +{clientData.interviews.length - 2} more
-                        </div>
-                      )}
-                    </div>
+                {client.contactPhone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone className="h-3 w-3 text-muted-foreground" />
+                    <span>{client.contactPhone}</span>
                   </div>
                 )}
+              </div>
 
-                {/* Schedule Interview Button */}
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="w-full mb-2"
-                  onClick={() => {
-                    setSelectedClient(clientData);
-                    setIsScheduleOpen(true);
-                  }}
-                  disabled={clientData.uninterviewedCandidates.length === 0}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Schedule Interview
-                  <Badge variant="secondary" className="ml-2">
-                    {clientData.uninterviewedCandidates.length}
-                  </Badge>
-                </Button>
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <div className="text-lg font-semibold">{(client.jobs || []).length}</div>
+                  <div className="text-xs text-muted-foreground">Jobs</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold">{(client.candidates || []).length}</div>
+                  <div className="text-xs text-muted-foreground">Candidates</div>
+                </div>
+                <div>
+                  <div className="text-lg font-semibold">{(client.recentFeedback || []).length}</div>
+                  <div className="text-xs text-muted-foreground">Feedback</div>
+                </div>
+              </div>
 
-                {/* View Details Button */}
+              {/* Progress */}
+              {(client.candidates || []).length > 0 && (
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>Hiring Progress</span>
+                    <span>
+                      {Math.round((client.totalHires || 0) / (client.candidates || []).length * 100)}%
+                    </span>
+                  </div>
+                  <Progress 
+                    value={(client.totalHires || 0) / (client.candidates || []).length * 100} 
+                    className="h-2"
+                  />
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
                 <Dialog>
                   <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-full">
-                      <Eye className="h-4 w-4 mr-2" />
-                      View Interview History
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setSelectedClient(client)}
+                    >
+                      <Eye className="h-3 w-3 mr-2" />
+                      View Details
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+                  <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
                     <DialogHeader>
-                      <DialogTitle>
-                        Interview History: {clientData.client.name}
-                      </DialogTitle>
+                      <DialogTitle>{client.name} - {client.companyName}</DialogTitle>
                       <DialogDescription>
-                        Complete interview history for this client
+                        Complete client profile and activity overview
                       </DialogDescription>
                     </DialogHeader>
-                    <ScrollArea className="flex-grow">
-                      <div className="space-y-4">
-                        {clientData.interviews.length > 0 ? (
-                          clientData.interviews.map((interview, idx) => (
-                            <div key={idx} className="border rounded-lg p-4">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="font-medium">
-                                  {interview.candidateName}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {getOutcomeBadge(interview.outcome)}
-                                  {interview.outcome === "pending" && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedInterview({
-                                          candidateId: interview.candidateId,
-                                          interviewIndex: idx,
-                                          interview,
-                                        });
-                                        setNewStatus("");
-                                        setStatusNotes("");
-                                        setIsUpdateStatusOpen(true);
-                                      }}
-                                    >
-                                      <Edit className="h-3 w-3 mr-1" />
-                                      Update
-                                    </Button>
-                                  )}
-                                </div>
+                    
+                    <Tabs defaultValue="overview" className="flex-grow">
+                      <TabsList className="grid w-full grid-cols-4">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="jobs">Jobs & Candidates</TabsTrigger>
+                        <TabsTrigger value="feedback">Feedback</TabsTrigger>
+                        <TabsTrigger value="communications">Communications</TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value="overview" className="space-y-4">
+                        <ScrollArea className="h-[400px]">
+                          <div className="space-y-4 p-4">
+                            {/* Basic Info */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label className="text-sm font-medium">Contact Person</Label>
+                                <p className="text-sm">{client.name}</p>
                               </div>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                                <Calendar className="h-4 w-4" />
-                                {new Date(
-                                  interview.interviewDate
-                                ).toLocaleDateString()}{" "}
-                                at{" "}
-                                {new Date(
-                                  interview.interviewDate
-                                ).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+                              <div>
+                                <Label className="text-sm font-medium">Company</Label>
+                                <p className="text-sm">{client.companyName}</p>
                               </div>
-                              {interview.notes && (
-                                <div className="text-sm text-gray-600 mt-2 p-2 bg-gray-50 rounded">
-                                  {interview.notes}
-                                </div>
-                              )}
+                              <div>
+                                <Label className="text-sm font-medium">Email</Label>
+                                <p className="text-sm">{client.contactEmail}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Phone</Label>
+                                <p className="text-sm">{client.contactPhone || "Not provided"}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Industry</Label>
+                                <p className="text-sm">{client.industry || "Not specified"}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Status</Label>
+                                <Badge className={getStatusColor(client.status)}>
+                                  {client.status}
+                                </Badge>
+                              </div>
                             </div>
-                          ))
-                        ) : (
-                          <div className="text-center py-8 text-muted-foreground">
-                            <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                            <p>No interviews scheduled yet</p>
+
+                            {/* Recent Activity */}
+                            <div>
+                              <Label className="text-sm font-medium">Recent Activity</Label>
+                              <div className="mt-2 space-y-2">
+                                {(client.recentFeedback || []).slice(0, 3).map((feedback) => (
+                                  <div key={feedback.id} className="p-2 bg-gray-50 rounded text-xs">
+                                    <div className="font-medium">{feedback.feedbackType} feedback</div>
+                                    <div className="text-gray-600">{(feedback.feedback || "").slice(0, 100)}...</div>
+                                    <div className="text-gray-500">{format(new Date(feedback.feedbackDate), "MMM d, yyyy")}</div>
+                                  </div>
+                                ))}
+                                {(client.recentFeedback || []).length === 0 && (
+                                  <p className="text-sm text-muted-foreground">No recent feedback</p>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </ScrollArea>
+                        </ScrollArea>
+                      </TabsContent>
+                      
+                      <TabsContent value="jobs" className="space-y-4">
+                        <ScrollArea className="h-[400px]">
+                          <div className="space-y-4 p-4">
+                            <div className="flex justify-between items-center">
+                              <h3 className="font-medium">Jobs & Associated Candidates</h3>
+                              <Badge variant="outline">{(client.jobs || []).length} jobs</Badge>
+                            </div>
+                            
+                            {(client.jobs || []).map((job) => (
+                              <Card key={job.id}>
+                                <CardContent className="p-4">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <h4 className="font-medium">{job.title}</h4>
+                                    <Badge variant="outline">{job.status}</Badge>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mb-2">
+                                    {job.location} • {job.employmentType}
+                                  </p>
+                                  
+                                  <div className="text-xs text-muted-foreground">
+                                    Candidates: {(client.candidates || []).filter(c => c.jobId === job.id).length}
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                            
+                            {(client.jobs || []).length === 0 && (
+                              <p className="text-center py-8 text-muted-foreground">
+                                No jobs assigned to this client yet
+                              </p>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </TabsContent>
+                      
+                      <TabsContent value="feedback" className="space-y-4">
+                        <ScrollArea className="h-[400px]">
+                          <div className="space-y-4 p-4">
+                            <div className="flex justify-between items-center">
+                              <h3 className="font-medium">Client Feedback History</h3>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedClient(client);
+                                  setIsFeedbackOpen(true);
+                                }}
+                              >
+                                <Plus className="h-3 w-3 mr-2" />
+                                Add Feedback
+                              </Button>
+                            </div>
+                            
+                            {(client.recentFeedback || []).map((feedback) => (
+                              <Card key={feedback.id}>
+                                <CardContent className="p-4">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <Badge variant="outline">{feedback.feedbackType}</Badge>
+                                    <div className="flex items-center gap-1">
+                                      {[...Array(5)].map((_, i) => (
+                                        <Star
+                                          key={i}
+                                          className={`h-3 w-3 ${
+                                            i < (feedback.rating || 0) 
+                                              ? "fill-yellow-400 text-yellow-400" 
+                                              : "text-gray-300"
+                                          }`}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <p className="text-sm mb-2">{feedback.feedback}</p>
+                                  <div className="text-xs text-muted-foreground">
+                                    {format(new Date(feedback.feedbackDate), "MMM d, yyyy")} • 
+                                    via {feedback.receivedVia} • by {feedback.receivedBy}
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                            
+                            {(client.recentFeedback || []).length === 0 && (
+                              <p className="text-center py-8 text-muted-foreground">
+                                No feedback recorded yet
+                              </p>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </TabsContent>
+                      
+                      <TabsContent value="communications" className="space-y-4">
+                        <ScrollArea className="h-[400px]">
+                          <div className="space-y-4 p-4">
+                            <div className="flex justify-between items-center">
+                              <h3 className="font-medium">Communication Log</h3>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedClient(client);
+                                  setIsCommunicationOpen(true);
+                                }}
+                              >
+                                <Plus className="h-3 w-3 mr-2" />
+                                Log Communication
+                              </Button>
+                            </div>
+                            
+                            {(client.recentCommunications || []).map((comm) => (
+                              <Card key={comm.id}>
+                                <CardContent className="p-4">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-2">
+                                      {comm.type === "email" && <Mail className="h-3 w-3" />}
+                                      {comm.type === "phone" && <Phone className="h-3 w-3" />}
+                                      {comm.type === "meeting" && <Calendar className="h-3 w-3" />}
+                                      {comm.type === "note" && <FileText className="h-3 w-3" />}
+                                      <span className="text-sm font-medium">{comm.type}</span>
+                                    </div>
+                                    <Badge variant="outline" className="text-xs">
+                                      {comm.initiatedBy}
+                                    </Badge>
+                                  </div>
+                                  {comm.subject && (
+                                    <p className="text-sm font-medium mb-1">{comm.subject}</p>
+                                  )}
+                                  <p className="text-sm text-muted-foreground mb-2">{comm.summary}</p>
+                                  <div className="text-xs text-muted-foreground">
+                                    {format(new Date(comm.date), "MMM d, yyyy")} • by {comm.teamMember}
+                                  </div>
+                                  {comm.followUpRequired && (
+                                    <Badge variant="destructive" className="mt-2 text-xs">
+                                      Follow-up required
+                                    </Badge>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            ))}
+                            
+                            {(client.recentCommunications || []).length === 0 && (
+                              <p className="text-center py-8 text-muted-foreground">
+                                No communications logged yet
+                              </p>
+                            )}
+                          </div>
+                        </ScrollArea>
+                      </TabsContent>
+                    </Tabs>
                   </DialogContent>
                 </Dialog>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedClient(client);
+                    setEditClient({
+                      name: client.name,
+                      companyName: client.companyName,
+                      contactEmail: client.contactEmail,
+                      contactPhone: client.contactPhone || "",
+                      industry: client.industry || "",
+                      status: client.status,
+                    });
+                    setIsEditOpen(true);
+                  }}
+                >
+                  <Edit className="h-3 w-3" />
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setClientToDelete(client);
+                    setIsDeleteOpen(true);
+                  }}
+                  className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -702,256 +772,394 @@ export default function ClientsPage() {
 
       {filteredClients.length === 0 && (
         <div className="text-center py-12">
-          <Users className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+          <Building2 className="h-16 w-16 mx-auto mb-4 text-gray-300" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
             No clients found
           </h3>
           <p className="text-gray-500 mb-4">
-            {searchTerm
-              ? "No clients match your search criteria."
-              : "No team members with 'Client' role found."}
+            {searchTerm ? "Try adjusting your search terms" : "Get started by adding your first client"}
           </p>
           {!searchTerm && (
-            <p className="text-sm text-gray-400">
-              Add team members with the "Client" role to track client interview
-              history.
-            </p>
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add First Client
+            </Button>
           )}
         </div>
       )}
 
-      {/* Schedule Interview Dialog */}
-      <Dialog open={isScheduleOpen} onOpenChange={setIsScheduleOpen}>
-        <DialogContent className="max-w-md">
+      {/* Create Client Dialog */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Schedule Interview</DialogTitle>
+            <DialogTitle>Create New Client</DialogTitle>
             <DialogDescription>
-              Schedule a new interview with {selectedClient?.client.name}
+              Add a new client to your ATS for internal tracking and job assignment
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4 py-4">
+          <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-2 block">
-                Select Candidate
-              </label>
-              <Select
-                value={selectedCandidateId}
-                onValueChange={setSelectedCandidateId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a candidate" />
-                </SelectTrigger>
-                <SelectContent>
-                  {selectedClient?.uninterviewedCandidates.map((candidate) => (
-                    <SelectItem key={candidate.id} value={candidate.id}>
-                      {candidate.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedClient?.uninterviewedCandidates.length === 0 && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  All candidates have been interviewed by this client
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Interview Date
-                </label>
-                <Popover modal={true}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !scheduleDate && "text-muted-foreground"
-                      )}
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {scheduleDate
-                        ? format(scheduleDate, "PPP")
-                        : "Select date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0 z-50" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={scheduleDate}
-                      onSelect={setScheduleDate}
-                      disabled={(date) => date < new Date()}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Interview Time
-                </label>
-                <Select value={scheduleTime} onValueChange={setScheduleTime}>
-                  <SelectTrigger className="z-10">
-                    <SelectValue placeholder="Select time" />
-                  </SelectTrigger>
-                  <SelectContent className="z-50 max-h-[200px]">
-                    {Array.from({ length: 24 }, (_, i) => {
-                      const hour = i.toString().padStart(2, "0");
-                      return (
-                        <div key={i}>
-                          <SelectItem value={`${hour}:00`}>
-                            {hour}:00
-                          </SelectItem>
-                          <SelectItem value={`${hour}:30`}>
-                            {hour}:30
-                          </SelectItem>
-                        </div>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-2 block">
-                Notes (optional)
-              </label>
-              <Textarea
-                placeholder="Interview notes or instructions..."
-                value={scheduleNotes}
-                onChange={(e) => setScheduleNotes(e.target.value)}
-                rows={3}
-                className="resize-none"
+              <Label htmlFor="name" className="mb-2 block">Contact Person Name *</Label>
+              <Input
+                id="name"
+                value={newClient.name}
+                onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
+                placeholder="John Doe"
               />
             </div>
+            <div>
+              <Label htmlFor="companyName" className="mb-2 block">Company Name *</Label>
+              <Input
+                id="companyName"
+                value={newClient.companyName}
+                onChange={(e) => setNewClient({ ...newClient, companyName: e.target.value })}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div>
+              <Label htmlFor="contactEmail" className="mb-2 block">Contact Email *</Label>
+              <Input
+                id="contactEmail"
+                type="email"
+                value={newClient.contactEmail}
+                onChange={(e) => setNewClient({ ...newClient, contactEmail: e.target.value })}
+                placeholder="john@acmecorp.com"
+              />
+            </div>
+            <div>
+              <Label htmlFor="contactPhone" className="mb-2 block">Contact Phone</Label>
+              <Input
+                id="contactPhone"
+                value={newClient.contactPhone}
+                onChange={(e) => setNewClient({ ...newClient, contactPhone: e.target.value })}
+                placeholder="+1 (555) 123-4567"
+              />
+            </div>
+            <div>
+              <Label htmlFor="industry" className="mb-2 block">Industry</Label>
+              <Input
+                id="industry"
+                value={newClient.industry}
+                onChange={(e) => setNewClient({ ...newClient, industry: e.target.value })}
+                placeholder="Technology"
+              />
+            </div>
+            <div>
+              <Label htmlFor="status" className="mb-2 block">Status</Label>
+              <Select value={newClient.status} onValueChange={(value: any) => setNewClient({ ...newClient, status: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="prospect">Prospect</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-
-          <div className="flex gap-2 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setIsScheduleOpen(false)}
-              disabled={isSubmitting}
-            >
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button
-              onClick={handleScheduleInterview}
-              disabled={
-                isSubmitting ||
-                !selectedCandidateId ||
-                !scheduleDate ||
-                !scheduleTime
-              }
-            >
-              {isSubmitting ? (
-                <>
-                  <Clock className="h-4 w-4 mr-2 animate-spin" />
-                  Scheduling...
-                </>
-              ) : (
-                "Schedule Interview"
-              )}
+            <Button onClick={handleCreateClient} disabled={isSubmitting}>
+              {isSubmitting ? "Creating..." : "Create Client"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Update Interview Status Dialog */}
-      <Dialog open={isUpdateStatusOpen} onOpenChange={setIsUpdateStatusOpen}>
-        <DialogContent className="max-w-md">
+      {/* Edit Client Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update Interview Status</DialogTitle>
+            <DialogTitle>Edit Client</DialogTitle>
             <DialogDescription>
-              Update the outcome for{" "}
-              {selectedInterview?.interview.candidateName}'s interview
+              Update client information for {selectedClient?.name}
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4 py-4">
+          <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-2 block">
-                Interview Outcome
-              </label>
-              <Select value={newStatus} onValueChange={setNewStatus}>
+              <Label htmlFor="editName" className="mb-2 block">Contact Person Name *</Label>
+              <Input
+                id="editName"
+                value={editClient.name}
+                onChange={(e) => setEditClient({ ...editClient, name: e.target.value })}
+                placeholder="John Doe"
+              />
+            </div>
+            <div>
+              <Label htmlFor="editCompanyName" className="mb-2 block">Company Name *</Label>
+              <Input
+                id="editCompanyName"
+                value={editClient.companyName}
+                onChange={(e) => setEditClient({ ...editClient, companyName: e.target.value })}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div>
+              <Label htmlFor="editContactEmail" className="mb-2 block">Contact Email *</Label>
+              <Input
+                id="editContactEmail"
+                type="email"
+                value={editClient.contactEmail}
+                onChange={(e) => setEditClient({ ...editClient, contactEmail: e.target.value })}
+                placeholder="john@acme.com"
+              />
+            </div>
+            <div>
+              <Label htmlFor="editContactPhone" className="mb-2 block">Contact Phone</Label>
+              <Input
+                id="editContactPhone"
+                value={editClient.contactPhone}
+                onChange={(e) => setEditClient({ ...editClient, contactPhone: e.target.value })}
+                placeholder="+1 (555) 123-4567"
+              />
+            </div>
+            <div>
+              <Label htmlFor="editIndustry" className="mb-2 block">Industry</Label>
+              <Input
+                id="editIndustry"
+                value={editClient.industry}
+                onChange={(e) => setEditClient({ ...editClient, industry: e.target.value })}
+                placeholder="Technology"
+              />
+            </div>
+            <div>
+              <Label htmlFor="editStatus" className="mb-2 block">Status</Label>
+              <Select value={editClient.status} onValueChange={(value: any) => setEditClient({ ...editClient, status: value })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select outcome" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="passed">Passed</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="prospect">Prospect</SelectItem>
+                  <SelectItem value="archived">Archived</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditClient} disabled={isSubmitting}>
+              {isSubmitting ? "Updating..." : "Update Client"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
+      {/* Add Feedback Dialog */}
+      <Dialog open={isFeedbackOpen} onOpenChange={setIsFeedbackOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Client Feedback</DialogTitle>
+            <DialogDescription>
+              Record feedback received from {selectedClient?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium mb-2 block">
-                Interview Notes
-              </label>
-              <Textarea
-                placeholder="Add feedback or notes about the interview..."
-                value={statusNotes}
-                onChange={(e) => setStatusNotes(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-              {selectedInterview?.interview.notes && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Current notes: {selectedInterview.interview.notes}
-                </p>
-              )}
+              <Label htmlFor="feedbackType" className="mb-2 block">Feedback Type</Label>
+              <Select value={newFeedback.feedbackType} onValueChange={(value: any) => setNewFeedback({ ...newFeedback, feedbackType: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="interview">Interview Feedback</SelectItem>
+                  <SelectItem value="general">General Feedback</SelectItem>
+                  <SelectItem value="rejection">Rejection Feedback</SelectItem>
+                  <SelectItem value="offer">Offer Feedback</SelectItem>
+                  <SelectItem value="preference">Hiring Preference</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            <div>
+              <Label htmlFor="feedback" className="mb-2 block">Feedback *</Label>
+              <Textarea
+                id="feedback"
+                value={newFeedback.feedback}
+                onChange={(e) => setNewFeedback({ ...newFeedback, feedback: e.target.value })}
+                placeholder="Enter the feedback details..."
+                rows={4}
+              />
+            </div>
+            <div>
+              <Label htmlFor="rating" className="mb-2 block">Rating (1-5)</Label>
+              <Select value={newFeedback.rating.toString()} onValueChange={(value) => setNewFeedback({ ...newFeedback, rating: parseInt(value) })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 - Poor</SelectItem>
+                  <SelectItem value="2">2 - Fair</SelectItem>
+                  <SelectItem value="3">3 - Good</SelectItem>
+                  <SelectItem value="4">4 - Very Good</SelectItem>
+                  <SelectItem value="5">5 - Excellent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="receivedVia" className="mb-2 block">Received Via</Label>
+              <Select value={newFeedback.receivedVia} onValueChange={(value: any) => setNewFeedback({ ...newFeedback, receivedVia: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="phone">Phone Call</SelectItem>
+                  <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="form">Online Form</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="receivedBy" className="mb-2 block">Received By *</Label>
+              <Input
+                id="receivedBy"
+                value={newFeedback.receivedBy}
+                onChange={(e) => setNewFeedback({ ...newFeedback, receivedBy: e.target.value })}
+                placeholder="Your name"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsFeedbackOpen(false)} disabled={isSubmittingFeedback}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddFeedback} disabled={isSubmittingFeedback}>
+              {isSubmittingFeedback ? "Adding..." : "Add Feedback"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-            <div className="text-sm text-muted-foreground bg-gray-50 p-3 rounded">
-              <div className="font-medium mb-1">Interview Details:</div>
+      {/* Log Communication Dialog */}
+      <Dialog open={isCommunicationOpen} onOpenChange={setIsCommunicationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Log Communication</DialogTitle>
+            <DialogDescription>
+              Record communication with {selectedClient?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="type" className="mb-2 block">Communication Type</Label>
+              <Select value={newCommunication.type} onValueChange={(value: any) => setNewCommunication({ ...newCommunication, type: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="phone">Phone Call</SelectItem>
+                  <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="note">Internal Note</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {newCommunication.type === "email" && (
               <div>
-                Date:{" "}
-                {selectedInterview &&
-                  new Date(
-                    selectedInterview.interview.interviewDate
-                  ).toLocaleDateString()}
+                <Label htmlFor="subject" className="mb-2 block">Subject</Label>
+                <Input
+                  id="subject"
+                  value={newCommunication.subject}
+                  onChange={(e) => setNewCommunication({ ...newCommunication, subject: e.target.value })}
+                  placeholder="Email subject"
+                />
               </div>
-              <div>
-                Time:{" "}
-                {selectedInterview &&
-                  new Date(
-                    selectedInterview.interview.interviewDate
-                  ).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+            )}
+            <div>
+              <Label htmlFor="summary" className="mb-2 block">Summary *</Label>
+              <Textarea
+                id="summary"
+                value={newCommunication.summary}
+                onChange={(e) => setNewCommunication({ ...newCommunication, summary: e.target.value })}
+                placeholder="Brief summary of the communication..."
+                rows={3}
+              />
+            </div>
+            <div>
+              <Label htmlFor="details" className="mb-2 block">Details</Label>
+              <Textarea
+                id="details"
+                value={newCommunication.details}
+                onChange={(e) => setNewCommunication({ ...newCommunication, details: e.target.value })}
+                placeholder="Additional details..."
+                rows={3}
+              />
+            </div>
+            <div>
+              <Label htmlFor="teamMember" className="mb-2 block">Team Member *</Label>
+              <Input
+                id="teamMember"
+                value={newCommunication.teamMember}
+                onChange={(e) => setNewCommunication({ ...newCommunication, teamMember: e.target.value })}
+                placeholder="Your name"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="followUp"
+                checked={newCommunication.followUpRequired}
+                onChange={(e) => setNewCommunication({ ...newCommunication, followUpRequired: e.target.checked })}
+              />
+              <Label htmlFor="followUp">Follow-up required</Label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsCommunicationOpen(false)} disabled={isSubmittingCommunication}>
+              Cancel
+            </Button>
+            <Button onClick={handleLogCommunication} disabled={isSubmittingCommunication}>
+              {isSubmittingCommunication ? "Logging..." : "Log Communication"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Client Confirmation Dialog */}
+      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Client</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{clientToDelete?.name}" from {clientToDelete?.companyName}? 
+              This action cannot be undone and will also delete all associated feedback and communication records.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-amber-600" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-medium text-amber-800">Warning</h4>
+                <p className="text-sm text-amber-700 mt-1">
+                  This client will be permanently deleted if they don't have any active jobs. 
+                  If active jobs exist, you must reassign or delete them first.
+                </p>
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsUpdateStatusOpen(false);
-                setSelectedInterview(null);
-                setNewStatus("");
-                setStatusNotes("");
-              }}
-              disabled={isSubmitting}
-            >
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setIsDeleteOpen(false)} disabled={isDeleting}>
               Cancel
             </Button>
-            <Button
-              onClick={handleUpdateInterviewStatus}
-              disabled={isSubmitting || !newStatus}
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteClient} 
+              disabled={isDeleting}
             >
-              {isSubmitting ? (
-                <>
-                  <Clock className="h-4 w-4 mr-2 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                "Update Status"
-              )}
+              {isDeleting ? "Deleting..." : "Delete Client"}
             </Button>
           </div>
         </DialogContent>

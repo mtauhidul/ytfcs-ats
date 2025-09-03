@@ -6,6 +6,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -200,7 +201,7 @@ export default function ApplicationsPage() {
       }
 
       // Create candidate record directly
-      const candidateData = {
+      const candidateData: any = {
         name: application.name,
         email: application.email || "",
         phone: application.phone || "",
@@ -220,7 +221,10 @@ export default function ApplicationsPage() {
         resumeScoringDetails: application.resumeScoringDetails || null,
         scoredAgainstJobId: application.scoredAgainstJobId || null,
         scoredAgainstJobTitle: application.scoredAgainstJobTitle || null,
-        jobId: application.scoredAgainstJobId || undefined, // Add jobId from application
+        jobId: application.scoredAgainstJobId || null, // Add jobId from application
+        clientId: null, // Will be populated from job data if available
+        clientName: null, // Will be populated from job data if available 
+        clientCompany: null, // Will be populated from job data if available
         source: application.source,
         tags: [],
         category: "General",
@@ -248,6 +252,23 @@ export default function ApplicationsPage() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+
+      // Fetch job details to get client information if jobId exists
+      if (application.scoredAgainstJobId) {
+        try {
+          const jobDoc = await getDoc(doc(db, "jobs", application.scoredAgainstJobId));
+          if (jobDoc.exists()) {
+            const jobData = jobDoc.data();
+            // Add client information to candidate
+            candidateData.clientId = jobData.clientId || null;
+            candidateData.clientName = jobData.clientName || null;
+            candidateData.clientCompany = jobData.clientCompany || null;
+          }
+        } catch (error) {
+          console.error("Error fetching job details for client info:", error);
+          // Continue without client info if job fetch fails
+        }
+      }
 
       // Add to candidates collection
       await addDoc(collection(db, "candidates"), candidateData);
@@ -315,7 +336,7 @@ export default function ApplicationsPage() {
       setIsSubmitting(true);
 
       // Create candidate record
-      const candidateData = {
+      const candidateData: any = {
         name: application.name,
         email: application.email || "",
         phone: application.phone || "",
@@ -335,7 +356,10 @@ export default function ApplicationsPage() {
         resumeScoringDetails: application.resumeScoringDetails || null,
         scoredAgainstJobId: application.scoredAgainstJobId || null,
         scoredAgainstJobTitle: application.scoredAgainstJobTitle || null,
-        jobId: application.scoredAgainstJobId || undefined, // Add jobId from application
+        jobId: application.scoredAgainstJobId || null, // Add jobId from application
+        clientId: null, // Will be populated from job data if available
+        clientName: null, // Will be populated from job data if available 
+        clientCompany: null, // Will be populated from job data if available
         source: application.source,
         tags: [],
         category: "General",
@@ -363,6 +387,23 @@ export default function ApplicationsPage() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+
+      // Fetch job details to get client information if jobId exists
+      if (application.scoredAgainstJobId) {
+        try {
+          const jobDoc = await getDoc(doc(db, "jobs", application.scoredAgainstJobId));
+          if (jobDoc.exists()) {
+            const jobData = jobDoc.data();
+            // Add client information to candidate
+            candidateData.clientId = jobData.clientId || null;
+            candidateData.clientName = jobData.clientName || null;
+            candidateData.clientCompany = jobData.clientCompany || null;
+          }
+        } catch (error) {
+          console.error("Error fetching job details for client info:", error);
+          // Continue without client info if job fetch fails
+        }
+      }
 
       const candidateRef = await addDoc(
         collection(db, "candidates"),
