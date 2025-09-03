@@ -70,8 +70,10 @@ export interface Candidate {
   notes?: string;
   documents: CandidateDocument[];
 
-  // Job relationship
+  // Job and Client relationship
   jobId?: string; // The job this candidate applied for
+  clientId?: string; // The client this candidate is being considered for (derived from job)
+  clientName?: string; // Cached client name for display
   
   // Legacy resume fields
   resumeFileURL?: string;

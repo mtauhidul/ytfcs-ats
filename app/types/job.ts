@@ -10,6 +10,11 @@ export interface Job {
   salary?: string; // Legacy field
   department?: string;
   employmentType?: string;
+  
+  // Client Assignment - Core relationship
+  clientId: string; // Required: Which client this job is for
+  clientName?: string; // Cached for display
+  clientCompany?: string; // Cached for display
   tags: string[];
   category: string;
   statusId: string;
@@ -56,4 +61,7 @@ export interface JobBasic {
   location: string;
   department: string;
   salary: string;
+  clientId: string;
+  clientName?: string;
+  clientCompany?: string;
 }

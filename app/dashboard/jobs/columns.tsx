@@ -74,6 +74,37 @@ export const columns: ColumnDef<Job>[] = [
     minSize: 150,
   },
   {
+    accessorKey: "clientName",
+    header: "Client",
+    cell: ({ row }) => {
+      const clientName = row.original.clientName;
+      const clientCompany = row.original.clientCompany;
+      
+      return (
+        <div className="min-w-0 max-w-[140px]">
+          {clientName ? (
+            <div>
+              <div className="font-medium text-xs truncate" title={clientName}>
+                {clientName}
+              </div>
+              {clientCompany && (
+                <div className="text-xs text-muted-foreground truncate" title={clientCompany}>
+                  {clientCompany}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="text-muted-foreground text-xs">—</span>
+          )}
+        </div>
+      );
+    },
+    size: 140,
+    meta: {
+      className: "hidden sm:table-cell", // Hide on mobile to save space
+    },
+  },
+  {
     accessorKey: "status",
     header: "Status",
     cell: ({ row }) => {

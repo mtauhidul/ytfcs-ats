@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -18,8 +19,23 @@ class InterviewService {
     interviewData: Omit<Interview, "id" | "createdAt" | "updatedAt">
   ): Promise<Interview> {
     try {
+      // If jobId is provided, fetch client info
+      let clientId = interviewData.clientId;
+      let clientName = interviewData.clientName;
+      
+      if (interviewData.jobId && !clientId) {
+        const jobDoc = await getDoc(doc(db, "jobs", interviewData.jobId));
+        if (jobDoc.exists()) {
+          const jobData = jobDoc.data();
+          clientId = jobData.clientId;
+          clientName = jobData.clientName;
+        }
+      }
+
       const docRef = await addDoc(collection(db, "interviews"), {
         ...interviewData,
+        clientId,
+        clientName,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -27,6 +43,8 @@ class InterviewService {
       return {
         id: docRef.id,
         ...interviewData,
+        clientId,
+        clientName,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -96,6 +114,25 @@ class InterviewService {
     } catch (error) {
       console.error("Error fetching interviewer interviews:", error);
       throw new Error("Failed to fetch interviews");
+    }
+  }
+
+  async getInterviewsForClient(clientId: string): Promise<Interview[]> {
+    try {
+      const q = query(
+        collection(db, "interviews"),
+        where("clientId", "==", clientId),
+        orderBy("scheduledDate", "desc")
+      );
+
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Interview[];
+    } catch (error) {
+      console.error("Error fetching client interviews:", error);
+      throw new Error("Failed to fetch client interviews");
     }
   }
 
