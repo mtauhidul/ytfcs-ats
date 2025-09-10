@@ -711,11 +711,6 @@ export default function JobsPage() {
     if (!detailJob) return;
 
     // Validate required fields
-    if (!modalClientId) {
-      toast.error("Please select a client for this job");
-      return;
-    }
-
     if (!modalTitle.trim()) {
       toast.error("Job title is required");
       return;
@@ -1700,7 +1695,7 @@ export default function JobsPage() {
       {/* Job Detail Modal */}
       {detailJob && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               closeDetail();
@@ -1708,427 +1703,371 @@ export default function JobsPage() {
           }}
         >
           <div
-            className="bg-background rounded-lg w-full max-w-4xl h-[95vh] sm:h-[90vh] overflow-hidden relative flex flex-col"
+            className="bg-background rounded-lg w-full max-w-3xl h-[95vh] sm:h-[85vh] overflow-hidden relative flex flex-col shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-2 top-2 sm:right-4 sm:top-4 z-10"
-              onClick={closeDetail}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-
-            {/* Fixed Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 sm:p-6 pb-2 sm:pb-4 pr-10 sm:pr-16 flex-shrink-0 border-b">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-lg sm:text-xl font-bold truncate mr-4">
-                  {detailJob.title}
-                </h2>
-                {(detailJob.clientName?.trim() ||
-                  detailJob.clientCompany?.trim()) && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {detailJob.clientName?.trim() &&
-                    detailJob.clientCompany?.trim() ? (
-                      <>
-                        {detailJob.clientName} • {detailJob.clientCompany}
-                      </>
-                    ) : (
-                      detailJob.clientName?.trim() ||
-                      detailJob.clientCompany?.trim()
+            {/* Compact Header */}
+            <div className="flex items-center justify-between p-4 border-b bg-muted/20 flex-shrink-0">
+              <div className="min-w-0 flex-1 mr-4">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-semibold truncate">
+                      {detailJob.title}
+                    </h2>
+                    {(detailJob.clientName?.trim() ||
+                      detailJob.clientCompany?.trim()) && (
+                      <p className="text-sm text-muted-foreground truncate">
+                        {detailJob.clientName?.trim() &&
+                        detailJob.clientCompany?.trim() ? (
+                          <>
+                            {detailJob.clientName} • {detailJob.clientCompany}
+                          </>
+                        ) : (
+                          detailJob.clientName?.trim() ||
+                          detailJob.clientCompany?.trim()
+                        )}
+                      </p>
                     )}
-                  </p>
-                )}
+                  </div>
+                  <Badge
+                    className={cn(
+                      "flex-shrink-0",
+                      modalStatusId !== UNASSIGNED_VALUE
+                        ? getBadgeColorByStatusId(modalStatusId)
+                        : ""
+                    )}
+                    variant={
+                      modalStatusId !== UNASSIGNED_VALUE ? "default" : "outline"
+                    }
+                  >
+                    {modalStatusId !== UNASSIGNED_VALUE
+                      ? getStatusTitleById(modalStatusId)
+                      : "Unassigned"}
+                  </Badge>
+                </div>
               </div>
-              <div className="mt-2 sm:mt-0 flex items-center flex-shrink-0">
-                <Badge
-                  className={cn(
-                    modalStatusId !== UNASSIGNED_VALUE
-                      ? getBadgeColorByStatusId(modalStatusId)
-                      : ""
-                  )}
-                  variant={
-                    modalStatusId !== UNASSIGNED_VALUE ? "default" : "outline"
-                  }
-                >
-                  {modalStatusId !== UNASSIGNED_VALUE
-                    ? getStatusTitleById(modalStatusId)
-                    : "Unassigned"}
-                </Badge>
-              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="flex-shrink-0 h-8 w-8"
+                onClick={closeDetail}
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
 
-            {/* Scrollable Content */}
+            {/* Content */}
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
-                className="flex-1 flex flex-col px-3 sm:px-6 min-h-0"
+                className="flex-1 flex flex-col min-h-0"
               >
-                <TabsList className="my-3 sm:my-4 w-full sm:w-auto flex-shrink-0">
-                  <TabsTrigger
-                    value="details"
-                    className="flex-1 sm:flex-initial text-xs sm:text-sm"
-                  >
-                    <Briefcase className="size-4 mr-1" />
-                    <span className="hidden sm:inline">Details</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="tags"
-                    className="flex-1 sm:flex-initial text-xs sm:text-sm"
-                  >
-                    <TagIcon className="size-4 mr-1" />
-                    <span className="hidden sm:inline">Tags</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="history"
-                    className="flex-1 sm:flex-initial text-xs sm:text-sm"
-                  >
-                    <Shield className="size-4 mr-1" />
-                    <span className="hidden sm:inline">History</span>
-                  </TabsTrigger>
-                </TabsList>
+                <div className="border-b bg-muted/10">
+                  <TabsList className="h-auto p-1 bg-transparent w-full justify-start rounded-none border-0">
+                    <TabsTrigger
+                      value="details"
+                      className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent bg-transparent px-4 py-2"
+                    >
+                      <Briefcase className="size-4 mr-2" />
+                      Details
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="tags"
+                      className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent bg-transparent px-4 py-2"
+                    >
+                      <TagIcon className="size-4 mr-2" />
+                      Tags
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="history"
+                      className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent bg-transparent px-4 py-2"
+                    >
+                      <Shield className="size-4 mr-2" />
+                      History
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
 
-                {/* Scrollable Tab Content */}
-                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-                  <TabsContent value="details" className="m-0 pb-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <Label
-                            htmlFor="title"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Job Title
-                          </Label>
-                          <Input
-                            id="title"
-                            value={modalTitle}
-                            onChange={(e) => setModalTitle(e.target.value)}
-                            placeholder="e.g. Senior Software Engineer"
-                          />
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="location"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Location
-                          </Label>
-                          <Input
-                            id="location"
-                            value={modalLocation}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setModalLocation(value);
-
-                              // Auto-suggest "Remote" if certain keywords are detected
-                              const keywords = [
-                                "remote",
-                                "work from home",
-                                "wfh",
-                                "anywhere",
-                                "virtual",
-                                "distributed",
-                              ];
-                              const lowercaseValue = value.toLowerCase();
-
-                              if (
-                                keywords.some((keyword) =>
-                                  lowercaseValue.includes(keyword)
-                                ) &&
-                                !lowercaseValue.includes("remote")
-                              ) {
-                                // Don't auto-complete if they're already typing "remote"
-                                if (!lowercaseValue.startsWith("remote")) {
-                                  setModalLocation(value + " - Remote");
-                                }
-                              }
-                            }}
-                            placeholder="e.g. New York, NY or Remote"
-                          />
-                          {modalLocation &&
-                            !modalLocation.toLowerCase().includes("office") &&
-                            !modalLocation.toLowerCase().includes("onsite") &&
-                            !modalLocation
-                              .toLowerCase()
-                              .includes("on-site") && (
-                              <div className="mt-1 text-xs text-blue-600 flex items-center gap-1">
-                                <span>💡</span>
-                                <span>
-                                  Consider adding "Remote" if this position
-                                  allows remote work
-                                </span>
-                              </div>
-                            )}
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="department"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Department
-                          </Label>
-                          <Input
-                            id="department"
-                            value={modalDepartment}
-                            onChange={(e) => setModalDepartment(e.target.value)}
-                            placeholder="e.g. Engineering"
-                          />
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="client"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Client *
-                          </Label>
-                          <Select
-                            value={modalClientId}
-                            onValueChange={setModalClientId}
-                          >
-                            <SelectTrigger id="client">
-                              <SelectValue placeholder="Select client" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {clients.map((client) => (
-                                <SelectItem key={client.id} value={client.id}>
-                                  {client.name} - {client.companyName}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {!modalClientId && (
-                            <p className="text-sm text-red-500 mt-1">
-                              Client selection is required
-                            </p>
-                          )}
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="employmentType"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Employment Type
-                          </Label>
-                          <Select
-                            value={modalEmploymentType}
-                            onValueChange={setModalEmploymentType}
-                          >
-                            <SelectTrigger id="employmentType">
-                              <SelectValue placeholder="Select employment type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="full-time">
-                                Full-time
-                              </SelectItem>
-                              <SelectItem value="part-time">
-                                Part-time
-                              </SelectItem>
-                              <SelectItem value="contract">Contract</SelectItem>
-                              <SelectItem value="internship">
-                                Internship
-                              </SelectItem>
-                              <SelectItem value="temporary">
-                                Temporary
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="status"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Status
-                          </Label>
-                          <Select
-                            value={modalStatusId}
-                            onValueChange={setModalStatusId}
-                          >
-                            <SelectTrigger id="status" className="w-full">
-                              <SelectValue placeholder="Select a status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={UNASSIGNED_VALUE}>
-                                Unassigned
-                              </SelectItem>
-                              {statuses.map((status) => (
-                                <SelectItem key={status.id} value={status.id}>
-                                  {status.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                {/* Tab Content */}
+                <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                  <TabsContent value="details" className="m-0 space-y-6">
+                    {/* Basic Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <Label htmlFor="title" className="text-sm font-medium">
+                          Job Title
+                        </Label>
+                        <Input
+                          id="title"
+                          value={modalTitle}
+                          onChange={(e) => setModalTitle(e.target.value)}
+                          placeholder="e.g. Senior Software Engineer"
+                          className="h-9"
+                        />
                       </div>
 
-                      <div className="space-y-4">
-                        <div>
-                          <Label
-                            htmlFor="salaryRange"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Salary Range
-                          </Label>
-                          <Input
-                            id="salaryRange"
-                            value={modalSalaryRange}
-                            onChange={(e) =>
-                              setModalSalaryRange(e.target.value)
-                            }
-                            placeholder="e.g. $80,000 - $120,000"
-                          />
-                        </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="location" className="text-sm font-medium">
+                          Location
+                        </Label>
+                        <Input
+                          id="location"
+                          value={modalLocation}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setModalLocation(value);
 
-                        <div>
-                          <Label
-                            htmlFor="description"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Job Description
-                          </Label>
-                          <Textarea
-                            id="description"
-                            value={modalDescription}
-                            onChange={(e) =>
-                              setModalDescription(e.target.value)
-                            }
-                            placeholder="Job description and responsibilities..."
-                            className="resize-none min-h-[120px]"
-                          />
-                        </div>
+                            // Auto-suggest "Remote" if certain keywords are detected
+                            const keywords = [
+                              "remote",
+                              "work from home",
+                              "wfh",
+                              "anywhere",
+                              "virtual",
+                              "distributed",
+                            ];
+                            const lowercaseValue = value.toLowerCase();
 
-                        <div>
-                          <Label
-                            htmlFor="requirements"
-                            className="text-sm font-medium mb-2 block"
-                          >
-                            Requirements (comma-separated)
-                          </Label>
-                          <Textarea
-                            id="requirements"
-                            value={modalRequirements.join(", ")}
-                            onChange={(e) =>
-                              setModalRequirements(
-                                e.target.value
-                                  .split(",")
-                                  .map((s) => s.trim())
-                                  .filter(Boolean)
-                              )
+                            if (
+                              keywords.some((keyword) =>
+                                lowercaseValue.includes(keyword)
+                              ) &&
+                              !lowercaseValue.includes("remote")
+                            ) {
+                              // Don't auto-complete if they're already typing "remote"
+                              if (!lowercaseValue.startsWith("remote")) {
+                                setModalLocation(value + " - Remote");
+                              }
                             }
-                            placeholder="e.g. 5+ years experience, JavaScript, React"
-                            className="resize-none min-h-[100px]"
-                          />
-                        </div>
+                          }}
+                          placeholder="e.g. New York, NY or Remote"
+                          className="h-9"
+                        />
+                        {modalLocation &&
+                          !modalLocation.toLowerCase().includes("office") &&
+                          !modalLocation.toLowerCase().includes("onsite") &&
+                          !modalLocation.toLowerCase().includes("on-site") && (
+                            <div className="text-xs text-blue-600 flex items-center gap-1 mt-1">
+                              <span>💡</span>
+                              <span>
+                                Consider adding "Remote" if this position allows
+                                remote work
+                              </span>
+                            </div>
+                          )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="department" className="text-sm font-medium">
+                          Department
+                        </Label>
+                        <Input
+                          id="department"
+                          value={modalDepartment}
+                          onChange={(e) => setModalDepartment(e.target.value)}
+                          placeholder="e.g. Engineering"
+                          className="h-9"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="salaryRange" className="text-sm font-medium">
+                          Salary Range
+                        </Label>
+                        <Input
+                          id="salaryRange"
+                          value={modalSalaryRange}
+                          onChange={(e) => setModalSalaryRange(e.target.value)}
+                          placeholder="e.g. $80,000 - $120,000"
+                          className="h-9"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="employmentType" className="text-sm font-medium">
+                          Employment Type
+                        </Label>
+                        <Select
+                          value={modalEmploymentType}
+                          onValueChange={setModalEmploymentType}
+                        >
+                          <SelectTrigger id="employmentType" className="h-9">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="full-time">Full-time</SelectItem>
+                            <SelectItem value="part-time">Part-time</SelectItem>
+                            <SelectItem value="contract">Contract</SelectItem>
+                            <SelectItem value="internship">Internship</SelectItem>
+                            <SelectItem value="temporary">Temporary</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="status" className="text-sm font-medium">
+                          Status
+                        </Label>
+                        <Select
+                          value={modalStatusId}
+                          onValueChange={setModalStatusId}
+                        >
+                          <SelectTrigger id="status" className="h-9">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={UNASSIGNED_VALUE}>
+                              Unassigned
+                            </SelectItem>
+                            {statuses.map((status) => (
+                              <SelectItem key={status.id} value={status.id}>
+                                {status.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Description and Requirements */}
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <Label htmlFor="description" className="text-sm font-medium">
+                          Job Description
+                        </Label>
+                        <Textarea
+                          id="description"
+                          value={modalDescription}
+                          onChange={(e) => setModalDescription(e.target.value)}
+                          placeholder="Job description and responsibilities..."
+                          className="resize-none min-h-[100px]"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="requirements" className="text-sm font-medium">
+                          Requirements
+                        </Label>
+                        <Textarea
+                          id="requirements"
+                          value={modalRequirements.join(", ")}
+                          onChange={(e) =>
+                            setModalRequirements(
+                              e.target.value
+                                .split(",")
+                                .map((s) => s.trim())
+                                .filter(Boolean)
+                            )
+                          }
+                          placeholder="e.g. 5+ years experience, JavaScript, React"
+                          className="resize-none min-h-[80px]"
+                        />
                       </div>
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="tags" className="m-0 pb-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <Card className="overflow-hidden">
-                        <CardHeader className="pb-2">
-                          <h3 className="text-sm font-medium">Tags</h3>
+                  <TabsContent value="tags" className="m-0 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Card className="border-muted/40">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <TagIcon className="size-4 text-primary/70" />
+                            <h3 className="text-base font-medium">Job Tags</h3>
+                          </div>
                         </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  className="w-full justify-between"
-                                >
-                                  <span className="truncate">
-                                    {modalTags.length > 0
-                                      ? `${modalTags.length} tag${
-                                          modalTags.length > 1 ? "s" : ""
-                                        } selected`
-                                      : "Select tags"}
-                                  </span>
-                                  <ChevronDown className="h-4 w-4 opacity-50" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
-                                {allTags.length > 0 ? (
-                                  allTags.map((tag) => (
-                                    <DropdownMenuCheckboxItem
-                                      key={tag}
-                                      checked={modalTags.includes(tag)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setModalTags([...modalTags, tag]);
-                                        } else {
-                                          setModalTags(
-                                            modalTags.filter((t) => t !== tag)
-                                          );
-                                        }
-                                      }}
-                                    >
-                                      {tag}
-                                    </DropdownMenuCheckboxItem>
-                                  ))
-                                ) : (
-                                  <div className="p-4 text-center text-muted-foreground text-sm">
-                                    No tags available
-                                  </div>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            {modalTags.length > 0 && (
-                              <div className="border rounded-md p-3 bg-muted/10 min-h-[100px]">
-                                <div className="flex flex-wrap gap-2">
-                                  {modalTags.map((tag) => (
-                                    <Badge
-                                      key={tag}
-                                      variant="default"
-                                      className="cursor-pointer hover:opacity-80"
-                                      onClick={() => {
+                        <CardContent className="space-y-3">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-between h-9"
+                              >
+                                <span className="truncate">
+                                  {modalTags.length > 0
+                                    ? `${modalTags.length} tag${
+                                        modalTags.length > 1 ? "s" : ""
+                                      } selected`
+                                    : "Select tags"}
+                                </span>
+                                <ChevronDown className="h-4 w-4 opacity-50" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
+                              {allTags.length > 0 ? (
+                                allTags.map((tag) => (
+                                  <DropdownMenuCheckboxItem
+                                    key={tag}
+                                    checked={modalTags.includes(tag)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setModalTags([...modalTags, tag]);
+                                      } else {
                                         setModalTags(
                                           modalTags.filter((t) => t !== tag)
                                         );
-                                      }}
-                                    >
-                                      {tag}
-                                      <X className="ml-1 h-3 w-3" />
-                                    </Badge>
-                                  ))}
+                                      }
+                                    }}
+                                  >
+                                    {tag}
+                                  </DropdownMenuCheckboxItem>
+                                ))
+                              ) : (
+                                <div className="p-4 text-center text-muted-foreground text-sm">
+                                  No tags available
                                 </div>
-                              </div>
-                            )}
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
 
-                            {allTags.length === 0 && (
-                              <div className="text-sm text-muted-foreground w-full text-center py-10 flex flex-col items-center border rounded-md">
-                                <TagIcon className="mb-2 h-6 w-6 opacity-40" />
-                                No tags available
-                                <p className="text-xs mt-1">
-                                  Tags can be created in the Tags management
-                                  section
-                                </p>
+                          {modalTags.length > 0 && (
+                            <div className="border rounded-md p-2 bg-muted/10 min-h-[80px]">
+                              <div className="flex flex-wrap gap-1.5">
+                                {modalTags.map((tag) => (
+                                  <Badge
+                                    key={tag}
+                                    variant="secondary"
+                                    className="cursor-pointer hover:opacity-80 text-xs px-2 py-1"
+                                    onClick={() => {
+                                      setModalTags(
+                                        modalTags.filter((t) => t !== tag)
+                                      );
+                                    }}
+                                  >
+                                    {tag}
+                                    <X className="ml-1 h-3 w-3" />
+                                  </Badge>
+                                ))}
                               </div>
-                            )}
-                          </div>
+                            </div>
+                          )}
+
+                          {allTags.length === 0 && (
+                            <div className="text-sm text-muted-foreground text-center py-6 border border-dashed rounded-md">
+                              <TagIcon className="mx-auto mb-2 h-6 w-6 opacity-40" />
+                              <p>No tags available</p>
+                              <p className="text-xs mt-1">
+                                Create tags in the Tags section
+                              </p>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 
-                      <Card className="h-full">
-                        <CardHeader className="pb-2">
-                          <h3 className="text-sm font-medium">Category</h3>
+                      <Card className="border-muted/40">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center gap-2">
+                            <Briefcase className="size-4 text-primary/70" />
+                            <h3 className="text-base font-medium">Category</h3>
+                          </div>
                         </CardHeader>
                         <CardContent>
                           <Select
                             value={modalCategory}
                             onValueChange={setModalCategory}
                           >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select a category" />
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Select category" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={NONE_CATEGORY_VALUE}>
@@ -2143,12 +2082,11 @@ export default function JobsPage() {
                           </Select>
 
                           {allCategories.length === 0 && (
-                            <div className="text-sm text-muted-foreground w-full text-center mt-6 py-6 flex flex-col items-center border rounded-md">
-                              <Briefcase className="mb-2 h-6 w-6 opacity-40" />
-                              No categories available
+                            <div className="text-sm text-muted-foreground text-center mt-4 py-4 border border-dashed rounded-md">
+                              <Briefcase className="mx-auto mb-2 h-6 w-6 opacity-40" />
+                              <p>No categories available</p>
                               <p className="text-xs mt-1">
-                                Categories can be created in the Categories
-                                management section
+                                Create categories in the Categories section
                               </p>
                             </div>
                           )}
@@ -2157,92 +2095,90 @@ export default function JobsPage() {
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="history" className="m-0 pb-6">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Shield className="text-primary/70 size-4" />
-                        <h3 className="font-medium text-sm sm:text-base">
-                          History Timeline
-                        </h3>
-                      </div>
+                  <TabsContent value="history" className="m-0 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Shield className="text-primary/70 size-4" />
+                      <h3 className="font-medium text-base">History Timeline</h3>
+                    </div>
 
-                      <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2 mb-4">
-                        <AlertCircle className="size-4 text-blue-500/70 flex-shrink-0" />
-                        <p className="text-xs text-muted-foreground">
-                          Changes are automatically tracked and logged
+                    <div className="bg-muted/10 border border-muted/30 rounded-md px-3 py-2 flex items-center gap-2">
+                      <AlertCircle className="size-4 text-blue-500/70 flex-shrink-0" />
+                      <p className="text-xs text-muted-foreground">
+                        Changes are automatically tracked and logged
+                      </p>
+                    </div>
+
+                    {modalHistory.length === 0 ? (
+                      <div className="text-center py-8 border-dashed border rounded-md bg-muted/5">
+                        <AlertCircle className="size-6 mx-auto mb-2 text-muted-foreground/40" />
+                        <p className="text-muted-foreground text-sm">
+                          No history entries yet
                         </p>
                       </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {[...modalHistory].reverse().map((entry, idx) => {
+                          let Icon = AlertCircle;
+                          let iconColor = "text-blue-500";
 
-                      {modalHistory.length === 0 ? (
-                        <div className="text-center py-10 border-dashed border rounded-md bg-muted/5">
-                          <AlertCircle className="size-8 mx-auto mb-2 text-muted-foreground/40" />
-                          <p className="text-muted-foreground text-sm">
-                            No history entries yet
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5">
-                          {[...modalHistory].reverse().map((entry, idx) => {
-                            let Icon = AlertCircle;
-                            let iconColor = "text-blue-500";
+                          if (entry.note.includes("Status changed")) {
+                            Icon = TagIcon;
+                            iconColor = "text-violet-500";
+                          } else if (entry.note.includes("Tags updated")) {
+                            Icon = TagIcon;
+                            iconColor = "text-emerald-500";
+                          } else if (entry.note.includes("Department")) {
+                            Icon = UserIcon;
+                            iconColor = "text-sky-500";
+                          }
 
-                            if (entry.note.includes("Status changed")) {
-                              Icon = TagIcon;
-                              iconColor = "text-violet-500";
-                            } else if (entry.note.includes("Tags updated")) {
-                              Icon = TagIcon;
-                              iconColor = "text-emerald-500";
-                            } else if (entry.note.includes("Department")) {
-                              Icon = UserIcon;
-                              iconColor = "text-sky-500";
-                            }
-
-                            return (
-                              <div
-                                key={idx}
-                                className="border rounded-md bg-background overflow-hidden hover:shadow-sm transition-all"
-                              >
-                                <div className="flex items-center border-b border-muted/30 px-3 py-1.5 bg-muted/5">
-                                  <Icon
-                                    className={`size-3.5 mr-2 ${iconColor} flex-shrink-0`}
-                                  />
-                                  <span className="text-xs text-muted-foreground">
-                                    {new Date(entry.date).toLocaleString(
-                                      undefined,
-                                      {
-                                        month: "short",
-                                        day: "numeric",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      }
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="p-2.5">
-                                  <p className="text-sm break-words">
-                                    {entry.note}
-                                  </p>
-                                </div>
+                          return (
+                            <div
+                              key={idx}
+                              className="border rounded-md bg-background overflow-hidden hover:shadow-sm transition-all"
+                            >
+                              <div className="flex items-center border-b border-muted/30 px-3 py-1.5 bg-muted/5">
+                                <Icon
+                                  className={`size-3.5 mr-2 ${iconColor} flex-shrink-0`}
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(entry.date).toLocaleString(
+                                    undefined,
+                                    {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    }
+                                  )}
+                                </span>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                              <div className="p-2.5">
+                                <p className="text-sm break-words">
+                                  {entry.note}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </TabsContent>
                 </div>
               </Tabs>
             </div>
 
-            {/* Fixed Footer */}
-            <div className="border-t flex flex-col sm:flex-row justify-between gap-3 p-3 sm:p-6 flex-shrink-0">
+            {/* Compact Footer */}
+            <div className="border-t bg-muted/20 flex items-center justify-between p-3 flex-shrink-0">
               <Button
                 variant="destructive"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={isSubmitting}
                 size="sm"
+                className="h-8"
               >
-                Delete Job
+                <Trash2 className="size-4 mr-1" />
+                Delete
               </Button>
 
               <div className="flex gap-2">
@@ -2251,17 +2187,15 @@ export default function JobsPage() {
                   onClick={closeDetail}
                   disabled={isSubmitting}
                   size="sm"
-                  className="flex-1 sm:flex-initial"
+                  className="h-8 px-3"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleSaveDetail}
-                  disabled={
-                    isSubmitting || !modalClientId || !modalTitle.trim()
-                  }
+                  disabled={isSubmitting || !modalTitle.trim()}
                   size="sm"
-                  className="flex-1 sm:flex-initial"
+                  className="h-8 px-3"
                 >
                   {isSubmitting ? (
                     <>
