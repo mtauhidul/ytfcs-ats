@@ -10,6 +10,7 @@ import {
   Eye,
   FileText,
   Mail,
+  MapPin,
   MessageSquare,
   Phone,
   Plus,
@@ -18,10 +19,12 @@ import {
   TrendingUp,
   Trash2,
   Users,
+  User,
   Briefcase,
+  ChevronDown,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast, Toaster } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -45,34 +48,61 @@ import {
 } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
-import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Progress } from "~/components/ui/progress";
+import { CompactImageUpload } from "~/components/ui/compact-image-upload";
 import { clientService } from "~/services/clientService";
+import { storageService } from "~/services/storageService";
 import type { 
   Client, 
   ClientFeedback, 
   ClientCommunicationEntry 
 } from "~/types/client";
 import type { Job, Candidate } from "~/types";
-
-interface ClientWithStats extends Client {
-  jobs: Job[];
-  candidates: Candidate[];
-  recentFeedback: ClientFeedback[];
-  recentCommunications: ClientCommunicationEntry[];
-}
+import { useAppDispatch, useAppSelector } from "~/hooks/redux";
+import { useClients, useClientData } from "~/hooks/use-clients";
+import { 
+  fetchClientsWithRelatedData, 
+  setupRealtimeListeners,
+  cleanupListeners,
+  selectClients,
+  selectClientsLoading,
+  selectClientsError,
+  selectClientById,
+  selectClientJobs,
+  selectClientCandidates,
+  selectClientFeedback,
+  selectClientCommunications,
+  type ClientWithRelatedData
+} from "~/features/clientsSlice";
 
 export default function ClientsPage() {
-  const [clients, setClients] = useState<ClientWithStats[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Use the simplified clients hook
+  const { clients, loading, error } = useClients();
+  
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClient, setSelectedClient] = useState<ClientWithStats | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClientWithRelatedData | null>(null);
+  
+  // Get real-time data for selected client
+  const { 
+    jobs: selectedClientJobs,
+    candidates: selectedClientCandidates,
+    feedback: selectedClientFeedback,
+    communications: selectedClientCommunications 
+  } = useClientData(selectedClient?.id || null);
+  
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isCommunicationOpen, setIsCommunicationOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [clientToDelete, setClientToDelete] = useState<ClientWithStats | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<ClientWithRelatedData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [isSubmittingCommunication, setIsSubmittingCommunication] = useState(false);
@@ -87,6 +117,7 @@ export default function ClientsPage() {
     contactPhone: "",
     industry: "",
     status: "active" as const,
+    logoUrl: "" as string | undefined,
   });
   
   const [editClient, setEditClient] = useState({
@@ -96,6 +127,7 @@ export default function ClientsPage() {
     contactPhone: "",
     industry: "",
     status: "active" as "active" | "inactive" | "prospect" | "archived",
+    logoUrl: "" as string | undefined,
   });
   
   const [newFeedback, setNewFeedback] = useState({
@@ -115,43 +147,17 @@ export default function ClientsPage() {
     followUpRequired: false,
   });
 
-  // Load clients with their related data
+  // Handle connection status based on error state
   useEffect(() => {
-    const unsubscribe = clientService.subscribeToClients(async (clientsData) => {
-      try {
-        setConnectionStatus("connected");
-        
-        // Enrich each client with jobs, candidates, and recent activity
-        const enrichedClients = await Promise.all(
-          clientsData.map(async (client) => {
-            const { jobs, candidates } = await clientService.getClientJobsAndCandidates(client.id);
-            const recentFeedback = await clientService.getClientFeedback(client.id);
-            const recentCommunications = await clientService.getClientCommunications(client.id);
-            
-            return {
-              ...client,
-              jobs: (jobs || []) as Job[],
-              candidates: (candidates || []) as Candidate[],
-              recentFeedback: (recentFeedback || []).slice(0, 5),
-              recentCommunications: (recentCommunications || []).slice(0, 5),
-            } as ClientWithStats;
-          })
-        );
-        
-        setClients(enrichedClients);
-        setLoading(false);
-      } catch (error) {
-        console.error("Error loading client data:", error);
-        setConnectionStatus("disconnected");
-        toast.error("Failed to load client data");
-        setLoading(false);
-      }
-    });
+    if (error) {
+      setConnectionStatus("disconnected");
+      toast.error("Failed to load client data");
+    } else {
+      setConnectionStatus("connected");
+    }
+  }, [error]);
 
-    return () => unsubscribe();
-  }, []);
-
-  const filteredClients = clients.filter((client) =>
+  const filteredClients = clients.filter((client: ClientWithRelatedData) =>
     client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     client.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     client.contactEmail.toLowerCase().includes(searchTerm.toLowerCase())
@@ -169,12 +175,16 @@ export default function ClientsPage() {
 
     try {
       setIsSubmitting(true);
+      const loadingToast = toast.loading("Creating client...");
+      
       await clientService.createClient({
         ...newClient,
+        logoUrl: newClient.logoUrl,
         status: newClient.status,
         createdBy: "current-user", // TODO: Get from auth context
       });
       
+      toast.dismiss(loadingToast);
       setIsCreateOpen(false);
       setNewClient({
         name: "",
@@ -183,6 +193,7 @@ export default function ClientsPage() {
         contactPhone: "",
         industry: "",
         status: "active",
+        logoUrl: undefined,
       });
       toast.success("Client created successfully");
     } catch (error) {
@@ -205,15 +216,19 @@ export default function ClientsPage() {
 
     try {
       setIsSubmitting(true);
+      const loadingToast = toast.loading("Updating client...");
+      
       await clientService.updateClient(selectedClient.id, {
         name: editClient.name,
         companyName: editClient.companyName,
         contactEmail: editClient.contactEmail,
         contactPhone: editClient.contactPhone,
         industry: editClient.industry,
+        logoUrl: editClient.logoUrl,
         status: editClient.status,
       });
       
+      toast.dismiss(loadingToast);
       setIsEditOpen(false);
       setSelectedClient(null);
       toast.success("Client updated successfully");
@@ -234,8 +249,11 @@ export default function ClientsPage() {
 
     try {
       setIsDeleting(true);
+      const loadingToast = toast.loading("Deleting client...");
+      
       await clientService.deleteClient(clientToDelete.id);
       
+      toast.dismiss(loadingToast);
       setIsDeleteOpen(false);
       setClientToDelete(null);
       toast.success("Client deleted successfully");
@@ -244,6 +262,27 @@ export default function ClientsPage() {
       toast.error(error instanceof Error ? error.message : "Failed to delete client");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleStatusUpdate = async (clientId: string, newStatus: Client['status']) => {
+    // Find the current client to check if status is already the same
+    const currentClient = clients.find(c => c.id === clientId);
+    if (currentClient?.status === newStatus) {
+      toast.info(`Client is already ${newStatus}`);
+      return;
+    }
+
+    try {
+      const loadingToast = toast.loading("Updating client status...");
+      
+      await clientService.updateClient(clientId, { status: newStatus });
+      
+      toast.dismiss(loadingToast);
+      toast.success(`Client status updated to ${newStatus}`);
+    } catch (error) {
+      console.error("Error updating client status:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to update status");
     }
   };
 
@@ -259,11 +298,14 @@ export default function ClientsPage() {
 
     try {
       setIsSubmittingFeedback(true);
+      const loadingToast = toast.loading("Adding feedback...");
+      
       await clientService.addClientFeedback(selectedClient.id, {
         ...newFeedback,
         feedbackDate: new Date().toISOString(),
       });
       
+      toast.dismiss(loadingToast);
       setIsFeedbackOpen(false);
       setNewFeedback({
         feedbackType: "general",
@@ -272,6 +314,7 @@ export default function ClientsPage() {
         receivedVia: "email",
         receivedBy: "",
       });
+      
       toast.success("Feedback added successfully");
     } catch (error) {
       console.error("Error adding feedback:", error);
@@ -293,12 +336,15 @@ export default function ClientsPage() {
 
     try {
       setIsSubmittingCommunication(true);
+      const loadingToast = toast.loading("Logging communication...");
+      
       await clientService.logCommunication(selectedClient.id, {
         ...newCommunication,
         date: new Date().toISOString(),
         initiatedBy: "internal",
       });
       
+      toast.dismiss(loadingToast);
       setIsCommunicationOpen(false);
       setNewCommunication({
         type: "email",
@@ -308,6 +354,7 @@ export default function ClientsPage() {
         teamMember: "",
         followUpRequired: false,
       });
+      
       toast.success("Communication logged successfully");
     } catch (error) {
       console.error("Error logging communication:", error);
@@ -325,6 +372,10 @@ export default function ClientsPage() {
       case "archived": return "bg-red-100 text-red-800";
       default: return "bg-gray-100 text-gray-800";
     }
+  };
+
+  const formatStatus = (status: string) => {
+    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   const getPriorityColor = (priority?: string) => {
@@ -432,6 +483,9 @@ export default function ClientsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar>
+                    {client.logoUrl && (
+                      <AvatarImage src={client.logoUrl} alt={`${client.name} client logo`} />
+                    )}
                     <AvatarFallback className="bg-blue-100 text-blue-600">
                       {(client.companyName || "").slice(0, 2).toUpperCase()}
                     </AvatarFallback>
@@ -441,9 +495,56 @@ export default function ClientsPage() {
                     <p className="text-sm text-muted-foreground">{client.companyName}</p>
                   </div>
                 </div>
-                <Badge className={getStatusColor(client.status)}>
-                  {client.status}
-                </Badge>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Badge className={`${getStatusColor(client.status)} cursor-pointer hover:opacity-80 transition-opacity`}>
+                      {formatStatus(client.status)}
+                      <ChevronDown className="h-3 w-3 ml-1" />
+                    </Badge>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-32">
+                    <DropdownMenuItem 
+                      onClick={() => handleStatusUpdate(client.id, 'active')}
+                      className={client.status === 'active' ? 'bg-accent' : ''}
+                      disabled={client.status === 'active'}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Active
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleStatusUpdate(client.id, 'prospect')}
+                      className={client.status === 'prospect' ? 'bg-accent' : ''}
+                      disabled={client.status === 'prospect'}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Prospect
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleStatusUpdate(client.id, 'inactive')}
+                      className={client.status === 'inactive' ? 'bg-accent' : ''}
+                      disabled={client.status === 'inactive'}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                        Inactive
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleStatusUpdate(client.id, 'archived')}
+                      className={client.status === 'archived' ? 'bg-accent' : ''}
+                      disabled={client.status === 'archived'}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                        Archived
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
               
               {client.priority && (
@@ -505,7 +606,12 @@ export default function ClientsPage() {
 
               {/* Actions */}
               <div className="flex gap-2 pt-2">
-                <Dialog>
+                <Dialog onOpenChange={(open) => {
+                  if (!open) {
+                    // Clear selected client when modal is closed
+                    setSelectedClient(null);
+                  }
+                }}>
                   <DialogTrigger asChild>
                     <Button
                       variant="outline"
@@ -517,215 +623,552 @@ export default function ClientsPage() {
                       View Details
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                      <DialogTitle>{client.name} - {client.companyName}</DialogTitle>
+                  <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
+                    <DialogHeader className="space-y-3">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="h-12 w-12">
+                          {client.logoUrl && (
+                            <AvatarImage src={client.logoUrl} alt={`${client.name} client logo`} />
+                          )}
+                          <AvatarFallback className="bg-blue-100 text-blue-600 text-lg font-semibold">
+                            {(client.companyName || "").slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <DialogTitle className="text-xl">{client.name}</DialogTitle>
+                          <p className="text-muted-foreground">{client.companyName}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Badge className={`${getStatusColor(client.status)} cursor-pointer hover:opacity-80 transition-opacity`} variant="secondary">
+                                {formatStatus(client.status)}
+                                <ChevronDown className="h-3 w-3 ml-1" />
+                              </Badge>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-32">
+                              <DropdownMenuItem 
+                                onClick={() => handleStatusUpdate(client.id, 'active')}
+                                className={client.status === 'active' ? 'bg-accent' : ''}
+                                disabled={client.status === 'active'}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                  Active
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleStatusUpdate(client.id, 'prospect')}
+                                className={client.status === 'prospect' ? 'bg-accent' : ''}
+                                disabled={client.status === 'prospect'}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                  Prospect
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleStatusUpdate(client.id, 'inactive')}
+                                className={client.status === 'inactive' ? 'bg-accent' : ''}
+                                disabled={client.status === 'inactive'}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                                  Inactive
+                                </div>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleStatusUpdate(client.id, 'archived')}
+                                className={client.status === 'archived' ? 'bg-accent' : ''}
+                                disabled={client.status === 'archived'}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                  Archived
+                                </div>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          {client.priority && (
+                            <Badge variant="outline" className={getPriorityColor(client.priority)}>
+                              <Star className={`h-3 w-3 mr-1 ${getPriorityColor(client.priority)}`} />
+                              {client.priority} priority
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
                       <DialogDescription>
-                        Complete client profile and activity overview
+                        Complete client profile with job history, feedback, and communication records
                       </DialogDescription>
                     </DialogHeader>
                     
-                    <Tabs defaultValue="overview" className="flex-grow">
-                      <TabsList className="grid w-full grid-cols-4">
-                        <TabsTrigger value="overview">Overview</TabsTrigger>
-                        <TabsTrigger value="jobs">Jobs & Candidates</TabsTrigger>
-                        <TabsTrigger value="feedback">Feedback</TabsTrigger>
-                        <TabsTrigger value="communications">Communications</TabsTrigger>
+                    <Tabs defaultValue="overview" className="flex-grow flex flex-col">
+                      <TabsList className="grid w-full grid-cols-4 mb-4">
+                        <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+                        <TabsTrigger value="jobs" className="text-xs sm:text-sm">
+                          Jobs ({selectedClientJobs.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="feedback" className="text-xs sm:text-sm">
+                          Feedback ({selectedClientFeedback.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="communications" className="text-xs sm:text-sm">
+                          Comms ({selectedClientCommunications.length})
+                        </TabsTrigger>
                       </TabsList>
                       
-                      <TabsContent value="overview" className="space-y-4">
-                        <ScrollArea className="h-[400px]">
-                          <div className="space-y-4 p-4">
-                            {/* Basic Info */}
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label className="text-sm font-medium">Contact Person</Label>
-                                <p className="text-sm">{client.name}</p>
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium">Company</Label>
-                                <p className="text-sm">{client.companyName}</p>
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium">Email</Label>
-                                <p className="text-sm">{client.contactEmail}</p>
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium">Phone</Label>
-                                <p className="text-sm">{client.contactPhone || "Not provided"}</p>
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium">Industry</Label>
-                                <p className="text-sm">{client.industry || "Not specified"}</p>
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium">Status</Label>
-                                <Badge className={getStatusColor(client.status)}>
-                                  {client.status}
-                                </Badge>
-                              </div>
+                      <TabsContent value="overview" className="flex-1">
+                        <ScrollArea className="h-[450px]">
+                          <div className="space-y-6 p-1">
+                            {/* Quick Stats */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                              <Card className="border-l-4 border-l-blue-500">
+                                <CardContent className="p-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="text-base font-bold text-blue-600">{selectedClientJobs.length}</div>
+                                      <div className="text-xs text-muted-foreground">Active Jobs</div>
+                                    </div>
+                                    <Briefcase className="h-4 w-4 text-blue-500 opacity-70" />
+                                  </div>
+                                </CardContent>
+                              </Card>
+                              <Card className="border-l-4 border-l-green-500">
+                                <CardContent className="p-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="text-base font-bold text-green-600">{selectedClientCandidates.length}</div>
+                                      <div className="text-xs text-muted-foreground">Total Candidates</div>
+                                    </div>
+                                    <Users className="h-4 w-4 text-green-500 opacity-70" />
+                                  </div>
+                                </CardContent>
+                              </Card>
+                              <Card className="border-l-4 border-l-purple-500">
+                                <CardContent className="p-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="text-base font-bold text-purple-600">{client.totalHires || 0}</div>
+                                      <div className="text-xs text-muted-foreground">Successful Hires</div>
+                                    </div>
+                                    <Star className="h-4 w-4 text-purple-500 opacity-70" />
+                                  </div>
+                                </CardContent>
+                              </Card>
+                              <Card className="border-l-4 border-l-orange-500">
+                                <CardContent className="p-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="text-base font-bold text-orange-600">
+                                        {selectedClientCandidates.length > 0 
+                                          ? Math.round((client.totalHires || 0) / selectedClientCandidates.length * 100)
+                                          : 0}%
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">Success Rate</div>
+                                    </div>
+                                    <TrendingUp className="h-4 w-4 text-orange-500 opacity-70" />
+                                  </div>
+                                </CardContent>
+                              </Card>
                             </div>
 
-                            {/* Recent Activity */}
-                            <div>
-                              <Label className="text-sm font-medium">Recent Activity</Label>
-                              <div className="mt-2 space-y-2">
-                                {(client.recentFeedback || []).slice(0, 3).map((feedback) => (
-                                  <div key={feedback.id} className="p-2 bg-gray-50 rounded text-xs">
-                                    <div className="font-medium">{feedback.feedbackType} feedback</div>
-                                    <div className="text-gray-600">{(feedback.feedback || "").slice(0, 100)}...</div>
-                                    <div className="text-gray-500">{format(new Date(feedback.feedbackDate), "MMM d, yyyy")}</div>
+                            {/* Contact Information */}
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <Building2 className="h-5 w-5" />
+                                  Contact Information
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="grid grid-cols-2 gap-6">
+                                  <div className="space-y-4">
+                                    <div className="flex items-center gap-3">
+                                      <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                      <div>
+                                        <Label className="text-sm font-medium text-muted-foreground">Contact Person</Label>
+                                        <p className="text-sm font-medium">{client.name}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                      <div>
+                                        <Label className="text-sm font-medium text-muted-foreground">Email</Label>
+                                        <p className="text-sm font-medium">{client.contactEmail}</p>
+                                      </div>
+                                    </div>
                                   </div>
-                                ))}
-                                {(client.recentFeedback || []).length === 0 && (
-                                  <p className="text-sm text-muted-foreground">No recent feedback</p>
+                                  <div className="space-y-4">
+                                    <div className="flex items-center gap-3">
+                                      <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                      <div>
+                                        <Label className="text-sm font-medium text-muted-foreground">Company</Label>
+                                        <p className="text-sm font-medium">{client.companyName}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                      <div>
+                                        <Label className="text-sm font-medium text-muted-foreground">Phone</Label>
+                                        <p className="text-sm font-medium">{client.contactPhone || "Not provided"}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                {client.industry && (
+                                  <div className="mt-4 pt-4 border-t">
+                                    <div className="flex items-center gap-3">
+                                      <Briefcase className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                      <div>
+                                        <Label className="text-sm font-medium text-muted-foreground">Industry</Label>
+                                        <p className="text-sm font-medium">{client.industry}</p>
+                                      </div>
+                                    </div>
+                                  </div>
                                 )}
-                              </div>
-                            </div>
+                              </CardContent>
+                            </Card>
+
+                            {/* Recent Activity */}
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <Clock className="h-5 w-5" />
+                                  Recent Activity
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-3">
+                                  {selectedClientFeedback.slice(0, 3).map((feedback) => (
+                                    <div key={feedback.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        {[...Array(5)].map((_, i) => (
+                                          <Star
+                                            key={i}
+                                            className={`h-3 w-3 ${
+                                              i < (feedback.rating || 0) 
+                                                ? "fill-yellow-400 text-yellow-400" 
+                                                : "text-gray-300"
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <Badge variant="secondary" className="text-xs">
+                                            {feedback.feedbackType}
+                                          </Badge>
+                                          <span className="text-xs text-muted-foreground">
+                                            {format(new Date(feedback.feedbackDate), "MMM d, yyyy")}
+                                          </span>
+                                        </div>
+                                        <p className="text-sm text-gray-700 line-clamp-2">
+                                          {(feedback.feedback || "").slice(0, 120)}
+                                          {(feedback.feedback || "").length > 120 && "..."}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          via {feedback.receivedVia} • by {feedback.receivedBy}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {selectedClientFeedback.length === 0 && (
+                                    <div className="text-center py-6 text-muted-foreground">
+                                      <MessageSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                                      <p className="text-sm">No recent feedback available</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                            
+                            {/* Bottom spacing for better scrolling experience */}
+                            <div className="h-6"></div>
                           </div>
                         </ScrollArea>
                       </TabsContent>
                       
-                      <TabsContent value="jobs" className="space-y-4">
-                        <ScrollArea className="h-[400px]">
-                          <div className="space-y-4 p-4">
-                            <div className="flex justify-between items-center">
-                              <h3 className="font-medium">Jobs & Associated Candidates</h3>
-                              <Badge variant="outline">{(client.jobs || []).length} jobs</Badge>
+                      <TabsContent value="jobs" className="flex-1">
+                        <ScrollArea className="h-[450px]">
+                          <div className="space-y-4 p-1">
+                            <div className="flex justify-between items-center mb-4">
+                              <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <Briefcase className="h-5 w-5" />
+                                Jobs & Candidates
+                              </h3>
+                              <Badge variant="outline" className="px-3 py-1">
+                                {selectedClientJobs.length} active jobs
+                              </Badge>
                             </div>
                             
-                            {(client.jobs || []).map((job) => (
-                              <Card key={job.id}>
-                                <CardContent className="p-4">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <h4 className="font-medium">{job.title}</h4>
-                                    <Badge variant="outline">{job.status}</Badge>
+                            {selectedClientJobs.map((job) => (
+                              <Card key={job.id} className="hover:shadow-md transition-shadow">
+                                <CardContent className="p-5">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <div className="flex-1">
+                                      <h4 className="font-semibold text-lg mb-1">{job.title}</h4>
+                                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                        <span className="flex items-center gap-1">
+                                          <MapPin className="h-3 w-3" />
+                                          {job.location || "Remote"}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="h-3 w-3" />
+                                          {job.employmentType || "Full-time"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <Badge variant={job.status === "active" ? "default" : "secondary"}>
+                                      {job.status}
+                                    </Badge>
                                   </div>
-                                  <p className="text-sm text-muted-foreground mb-2">
-                                    {job.location} • {job.employmentType}
-                                  </p>
                                   
-                                  <div className="text-xs text-muted-foreground">
-                                    Candidates: {(client.candidates || []).filter(c => c.jobId === job.id).length}
+                                  <div className="grid grid-cols-3 gap-4 mt-4">
+                                    <div className="text-center p-2 bg-blue-50 rounded-lg">
+                                      <div className="text-lg font-semibold text-blue-600">
+                                        {selectedClientCandidates.filter(c => c.jobId === job.id).length}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">Candidates</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-green-50 rounded-lg">
+                                      <div className="text-lg font-semibold text-green-600">
+                                        {selectedClientCandidates.filter(c => c.jobId === job.id && c.status === "hired").length}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">Hired</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-purple-50 rounded-lg">
+                                      <div className="text-lg font-semibold text-purple-600">
+                                        {selectedClientCandidates.filter(c => c.jobId === job.id && c.status === "interviewing").length}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">Interviewing</div>
+                                    </div>
                                   </div>
+
+                                  {job.description && (
+                                    <div className="mt-3 pt-3 border-t">
+                                      <p className="text-sm text-muted-foreground line-clamp-2">
+                                        {job.description.slice(0, 150)}
+                                        {job.description.length > 150 && "..."}
+                                      </p>
+                                    </div>
+                                  )}
                                 </CardContent>
                               </Card>
                             ))}
                             
-                            {(client.jobs || []).length === 0 && (
-                              <p className="text-center py-8 text-muted-foreground">
-                                No jobs assigned to this client yet
-                              </p>
+                            {selectedClientJobs.length === 0 && (
+                              <div className="text-center py-12">
+                                <Briefcase className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">No Jobs Yet</h3>
+                                <p className="text-muted-foreground">
+                                  No jobs have been assigned to this client yet
+                                </p>
+                              </div>
                             )}
                           </div>
                         </ScrollArea>
                       </TabsContent>
                       
-                      <TabsContent value="feedback" className="space-y-4">
-                        <ScrollArea className="h-[400px]">
-                          <div className="space-y-4 p-4">
-                            <div className="flex justify-between items-center">
-                              <h3 className="font-medium">Client Feedback History</h3>
+                      <TabsContent value="feedback" className="flex-1">
+                        <ScrollArea className="h-[450px]">
+                          <div className="space-y-4 p-1">
+                            <div className="flex justify-between items-center mb-4">
+                              <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <Star className="h-5 w-5" />
+                                Client Feedback
+                              </h3>
                               <Button
                                 size="sm"
                                 onClick={() => {
                                   setSelectedClient(client);
                                   setIsFeedbackOpen(true);
                                 }}
+                                className="gap-2"
                               >
-                                <Plus className="h-3 w-3 mr-2" />
+                                <Plus className="h-4 w-4" />
                                 Add Feedback
                               </Button>
                             </div>
                             
-                            {(client.recentFeedback || []).map((feedback) => (
-                              <Card key={feedback.id}>
-                                <CardContent className="p-4">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <Badge variant="outline">{feedback.feedbackType}</Badge>
+                            {selectedClientFeedback.map((feedback) => (
+                              <Card key={feedback.id} className="hover:shadow-md transition-shadow">
+                                <CardContent className="p-5">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <Badge variant="secondary" className="capitalize">
+                                      {feedback.feedbackType}
+                                    </Badge>
                                     <div className="flex items-center gap-1">
                                       {[...Array(5)].map((_, i) => (
                                         <Star
                                           key={i}
-                                          className={`h-3 w-3 ${
+                                          className={`h-4 w-4 ${
                                             i < (feedback.rating || 0) 
                                               ? "fill-yellow-400 text-yellow-400" 
                                               : "text-gray-300"
                                           }`}
                                         />
                                       ))}
+                                      <span className="ml-1 text-sm font-medium">
+                                        {feedback.rating}/5
+                                      </span>
                                     </div>
                                   </div>
-                                  <p className="text-sm mb-2">{feedback.feedback}</p>
-                                  <div className="text-xs text-muted-foreground">
-                                    {format(new Date(feedback.feedbackDate), "MMM d, yyyy")} • 
-                                    via {feedback.receivedVia} • by {feedback.receivedBy}
+                                  
+                                  <blockquote className="text-sm leading-relaxed mb-4 pl-4 border-l-4 border-gray-200 italic">
+                                    "{feedback.feedback}"
+                                  </blockquote>
+                                  
+                                  <div className="flex items-center justify-between text-xs text-muted-foreground pt-3 border-t">
+                                    <div className="flex items-center gap-4">
+                                      <span className="flex items-center gap-1">
+                                        <Calendar className="h-3 w-3" />
+                                        {format(new Date(feedback.feedbackDate), "MMM d, yyyy")}
+                                      </span>
+                                      <span className="flex items-center gap-1">
+                                        {feedback.receivedVia === "email" && <Mail className="h-3 w-3" />}
+                                        {feedback.receivedVia === "phone" && <Phone className="h-3 w-3" />}
+                                        {feedback.receivedVia === "meeting" && <Users className="h-3 w-3" />}
+                                        via {feedback.receivedVia}
+                                      </span>
+                                    </div>
+                                    <span>by {feedback.receivedBy}</span>
                                   </div>
                                 </CardContent>
                               </Card>
                             ))}
                             
-                            {(client.recentFeedback || []).length === 0 && (
-                              <p className="text-center py-8 text-muted-foreground">
-                                No feedback recorded yet
-                              </p>
+                            {selectedClientFeedback.length === 0 && (
+                              <div className="text-center py-12">
+                                <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">No Feedback Yet</h3>
+                                <p className="text-muted-foreground mb-4">
+                                  No feedback has been recorded for this client
+                                </p>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedClient(client);
+                                    setIsFeedbackOpen(true);
+                                  }}
+                                  className="gap-2"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Add First Feedback
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </ScrollArea>
                       </TabsContent>
                       
-                      <TabsContent value="communications" className="space-y-4">
-                        <ScrollArea className="h-[400px]">
-                          <div className="space-y-4 p-4">
-                            <div className="flex justify-between items-center">
-                              <h3 className="font-medium">Communication Log</h3>
+                      <TabsContent value="communications" className="flex-1">
+                        <ScrollArea className="h-[450px]">
+                          <div className="space-y-4 p-1">
+                            <div className="flex justify-between items-center mb-4">
+                              <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <MessageSquare className="h-5 w-5" />
+                                Communication History
+                              </h3>
                               <Button
                                 size="sm"
                                 onClick={() => {
                                   setSelectedClient(client);
                                   setIsCommunicationOpen(true);
                                 }}
+                                className="gap-2"
                               >
-                                <Plus className="h-3 w-3 mr-2" />
+                                <Plus className="h-4 w-4" />
                                 Log Communication
                               </Button>
                             </div>
                             
-                            {(client.recentCommunications || []).map((comm) => (
-                              <Card key={comm.id}>
-                                <CardContent className="p-4">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <div className="flex items-center gap-2">
-                                      {comm.type === "email" && <Mail className="h-3 w-3" />}
-                                      {comm.type === "phone" && <Phone className="h-3 w-3" />}
-                                      {comm.type === "meeting" && <Calendar className="h-3 w-3" />}
-                                      {comm.type === "note" && <FileText className="h-3 w-3" />}
-                                      <span className="text-sm font-medium">{comm.type}</span>
+                            {selectedClientCommunications.map((comm) => (
+                              <Card key={comm.id} className="hover:shadow-md transition-shadow">
+                                <CardContent className="p-5">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-3">
+                                      {comm.type === "email" && (
+                                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                                          <Mail className="h-4 w-4" />
+                                        </div>
+                                      )}
+                                      {comm.type === "phone" && (
+                                        <div className="p-2 bg-green-100 text-green-600 rounded-lg">
+                                          <Phone className="h-4 w-4" />
+                                        </div>
+                                      )}
+                                      {comm.type === "meeting" && (
+                                        <div className="p-2 bg-purple-100 text-purple-600 rounded-lg">
+                                          <Calendar className="h-4 w-4" />
+                                        </div>
+                                      )}
+                                      {comm.type === "note" && (
+                                        <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
+                                          <FileText className="h-4 w-4" />
+                                        </div>
+                                      )}
+                                      <div>
+                                        <Badge variant="secondary" className="capitalize mb-1">
+                                          {comm.type}
+                                        </Badge>
+                                        <p className="text-xs text-muted-foreground">
+                                          {format(new Date(comm.date), "MMM d, yyyy 'at' h:mm a")}
+                                        </p>
+                                      </div>
                                     </div>
                                     <Badge variant="outline" className="text-xs">
                                       {comm.initiatedBy}
                                     </Badge>
                                   </div>
+                                  
                                   {comm.subject && (
-                                    <p className="text-sm font-medium mb-1">{comm.subject}</p>
+                                    <h4 className="font-medium text-sm mb-2">{comm.subject}</h4>
                                   )}
-                                  <p className="text-sm text-muted-foreground mb-2">{comm.summary}</p>
-                                  <div className="text-xs text-muted-foreground">
-                                    {format(new Date(comm.date), "MMM d, yyyy")} • by {comm.teamMember}
+                                  
+                                  <p className="text-sm text-gray-700 leading-relaxed mb-3">
+                                    {comm.summary}
+                                  </p>
+                                  
+                                  {comm.details && (
+                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                      <p className="text-xs text-muted-foreground mb-1">Additional Details:</p>
+                                      <p className="text-sm text-gray-600">{comm.details}</p>
+                                    </div>
+                                  )}
+                                  
+                                  <div className="flex items-center justify-between mt-4 pt-3 border-t">
+                                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                      <User className="h-3 w-3" />
+                                      by {comm.teamMember}
+                                    </span>
+                                    {comm.followUpRequired && (
+                                      <Badge variant="destructive" className="text-xs">
+                                        Follow-up required
+                                      </Badge>
+                                    )}
                                   </div>
-                                  {comm.followUpRequired && (
-                                    <Badge variant="destructive" className="mt-2 text-xs">
-                                      Follow-up required
-                                    </Badge>
-                                  )}
                                 </CardContent>
                               </Card>
                             ))}
                             
-                            {(client.recentCommunications || []).length === 0 && (
-                              <p className="text-center py-8 text-muted-foreground">
-                                No communications logged yet
-                              </p>
+                            {selectedClientCommunications.length === 0 && (
+                              <div className="text-center py-12">
+                                <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">No Communications Yet</h3>
+                                <p className="text-muted-foreground mb-4">
+                                  No communications have been logged for this client
+                                </p>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedClient(client);
+                                    setIsCommunicationOpen(true);
+                                  }}
+                                  className="gap-2"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Log First Communication
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </ScrollArea>
@@ -746,6 +1189,7 @@ export default function ClientsPage() {
                       contactPhone: client.contactPhone || "",
                       industry: client.industry || "",
                       status: client.status,
+                      logoUrl: client.logoUrl,
                     });
                     setIsEditOpen(true);
                   }}
@@ -814,6 +1258,15 @@ export default function ClientsPage() {
                 value={newClient.companyName}
                 onChange={(e) => setNewClient({ ...newClient, companyName: e.target.value })}
                 placeholder="Acme Corp"
+              />
+            </div>
+            <div>
+              <CompactImageUpload
+                value={newClient.logoUrl}
+                onChange={(url) => setNewClient({ ...newClient, logoUrl: url || undefined })}
+                clientId="new-client"
+                label="Client Logo (Optional)"
+                disabled={isSubmitting}
               />
             </div>
             <div>
@@ -895,6 +1348,15 @@ export default function ClientsPage() {
                 value={editClient.companyName}
                 onChange={(e) => setEditClient({ ...editClient, companyName: e.target.value })}
                 placeholder="Acme Corp"
+              />
+            </div>
+            <div>
+              <CompactImageUpload
+                value={editClient.logoUrl}
+                onChange={(url) => setEditClient({ ...editClient, logoUrl: url || undefined })}
+                clientId={selectedClient?.id || "edit-client"}
+                label="Client Logo (Optional)"
+                disabled={isSubmitting}
               />
             </div>
             <div>
@@ -1164,6 +1626,8 @@ export default function ClientsPage() {
           </div>
         </DialogContent>
       </Dialog>
+      
+      <Toaster position="top-right" />
     </div>
   );
 }

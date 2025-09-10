@@ -5,6 +5,7 @@ export interface Client {
   companyName: string;
   contactEmail: string;
   contactPhone?: string;
+  logoUrl?: string; // Added logo URL field
   
   // Address & Location
   address?: {
