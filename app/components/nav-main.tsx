@@ -26,25 +26,21 @@ const navigationGroups = {
     label: "Overview",
     items: ["Dashboard"],
   },
-  applications: {
-    label: "Application Review",
-    items: ["Applications"],
+  jobManagement: {
+    label: "Job Management",
+    items: ["Clients", "Jobs", "Workflow"],
   },
-  jobs: {
-    label: "Job Management", 
-    items: ["Jobs List", "Workflow Hub", "Workflow Management"],
-  },
-  candidates: {
+  candidateManagement: {
     label: "Candidate Management",
-    items: ["Candidates List", "Candidate Import", "Clients"],
+    items: ["Import", "Applications", "Candidates", "Interviews", "Offers"],
+  },
+  teamManagement: {
+    label: "Team Management",
+    items: ["Team", "Collaboration", "Communication"],
   },
   utilities: {
     label: "Utilities",
-    items: ["Communication", "Collaboration", "Tags", "Categories"],
-  },
-  settings: {
-    label: "Settings",
-    items: ["Profile", "Email Monitoring"],
+    items: ["Tags", "Categories", "Email Monitoring"],
   },
 };
 

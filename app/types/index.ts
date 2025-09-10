@@ -8,6 +8,7 @@ export * from "./email";
 export * from "./interview";
 export * from "./job";
 export * from "./stage";
+export * from "./team";
 
 // Common utility types
 export interface ApiResponse<T> {
