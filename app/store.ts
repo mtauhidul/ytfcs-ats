@@ -4,6 +4,7 @@ import applicationsReducer from "./features/applicationsSlice";
 import candidateImportReducer from "./features/candidateImportSlice";
 import candidatesReducer from "./features/candidatesSlice";
 import categoriesReducer from "./features/categoriesSlice";
+import clientsReducer from "./features/clientsSlice";
 import interviewsReducer from "./features/interviewsSlice";
 import jobsReducer from "./features/jobsSlice";
 import stagesReducer from "./features/stagesSlice";
@@ -14,6 +15,7 @@ export const store = configureStore({
   reducer: {
     candidateImport: candidateImportReducer,
     candidates: candidatesReducer,
+    clients: clientsReducer,
     jobs: jobsReducer,
     interviews: interviewsReducer,
     stages: stagesReducer,
