@@ -17,6 +17,7 @@ export default [
     route("clients", "dashboard/clients/clients.tsx"),
     route("workflow", "dashboard/workflow/job-workflow.tsx"),
     route("workflow/management", "dashboard/workflow/new-workflow-management.tsx"),
+    route("workflow/hierarchy", "dashboard/workflow/workflow-hierarchy.tsx"),
     route("communication", "dashboard/communication/communication.tsx"),
     route("collaboration", "dashboard/collaboration/collaboration.tsx"),
     route("team", "dashboard/team/route.tsx"),

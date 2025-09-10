@@ -250,64 +250,6 @@ export const columns: ColumnDef<Job>[] = [
     size: 100,
   },
   {
-    accessorKey: "updatedAt",
-    header: "Updated",
-    cell: ({ row }) => {
-      const updatedAt = row.original.updatedAt;
-      if (!updatedAt)
-        return <span className="text-muted-foreground text-xs">—</span>;
-
-      try {
-        const date = new Date(updatedAt);
-        if (isNaN(date.getTime())) {
-          return <span className="text-muted-foreground text-xs">—</span>;
-        }
-
-        const now = new Date();
-        const diffInDays = Math.floor(
-          (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (diffInDays === 0) {
-          return (
-            <span className="text-xs text-green-600 font-medium">
-              <span className="hidden lg:inline">Today</span>
-              <span className="lg:hidden">Now</span>
-            </span>
-          );
-        } else if (diffInDays === 1) {
-          return (
-            <span className="text-xs text-blue-600">
-              <span className="hidden lg:inline">Yesterday</span>
-              <span className="lg:hidden">1d</span>
-            </span>
-          );
-        } else if (diffInDays < 7) {
-          return (
-            <span className="text-xs text-muted-foreground">{diffInDays}d</span>
-          );
-        } else {
-          const formatted = new Intl.DateTimeFormat("en-US", {
-            month: "short",
-            day: "numeric",
-          }).format(date);
-          return (
-            <span className="text-xs text-muted-foreground">
-              <span className="hidden lg:inline">{formatted}</span>
-              <span className="lg:hidden">{formatted.split(" ")[1]}</span>
-            </span>
-          );
-        }
-      } catch (error) {
-        return <span className="text-muted-foreground text-xs">—</span>;
-      }
-    },
-    size: 80,
-    meta: {
-      className: "hidden lg:table-cell", // Hide on mobile/tablet to save space
-    },
-  },
-  {
     id: "actions",
     header: "",
     cell: ({ row }) => (
