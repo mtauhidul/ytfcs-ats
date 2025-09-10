@@ -141,7 +141,6 @@ export default function JobsPage() {
   // For searching
   const [globalFilter, setGlobalFilter] = useState("");
   const [clientFilter, setClientFilter] = useState("all"); // New client filter
-  const [isStepperOpen, setIsStepperOpen] = useState(false); // For new stepper modal
 
   // For shared tags & categories
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -155,19 +154,6 @@ export default function JobsPage() {
 
   // For create job modal
   const [createJobOpen, setCreateJobOpen] = useState(false);
-  const [createJobData, setCreateJobData] = useState({
-    title: "",
-    description: "",
-    requirements: [] as string[],
-    location: "",
-    salaryRange: "",
-    department: "",
-    employmentType: "",
-    statusId: UNASSIGNED_VALUE,
-    tags: [] as string[],
-    category: NONE_CATEGORY_VALUE,
-    clientId: "",
-  });
 
   // For detail modal
   const [detailJob, setDetailJob] = useState<Job | null>(null);
@@ -542,54 +528,13 @@ export default function JobsPage() {
     return `${prefix}-${timestamp}-${random}`;
   };
 
-  const handleStepperSubmit = async (data: JobCreationData) => {
-    try {
-      setIsSubmitting(true);
-      const createLoading = toast.loading("Creating job...");
-      const customJobId = generateJobId();
-
-      // Get client info for caching
-      const selectedClient = clients.find(c => c.id === data.clientId);
-
-      const newJob = {
-        jobId: customJobId,
-        title: data.title.trim(),
-        description: data.description.trim(),
-        requirements: data.requirements,
-        location: data.location.trim(),
-        salaryRange: data.salaryRange.trim(),
-        department: data.department.trim(),
-        employmentType: data.employmentType,
-        statusId: data.statusId || UNASSIGNED_VALUE,
-        tags: data.tags,
-        category: data.category || NONE_CATEGORY_VALUE,
-        clientId: data.clientId,
-        clientName: selectedClient?.name || "Unknown Client",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const docRef = await addDoc(collection(db, "jobs"), newJob);
-      console.log("Job created with ID:", docRef.id);
-      
-      toast.dismiss(createLoading);
-      toast.success("Job created successfully!");
-      setIsStepperOpen(false);
-    } catch (error) {
-      console.error("Error creating job:", error);
-      toast.error("Failed to create job. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCreateJob = async () => {
-    if (!createJobData.title.trim()) {
+  const handleCreateJob = async (formData: JobCreationData) => {
+    if (!formData.title.trim()) {
       toast.error("Job title is required");
       return;
     }
 
-    if (!createJobData.clientId) {
+    if (!formData.clientId) {
       toast.error("Please select a client for this job");
       return;
     }
@@ -600,29 +545,23 @@ export default function JobsPage() {
       const customJobId = generateJobId();
 
       // Get client info for caching
-      const selectedClient = clients.find(c => c.id === createJobData.clientId);
+      const selectedClient = clients.find(c => c.id === formData.clientId);
 
       const newJob = {
         jobId: customJobId,
-        title: createJobData.title.trim(),
-        description: createJobData.description.trim(),
-        requirements: createJobData.requirements,
-        location: createJobData.location.trim(),
-        salaryRange: createJobData.salaryRange.trim(),
-        department: createJobData.department.trim(),
-        employmentType: createJobData.employmentType,
-        clientId: createJobData.clientId,
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        requirements: formData.requirements,
+        location: formData.location.trim(),
+        salaryRange: formData.salaryRange.trim(),
+        department: formData.department.trim(),
+        employmentType: formData.employmentType,
+        clientId: formData.clientId,
         clientName: selectedClient?.name || "",
         clientCompany: selectedClient?.companyName || "",
-        statusId:
-          createJobData.statusId === UNASSIGNED_VALUE
-            ? ""
-            : createJobData.statusId,
-        tags: createJobData.tags,
-        category:
-          createJobData.category === NONE_CATEGORY_VALUE
-            ? ""
-            : createJobData.category,
+        statusId: formData.statusId,
+        tags: formData.tags,
+        category: formData.category,
         history: [
           {
             date: new Date().toISOString(),
@@ -636,24 +575,10 @@ export default function JobsPage() {
       await addDoc(collection(db, "jobs"), newJob);
       toast.dismiss(createLoading);
       toast.success(`Job created successfully with ID: ${customJobId}`);
-
-      setCreateJobData({
-        title: "",
-        description: "",
-        requirements: [],
-        location: "",
-        salaryRange: "",
-        department: "",
-        employmentType: "",
-        statusId: "",
-        tags: [],
-        category: "",
-        clientId: "",
-      });
-      setCreateJobOpen(false);
     } catch (err) {
       console.error("Error creating job:", err);
       toast.error("Error creating job");
+      throw err; // Re-throw to let stepper handle the error
     } finally {
       setIsSubmitting(false);
     }
@@ -1054,7 +979,7 @@ export default function JobsPage() {
             {jobs.length} jobs
           </Badge>
           <Button
-            onClick={() => setIsStepperOpen(true)}
+            onClick={() => setCreateJobOpen(true)}
             size={isMobile ? "sm" : "default"}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -1225,8 +1150,17 @@ export default function JobsPage() {
         )}
       </div>
 
-      {/* Create Job Modal */}
-      <Dialog open={createJobOpen} onOpenChange={setCreateJobOpen}>
+      {/* Job Creation Stepper */}
+      <JobCreationStepper
+        open={createJobOpen}
+        onOpenChange={setCreateJobOpen}
+        onSubmit={handleCreateJob}
+        clients={clients as any}
+        categories={allCategories}
+        statuses={statuses}
+        tags={allTags}
+        isSubmitting={isSubmitting}
+      />
         <DialogContent className="w-[95vw] max-w-4xl h-[90vh] flex flex-col p-0">
           <div className="flex flex-col h-full">
             <DialogHeader className="px-4 sm:px-6 py-4 border-b flex-shrink-0">
@@ -2794,18 +2728,6 @@ export default function JobsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Job Creation Stepper Modal */}
-      <JobCreationStepper
-        open={isStepperOpen}
-        onOpenChange={setIsStepperOpen}
-        onSubmit={handleStepperSubmit}
-        clients={clients as any}
-        categories={allCategories}
-        statuses={statuses}
-        tags={allTags}
-        isSubmitting={isSubmitting}
-      />
 
       <Toaster />
     </div>
