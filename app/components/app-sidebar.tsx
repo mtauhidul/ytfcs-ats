@@ -2,17 +2,20 @@ import {
   BarChart3, // Changed to BarChart3 for better visual
   Briefcase, // Changed from Building2Icon to Briefcase for jobs
   Building2, // For clients/employers
+  Calendar, // For interviews
   FileCheck, // For applications review
   FileText, // Changed from FolderArchive to FileText for categories
-  Group,
+  HandHeart, // For offers
   Layers3, // Changed from LayersIcon to Layers3
   Mail,
   MessageSquare, // Changed from MessageSquareText to MessageSquare
   Settings,
+  Share2, // For collaboration - sharing and working together
   Tag,
   Upload,
   User,
-  Users, // Changed from UsersIcon to User for profile
+  Users, // For team management - multiple people
+  UserCog, // Alternative for team management
   Workflow,
 } from "lucide-react";
 import * as React from "react";
@@ -42,36 +45,15 @@ const data = {
     },
   ],
   navMain: [
+    // Overview
     {
       title: "Dashboard",
-      url: "/dashboard", // This will now point to the dashboard index page
-      icon: BarChart3, // Using BarChart3 for better visual
+      url: "/dashboard",
+      icon: BarChart3,
       isActive: false,
     },
-    {
-      title: "Applications",
-      url: "/dashboard/applications",
-      icon: FileCheck, // For application review
-      isActive: false,
-    },
-    {
-      title: "Jobs List",
-      url: "/dashboard/jobs",
-      icon: Briefcase, // More semantic icon for jobs
-      isActive: false,
-    },
-    {
-      title: "Candidate Import",
-      url: "/dashboard/import",
-      icon: Upload,
-      isActive: false,
-    },
-    {
-      title: "Candidates List",
-      url: "/dashboard/candidates",
-      icon: Users,
-      isActive: false,
-    },
+    
+    // Job Management
     {
       title: "Clients",
       url: "/dashboard/clients",
@@ -79,29 +61,71 @@ const data = {
       isActive: false,
     },
     {
-      title: "Workflow Hub",
+      title: "Jobs",
+      url: "/dashboard/jobs",
+      icon: Briefcase,
+      isActive: false,
+    },
+    {
+      title: "Workflow",
       url: "/dashboard/workflow",
       icon: Workflow,
       isActive: false,
     },
+
+    // Candidate Management
     {
-      title: "Workflow Management",
-      url: "/dashboard/workflow/management",
-      icon: Settings,
+      title: "Import",
+      url: "/dashboard/import",
+      icon: Upload,
       isActive: false,
     },
     {
-      title: "Communication",
-      url: "/dashboard/communication",
-      icon: MessageSquare, // Cleaner icon
+      title: "Applications",
+      url: "/dashboard/applications",
+      icon: FileCheck,
+      isActive: false,
+    },
+    {
+      title: "Candidates",
+      url: "/dashboard/candidates",
+      icon: Users,
+      isActive: false,
+    },
+    {
+      title: "Interviews",
+      url: "/dashboard/interviews",
+      icon: Calendar,
+      isActive: false,
+    },
+    {
+      title: "Offers",
+      url: "/dashboard/offers",
+      icon: HandHeart,
+      isActive: false,
+    },
+
+    // Team Management
+    {
+      title: "Team",
+      url: "/dashboard/team",
+      icon: Users,
       isActive: false,
     },
     {
       title: "Collaboration",
       url: "/dashboard/collaboration",
-      icon: Group,
+      icon: Share2,
       isActive: false,
     },
+    {
+      title: "Communication",
+      url: "/dashboard/communication",
+      icon: MessageSquare,
+      isActive: false,
+    },
+
+    // Utilities
     {
       title: "Tags",
       url: "/dashboard/tags",
@@ -111,26 +135,14 @@ const data = {
     {
       title: "Categories",
       url: "/dashboard/categories",
-      icon: FileText, // More appropriate for categories
-      isActive: false,
-    },
-    {
-      title: "Stages",
-      url: "/dashboard/stages",
-      icon: Layers3, // Better visual representation
-      isActive: false,
-    },
-    {
-      title: "Profile",
-      url: "/dashboard/profile",
-      icon: User, // More appropriate single user icon
+      icon: FileText,
       isActive: false,
     },
     {
       title: "Email Monitoring",
       url: "/dashboard/monitoring",
       icon: Mail,
-      isActive: true,
+      isActive: false,
     },
   ],
 };

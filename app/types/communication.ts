@@ -53,7 +53,7 @@ export interface MessageRecord {
   error?: string;
 }
 
-export interface TeamMember {
+export interface CommunicationTeamMember {
   id: string;
   name: string;
   email: string;
