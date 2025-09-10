@@ -1,6 +1,7 @@
 // app/dashboard/jobs/columns.tsx
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -79,27 +80,47 @@ export const columns: ColumnDef<Job>[] = [
     cell: ({ row }) => {
       const clientName = row.original.clientName;
       const clientCompany = row.original.clientCompany;
+      const clientLogoUrl = row.original.clientLogoUrl;
       
       return (
-        <div className="min-w-0 max-w-[140px]">
-          {clientName ? (
-            <div>
-              <div className="font-medium text-xs truncate" title={clientName}>
-                {clientName}
-              </div>
-              {clientCompany && (
-                <div className="text-xs text-muted-foreground truncate" title={clientCompany}>
-                  {clientCompany}
-                </div>
-              )}
-            </div>
+        <div className="flex items-center gap-2 min-w-0 max-w-[160px]">
+          {clientLogoUrl ? (
+            <Avatar className="h-6 w-6 shrink-0">
+              <AvatarImage 
+                src={clientLogoUrl} 
+                alt={clientName || clientCompany || "Client logo"} 
+              />
+              <AvatarFallback className="text-xs">
+                {(clientName || clientCompany)?.slice(0, 2)?.toUpperCase() || "CL"}
+              </AvatarFallback>
+            </Avatar>
           ) : (
-            <span className="text-muted-foreground text-xs">—</span>
+            <Avatar className="h-6 w-6 shrink-0">
+              <AvatarFallback className="text-xs">
+                {(clientName || clientCompany)?.slice(0, 2)?.toUpperCase() || "CL"}
+              </AvatarFallback>
+            </Avatar>
           )}
+          <div className="min-w-0 flex-1">
+            {clientName ? (
+              <div>
+                <div className="font-medium text-xs truncate" title={clientName}>
+                  {clientName}
+                </div>
+                {clientCompany && (
+                  <div className="text-xs text-muted-foreground truncate" title={clientCompany}>
+                    {clientCompany}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-xs">—</span>
+            )}
+          </div>
         </div>
       );
     },
-    size: 140,
+    size: 160,
     meta: {
       className: "hidden sm:table-cell", // Hide on mobile to save space
     },
@@ -137,121 +158,56 @@ export const columns: ColumnDef<Job>[] = [
     size: 100,
   },
   {
-    accessorKey: "location",
-    header: "Location",
+    accessorKey: "createdAt",
+    header: "Date Posted",
     cell: ({ row }) => {
-      const location = row.original.location;
-      const employmentType = row.original.employmentType;
-
-      return (
-        <div className="min-w-0 max-w-[140px]">
-          <div className="truncate text-xs" title={location}>
-            {location || <span className="text-muted-foreground">—</span>}
-          </div>
-          {employmentType && (
-            <Badge
-              variant="secondary"
-              className="text-xs mt-1 capitalize px-1.5 py-0 max-w-full truncate"
-            >
-              <span className="hidden sm:inline">
-                {employmentType.replace("-", " ")}
-              </span>
-              <span className="sm:hidden">
-                {employmentType.split("-")[0].substring(0, 4)}
-              </span>
-            </Badge>
-          )}
-        </div>
-      );
-    },
-    size: 120,
-  },
-  {
-    accessorKey: "salaryRange",
-    header: "Salary",
-    cell: ({ row }) => {
-      const salary = row.original.salaryRange;
-      return (
-        <div
-          className="text-xs font-medium min-w-0 max-w-[90px] truncate"
-          title={salary}
-        >
-          {salary ? (
-            <>
-              <span className="hidden xl:inline">{salary}</span>
-              <span className="xl:hidden">
-                {salary.includes("-")
-                  ? `${salary.split("-")[0].trim()}+`
-                  : salary.length > 6
-                  ? `${salary.substring(0, 6)}...`
-                  : salary}
-              </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </div>
-      );
-    },
-    size: 90,
-    meta: {
-      className: "hidden md:table-cell", // Hide on mobile to save space
-    },
-  },
-  {
-    accessorKey: "tags",
-    header: "Tags",
-    cell: ({ row }) => {
-      const tags = row.original.tags || [];
-      if (!tags.length) {
+      const createdAt = row.original.createdAt;
+      if (!createdAt) {
         return <span className="text-muted-foreground text-xs">—</span>;
       }
 
-      // More aggressive responsive tag display
-      const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
-      const isTablet =
-        typeof window !== "undefined" && window.innerWidth < 1024;
+      // Format the date
+      const date = new Date(createdAt);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return <span className="text-muted-foreground text-xs">Invalid date</span>;
+      }
+      
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - date.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-      // Show fewer tags on smaller screens to save space
-      const maxTags = isMobile ? 1 : isTablet ? 1 : 2;
-      const displayedTags = tags.slice(0, maxTags);
-      const extraCount = tags.length - displayedTags.length;
+      let displayText = "";
+      if (diffDays === 1) {
+        displayText = "Today";
+      } else if (diffDays === 2) {
+        displayText = "Yesterday";
+      } else if (diffDays <= 7) {
+        displayText = `${diffDays - 1}d ago`;
+      } else if (diffDays <= 30) {
+        displayText = `${Math.floor((diffDays - 1) / 7)}w ago`;
+      } else {
+        displayText = date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric'
+        });
+      }
 
       return (
-        <div
-          className="flex flex-wrap gap-0.5 min-w-0 max-w-[100px]"
-          title={tags.join(", ")}
-        >
-          {displayedTags.map((tag) => (
-            <Badge
-              key={tag}
-              variant="outline"
-              className="px-1 py-0 text-xs max-w-full truncate"
-            >
-              <span className="hidden lg:inline">
-                {tag.length > 8 ? `${tag.substring(0, 8)}...` : tag}
-              </span>
-              <span className="lg:hidden">
-                {tag.length > 3 ? `${tag.substring(0, 3)}...` : tag}
-              </span>
-            </Badge>
-          ))}
-          {extraCount > 0 && (
-            <Badge
-              variant="outline"
-              className="px-1 py-0 text-xs text-muted-foreground"
-            >
-              +{extraCount}
-            </Badge>
-          )}
+        <div className="text-xs text-muted-foreground min-w-[60px]" title={date.toLocaleDateString()}>
+          {displayText}
         </div>
       );
     },
-    size: 100,
+    size: 80,
+    meta: {
+      className: "hidden md:table-cell", // Hide on smaller screens
+    },
   },
   {
     id: "actions",
-    header: "",
+    header: "Details",
     cell: ({ row }) => (
       <Button
         variant="ghost"

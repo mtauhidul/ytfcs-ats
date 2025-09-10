@@ -191,7 +191,7 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-2 flex-wrap px-4 pb-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>
             {table.getFilteredSelectedRowModel().rows.length} of{" "}

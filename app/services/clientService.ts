@@ -114,6 +114,7 @@ class ClientService {
           companyName: data.companyName,
           contactEmail: data.contactEmail,
           status: data.status,
+          logoUrl: data.logoUrl || "", // Include logo URL
         };
       }) as ClientBasic[];
     } catch (error) {
