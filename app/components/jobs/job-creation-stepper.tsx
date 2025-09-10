@@ -175,8 +175,8 @@ export function JobCreationStepper({
         }
         break;
       case 3: // Requirements
-        if (formData.requirements.length === 0) {
-          newErrors.requirements = 'At least one requirement is needed';
+        if (formData.requirements.length === 0 || !formData.requirements[0]?.trim()) {
+          newErrors.requirements = 'Job requirements are required';
         }
         break;
       case 4: // Organization
@@ -225,7 +225,7 @@ export function JobCreationStepper({
     switch (currentStep) {
       case 1: return !!formData.clientId;
       case 2: return !!(formData.title.trim() && formData.description.trim() && formData.location.trim());
-      case 3: return formData.requirements.length > 0;
+      case 3: return formData.requirements.length > 0 && !!formData.requirements[0]?.trim();
       case 4: return !!(formData.category && formData.statusId);
       case 5: return true;
       default: return false;
@@ -441,12 +441,12 @@ export function JobCreationStepper({
                 </Label>
                 <Textarea
                   id="requirements"
-                  value={formData.requirements.join(', ')}
+                  value={formData.requirements.join('\n')}
                   onChange={(e) => updateFormData({ 
-                    requirements: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                    requirements: [e.target.value]
                   })}
-                  placeholder="Enter requirements separated by commas (e.g. 5+ years experience, JavaScript, React)"
-                  className={`min-h-[100px] resize-none ${errors.requirements ? 'border-red-500' : ''}`}
+                  placeholder="Enter job requirements as free text&#10;&#10;Example:&#10;We are looking for a candidate with a Bachelor's degree in Computer Science or related field. The ideal candidate should have 5+ years of experience with JavaScript and modern frameworks like React. Strong problem-solving skills and excellent communication abilities are essential."
+                  className={`min-h-[120px] resize-none ${errors.requirements ? 'border-red-500' : ''}`}
                 />
                 {errors.requirements && (
                   <p className="text-sm text-red-600 flex items-center mt-1">
@@ -455,37 +455,9 @@ export function JobCreationStepper({
                   </p>
                 )}
                 <p className="text-xs text-gray-500 mt-1">
-                  Separate each requirement with a comma
+                  Enter requirements as continuous text - no need for bullet points or line breaks
                 </p>
               </div>
-
-              {formData.requirements.length > 0 && (
-                <div>
-                  <Label className="text-sm font-medium">Preview ({formData.requirements.length} requirements)</Label>
-                  <div className="mt-2 p-3 bg-gray-50 border rounded-md space-y-2">
-                    {formData.requirements.map((req, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
-                          {index + 1}
-                        </div>
-                        <span className="text-sm flex-1">{req}</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            const newRequirements = formData.requirements.filter((_, i) => i !== index);
-                            updateFormData({ requirements: newRequirements });
-                          }}
-                          className="h-6 w-6 p-0 hover:bg-red-100"
-                        >
-                          <X className="w-3 h-3 text-red-500" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         );
@@ -689,23 +661,11 @@ export function JobCreationStepper({
                 <div className="flex items-center space-x-2 mb-2">
                   <FileText className="w-4 h-4 text-gray-600" />
                   <span className="text-sm font-medium text-gray-900">
-                    Requirements ({formData.requirements.length})
+                    Requirements
                   </span>
                 </div>
-                <div className="space-y-1">
-                  {formData.requirements.slice(0, 3).map((req, index) => (
-                    <div key={index} className="text-sm flex items-center space-x-2">
-                      <div className="w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs">
-                        {index + 1}
-                      </div>
-                      <span>{req}</span>
-                    </div>
-                  ))}
-                  {formData.requirements.length > 3 && (
-                    <div className="text-sm text-gray-500">
-                      +{formData.requirements.length - 3} more requirements
-                    </div>
-                  )}
+                <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                  {formData.requirements[0] || 'No requirements specified'}
                 </div>
               </div>
 

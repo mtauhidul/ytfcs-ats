@@ -15,6 +15,7 @@ export interface Job {
   clientId: string; // Required: Which client this job is for
   clientName?: string; // Cached for display
   clientCompany?: string; // Cached for display
+  clientLogoUrl?: string; // Cached client logo for display
   tags: string[];
   category: string;
   statusId: string;
@@ -64,4 +65,5 @@ export interface JobBasic {
   clientId: string;
   clientName?: string;
   clientCompany?: string;
+  clientLogoUrl?: string;
 }

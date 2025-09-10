@@ -106,6 +106,7 @@ export interface ClientBasic {
   companyName: string;
   contactEmail: string;
   status: string;
+  logoUrl?: string; // Add logo URL for display purposes
 }
 
 // For analytics and reporting
