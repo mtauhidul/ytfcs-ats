@@ -97,6 +97,7 @@ import type {
   InterviewFeedback,
   Stage,
 } from "~/types";
+import type { Job } from "~/types/job";
 import InterviewManager from "../interviews/interview-manager";
 import { columns } from "./columns";
 import ScoreDetail from "./score-detail";
@@ -123,16 +124,6 @@ const getStoragePathFromURL = (url: string): string | null => {
 interface HistoryEntry {
   date: string;
   note: string;
-}
-
-// Define job interface
-interface Job {
-  id: string;
-  title: string;
-  status: string;
-  location: string;
-  department: string;
-  salary: string;
 }
 
 // Use centralized feedback type instead of local interface
@@ -223,6 +214,10 @@ export default function CandidatesPage() {
   // Add this state to your component
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
+  
+  // Job-specific workflow stages
+  const [jobWorkflowStages, setJobWorkflowStages] = useState<Stage[]>([]);
+  const [loadingJobStages, setLoadingJobStages] = useState(false);
 
   // Add this useEffect to fetch jobs
   useEffect(() => {
@@ -233,14 +228,29 @@ export default function CandidatesPage() {
         const jobsQuery = query(jobsCollection);
         const snapshot = await getDocs(jobsQuery);
 
-        const jobsList = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          title: doc.data().title || "Untitled Job",
-          status: doc.data().status || "Draft",
-          location: doc.data().location || "",
-          department: doc.data().department || "",
-          salary: doc.data().salary || "",
-        }));
+        const jobsList = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title || "Untitled Job",
+            description: data.description || "",
+            location: data.location || "",
+            department: data.department || "",
+            salary: data.salary || "",
+            salaryRange: data.salaryRange || "",
+            clientId: data.clientId || "",
+            clientName: data.clientName || "",
+            clientCompany: data.clientCompany || "",
+            tags: data.tags || [],
+            category: data.category || "",
+            statusId: data.statusId || "",
+            status: data.status || "Draft",
+            employmentType: data.employmentType || "",
+            requirements: data.requirements || [],
+            createdAt: data.createdAt || "",
+            updatedAt: data.updatedAt || "",
+          } as Job;
+        });
 
         setJobs(jobsList);
       } catch (error) {
@@ -260,6 +270,85 @@ export default function CandidatesPage() {
     const selectedJob = jobs.find((job) => job.id === jobId);
     setSelectedJob(selectedJob || null);
   };
+
+  // Fetch workflow stages for a specific job
+  const fetchJobWorkflowStages = async (jobId: string) => {
+    if (!jobId || jobId === UNASSIGNED_VALUE) {
+      setJobWorkflowStages([]);
+      return;
+    }
+
+    try {
+      setLoadingJobStages(true);
+      
+      // Query for job workflow
+      const workflowQuery = query(
+        collection(db, 'jobWorkflows'),
+        where('jobId', '==', jobId)
+      );
+      
+      const workflowSnapshot = await getDocs(workflowQuery);
+      
+      if (!workflowSnapshot.empty) {
+        // Get the first workflow document
+        const workflowDoc = workflowSnapshot.docs[0];
+        const workflowData = workflowDoc.data();
+        
+        // Extract stages from workflow
+        if (workflowData.stages && Array.isArray(workflowData.stages)) {
+          // Convert workflow stages to Stage format
+          const stages = workflowData.stages
+            .sort((a: any, b: any) => a.order - b.order)
+            .map((stage: any) => ({
+              id: stage.id,
+              title: stage.name,
+              color: stage.color || '#6b7280',
+              order: stage.order
+            }));
+          setJobWorkflowStages(stages);
+        } else {
+          setJobWorkflowStages([]);
+        }
+      } else {
+        // No workflow found for this job
+        setJobWorkflowStages([]);
+      }
+    } catch (error) {
+      console.error('Error fetching job workflow stages:', error);
+      setJobWorkflowStages([]);
+    } finally {
+      setLoadingJobStages(false);
+    }
+  };
+
+  // Handle job selection in modal
+  const handleModalJobChange = async (jobId: string) => {
+    setModalJobId(jobId);
+    
+    // Fetch workflow stages for the selected job
+    if (jobId && jobId !== UNASSIGNED_VALUE) {
+      await fetchJobWorkflowStages(jobId);
+      
+      // After fetching job workflow stages, check if current stage is valid
+      // This will be handled by useEffect when jobWorkflowStages changes
+    } else {
+      setJobWorkflowStages([]);
+      // When no job is selected, keep the current stage (it will use global stages)
+    }
+  };
+
+  // Effect to reset stage selection if current stage is not available in job workflow
+  useEffect(() => {
+    if (modalJobId && modalJobId !== UNASSIGNED_VALUE && jobWorkflowStages.length > 0) {
+      // Check if current stage exists in job workflow stages
+      const currentStageExists = jobWorkflowStages.some(stage => stage.id === modalStageId);
+      
+      if (!currentStageExists && modalStageId !== UNASSIGNED_VALUE) {
+        // Reset to unassigned if current stage doesn't exist in job workflow
+        setModalStageId(UNASSIGNED_VALUE);
+      }
+    }
+  }, [jobWorkflowStages, modalStageId, modalJobId]);
 
   // 1. Fetch Feedbacks - real-time
   const fetchCandidateFeedback = async (candidateId: string) => {
@@ -454,6 +543,7 @@ export default function CandidatesPage() {
           skills: data.skills || [],
           notes: data.notes || "",
           jobTitle: data.jobTitle || "",
+          jobId: data.jobId || "", // Include job assignment
           stageColor: data.stageColor || "",
           resumeScore: data.resumeScore || 0,
           resumeScoringDetails: data.resumeScoringDetails || null,
@@ -699,12 +789,14 @@ export default function CandidatesPage() {
     }
 
     // Check for job assignment changes
-    if (originalState.jobId !== modalJobId) {
-      const oldJobTitle = jobs.find((j) => j.id === originalState.jobId)?.title || "Unassigned";
-      const newJobTitle = jobs.find((j) => j.id === modalJobId)?.title || "Unassigned";
+    const origJobId = originalState.jobId === UNASSIGNED_VALUE ? "" : originalState.jobId;
+    const newJobId = modalJobId === UNASSIGNED_VALUE ? "" : modalJobId;
+    if (origJobId !== newJobId) {
+      const oldJobTitle = jobs.find((j) => j.id === origJobId)?.title || "Unassigned";
+      const newJobTitle = jobs.find((j) => j.id === newJobId)?.title || "Unassigned";
       changes.jobAssignment = {
-        from: originalState.jobId ? oldJobTitle : "Unassigned",
-        to: modalJobId ? newJobTitle : "Unassigned",
+        from: origJobId ? oldJobTitle : "Unassigned",
+        to: newJobId ? newJobTitle : "Unassigned",
       };
     }
 
@@ -812,8 +904,15 @@ export default function CandidatesPage() {
     setModalStageId(cand.stageId || UNASSIGNED_VALUE);
     setModalTags(cand.tags || []);
     setModalCategory(cand.category || NONE_CATEGORY_VALUE);
-    setModalJobId(cand.jobId || ""); // Initialize job assignment
+    setModalJobId(cand.jobId || UNASSIGNED_VALUE); // Initialize job assignment
     setModalHistory(cand.history || []);
+
+    // Fetch job workflow stages if candidate has a job assigned
+    if (cand.jobId && cand.jobId.trim() !== '') {
+      fetchJobWorkflowStages(cand.jobId);
+    } else {
+      setJobWorkflowStages([]);
+    }
 
     // Initialize with any existing communications from the candidate object
     setModalCommunications(cand.communications || []);
@@ -856,7 +955,7 @@ export default function CandidatesPage() {
       stageId: cand.stageId || UNASSIGNED_VALUE,
       tags: [...(cand.tags || [])],
       category: cand.category || NONE_CATEGORY_VALUE,
-      jobId: cand.jobId || "", // Track job assignment changes
+      jobId: cand.jobId || UNASSIGNED_VALUE, // Track job assignment changes
       experience: cand.experience || "",
     });
   };
@@ -934,7 +1033,7 @@ export default function CandidatesPage() {
         tags: modalTags,
         // Convert back from NONE_CATEGORY_VALUE to empty string for storage
         category: modalCategory === NONE_CATEGORY_VALUE ? "" : modalCategory,
-        jobId: modalJobId, // Save job assignment
+        jobId: modalJobId === UNASSIGNED_VALUE ? "" : modalJobId, // Save job assignment
         history: modalHistory,
         communications: modalCommunications,
         documents: modalDocuments, // Save documents
@@ -1626,14 +1725,54 @@ export default function CandidatesPage() {
 
   // Get a color style for badge by stageId
   const getBadgeColorByStageId = (stageId: string) => {
+    // First check job workflow stages if available
+    if (modalJobId && modalJobId !== UNASSIGNED_VALUE && jobWorkflowStages.length > 0) {
+      const workflowStage = jobWorkflowStages.find((s) => s.id === stageId);
+      if (workflowStage) {
+        return workflowStage.color || "";
+      }
+    }
+    
+    // Fall back to global stages
     const stage = stages.find((s) => s.id === stageId);
     return stage?.color || "";
   };
 
   // Get stage title from stage ID
   const getStageTitleById = (stageId: string) => {
+    // First check job workflow stages if available
+    if (modalJobId && modalJobId !== UNASSIGNED_VALUE && jobWorkflowStages.length > 0) {
+      const workflowStage = jobWorkflowStages.find((s) => s.id === stageId);
+      if (workflowStage) {
+        return workflowStage.title;
+      }
+    }
+    
+    // Fall back to global stages
     const stage = stages.find((s) => s.id === stageId);
     return stage ? stage.title : "Unassigned";
+  };
+
+  // Get stage info for any candidate (used in table display)
+  const getCandidateStageInfo = (candidate: Candidate) => {
+    // First check if this stage exists in currently loaded job workflow stages
+    // This helps when viewing candidates for the same job as currently selected in modal
+    if (jobWorkflowStages.length > 0) {
+      const workflowStage = jobWorkflowStages.find((s) => s.id === candidate.stageId);
+      if (workflowStage) {
+        return {
+          title: workflowStage.title,
+          color: workflowStage.color || ""
+        };
+      }
+    }
+    
+    // Fall back to global stages
+    const stage = stages.find((s) => s.id === candidate.stageId);
+    return {
+      title: stage ? stage.title : "Unassigned",
+      color: stage ? stage.color : ""
+    };
   };
 
   // Handle row selection changes
@@ -1832,11 +1971,11 @@ export default function CandidatesPage() {
           key={`datatable-${globalFilter}-${filteredCandidates.length}`}
           columns={columns}
           data={filteredCandidates.map((candidate) => {
-            const stage = stages.find((s) => s.id === candidate.stageId);
+            const stageInfo = getCandidateStageInfo(candidate);
             return {
               ...candidate,
-              stage: stage ? stage.title : "Unassigned",
-              stageColor: stage ? stage.color : "",
+              stage: stageInfo.title,
+              stageColor: stageInfo.color,
             };
           })}
           onRowSelectionChange={handleRowSelectionChange}
@@ -2165,11 +2304,33 @@ export default function CandidatesPage() {
                                 <SelectItem value={UNASSIGNED_VALUE}>
                                   Unassigned
                                 </SelectItem>
-                                {stages.filter((stage) => stage.id && stage.id.trim() !== "").map((stage) => (
-                                  <SelectItem key={stage.id} value={stage.id}>
-                                    {stage.title}
+                                {loadingJobStages ? (
+                                  <SelectItem value="__loading__" disabled>
+                                    Loading stages...
                                   </SelectItem>
-                                ))}
+                                ) : modalJobId && modalJobId !== UNASSIGNED_VALUE && jobWorkflowStages.length > 0 ? (
+                                  // Show job-specific workflow stages when a job is selected
+                                  jobWorkflowStages
+                                    .filter((stage) => stage.id && stage.id.trim() !== "")
+                                    .map((stage) => (
+                                      <SelectItem key={stage.id} value={stage.id}>
+                                        {stage.title}
+                                      </SelectItem>
+                                    ))
+                                ) : modalJobId && modalJobId !== UNASSIGNED_VALUE && jobWorkflowStages.length === 0 && !loadingJobStages ? (
+                                  <SelectItem value="__no_workflow__" disabled>
+                                    No workflow stages for this job
+                                  </SelectItem>
+                                ) : (
+                                  // Show all global stages when no job is selected or no workflow exists
+                                  stages
+                                    .filter((stage) => stage.id && stage.id.trim() !== "")
+                                    .map((stage) => (
+                                      <SelectItem key={stage.id} value={stage.id}>
+                                        {stage.title}
+                                      </SelectItem>
+                                    ))
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
@@ -2183,7 +2344,7 @@ export default function CandidatesPage() {
                             </Label>
                             <Select
                               value={modalJobId}
-                              onValueChange={setModalJobId}
+                              onValueChange={handleModalJobChange}
                             >
                               <SelectTrigger id="job" className="w-full">
                                 <SelectValue placeholder="Select a job" />
@@ -2192,18 +2353,28 @@ export default function CandidatesPage() {
                                 <SelectItem value={UNASSIGNED_VALUE}>
                                   Unassigned
                                 </SelectItem>
-                                {jobs.filter((job) => job.id && job.id.trim() !== "").map((job) => (
-                                  <SelectItem key={job.id} value={job.id}>
-                                    <div className="flex flex-col">
-                                      <span className="font-medium">{job.title}</span>
-                                      {job.department && (
-                                        <span className="text-xs text-muted-foreground">
-                                          {job.department}
-                                        </span>
-                                      )}
-                                    </div>
+                                {loadingJobs ? (
+                                  <SelectItem value="__loading_jobs__" disabled>
+                                    Loading jobs...
                                   </SelectItem>
-                                ))}
+                                ) : jobs.length === 0 ? (
+                                  <SelectItem value="__no_jobs__" disabled>
+                                    No jobs available
+                                  </SelectItem>
+                                ) : (
+                                  jobs.filter((job) => job.id && job.id.trim() !== "").map((job) => (
+                                    <SelectItem key={job.id} value={job.id}>
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">{job.title}</span>
+                                        {job.department && (
+                                          <span className="text-xs text-muted-foreground">
+                                            {job.department}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
