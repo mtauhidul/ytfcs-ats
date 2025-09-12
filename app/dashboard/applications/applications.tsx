@@ -230,7 +230,7 @@ export default function ApplicationsPage() {
         category: "General",
         rating: 0,
         stageId: "unassigned",
-        notes: `Approved and converted from application`,
+        notes: `Approved and converted from application quick action`,
         documents: application.resumeFileURL
           ? [
               {
@@ -246,7 +246,7 @@ export default function ApplicationsPage() {
         history: [
           {
             date: new Date().toISOString(),
-            note: `Candidate created from approved application (${application.source})`,
+            note: `Candidate created from approved application quick action (${application.source})`,
           },
         ],
         createdAt: new Date().toISOString(),
@@ -271,19 +271,31 @@ export default function ApplicationsPage() {
       }
 
       // Add to candidates collection
-      await addDoc(collection(db, "candidates"), candidateData);
+      const candidateRef = await addDoc(collection(db, "candidates"), candidateData);
 
       // Update application status to converted
-      const applicationRef = doc(db, "applications", applicationId);
-      await updateDoc(applicationRef, {
+      await updateDoc(doc(db, "applications", applicationId), {
         status: "converted",
         convertedAt: new Date().toISOString(),
+        candidateId: candidateRef.id,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: "HR Team", // TODO: Get from auth context
         updatedAt: new Date().toISOString(),
       });
 
       toast.success(
         "Application approved and converted to candidate successfully!"
       );
+      
+      // Show success message with link to candidates section
+      setTimeout(() => {
+        toast.success(
+          "🎉 Candidate added to database! Check the Candidates section.",
+          {
+            duration: 5000,
+          }
+        );
+      }, 1000);
     } catch (error) {
       console.error("Error approving and converting application:", error);
       toast.error("Failed to approve and convert application");
@@ -292,50 +304,12 @@ export default function ApplicationsPage() {
     }
   };
 
-  // Handle approve application
+  // Handle approve application and automatically convert to candidate
   const handleApprove = async (application: Application) => {
     try {
       setIsApproving(true);
-      await handleStatusChange(
-        application.id,
-        "approved",
-        reviewNotes.trim() || "Approved via review modal"
-      );
-      setIsReviewOpen(false);
-      setSelectedApplication(null);
-      setReviewNotes("");
-    } catch (error) {
-      console.error("Error approving application:", error);
-    } finally {
-      setIsApproving(false);
-    }
-  };
-
-  // Handle reject application
-  const handleReject = async (application: Application) => {
-    try {
-      setIsRejecting(true);
-      await handleStatusChange(
-        application.id,
-        "rejected",
-        reviewNotes.trim() || "Rejected via review modal"
-      );
-      setIsReviewOpen(false);
-      setSelectedApplication(null);
-      setReviewNotes("");
-    } catch (error) {
-      console.error("Error rejecting application:", error);
-    } finally {
-      setIsRejecting(false);
-    }
-  };
-
-  // Convert approved application to candidate
-  const handleConvertToCandidate = async (application: Application) => {
-    try {
-      setIsSubmitting(true);
-
-      // Create candidate record
+      
+      // Create candidate record directly
       const candidateData: any = {
         name: application.name,
         email: application.email || "",
@@ -365,7 +339,7 @@ export default function ApplicationsPage() {
         category: "General",
         rating: 0,
         stageId: "unassigned",
-        notes: application.reviewNotes || "",
+        notes: reviewNotes.trim() || "Approved and converted from application review",
         documents: application.resumeFileURL
           ? [
               {
@@ -381,7 +355,7 @@ export default function ApplicationsPage() {
         history: [
           {
             date: new Date().toISOString(),
-            note: `Candidate created from approved application (${application.source})`,
+            note: `Candidate created from approved application review (${application.source})`,
           },
         ],
         createdAt: new Date().toISOString(),
@@ -405,20 +379,22 @@ export default function ApplicationsPage() {
         }
       }
 
-      const candidateRef = await addDoc(
-        collection(db, "candidates"),
-        candidateData
-      );
+      // Add to candidates collection
+      const candidateRef = await addDoc(collection(db, "candidates"), candidateData);
 
       // Update application status to converted
       await updateDoc(doc(db, "applications", application.id), {
         status: "converted",
+        convertedAt: new Date().toISOString(),
         candidateId: candidateRef.id,
+        reviewNotes: reviewNotes.trim() || "Approved via review modal",
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: "HR Team", // TODO: Get from auth context
         updatedAt: new Date().toISOString(),
       });
 
-      toast.success("Application converted to candidate successfully!");
-
+      toast.success("Application approved and converted to candidate successfully!");
+      
       // Show success message with link to candidates section
       setTimeout(() => {
         toast.success(
@@ -431,11 +407,31 @@ export default function ApplicationsPage() {
 
       setIsReviewOpen(false);
       setSelectedApplication(null);
+      setReviewNotes("");
     } catch (error) {
-      console.error("Error converting to candidate:", error);
-      toast.error("Failed to convert to candidate");
+      console.error("Error approving and converting application:", error);
+      toast.error("Failed to approve and convert application");
     } finally {
-      setIsSubmitting(false);
+      setIsApproving(false);
+    }
+  };
+
+  // Handle reject application
+  const handleReject = async (application: Application) => {
+    try {
+      setIsRejecting(true);
+      await handleStatusChange(
+        application.id,
+        "rejected",
+        reviewNotes.trim() || "Rejected via review modal"
+      );
+      setIsReviewOpen(false);
+      setSelectedApplication(null);
+      setReviewNotes("");
+    } catch (error) {
+      console.error("Error rejecting application:", error);
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -715,23 +711,6 @@ export default function ApplicationsPage() {
                             </>
                           )}
 
-                          {application.status === "approved" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                handleConvertToCandidate(application)
-                              }
-                              className="text-blue-600 border-blue-200 hover:bg-blue-50 h-8"
-                              disabled={isSubmitting}
-                            >
-                              <User className="h-4 w-4 mr-1" />
-                              <span className="hidden sm:inline text-xs">
-                                Convert
-                              </span>
-                            </Button>
-                          )}
-
                           {application.status === "converted" && (
                             <Badge
                               variant="outline"
@@ -779,6 +758,45 @@ export default function ApplicationsPage() {
                               )}
 
                               <DropdownMenuSeparator />
+
+                              {/* Action options for pending applications */}
+                              {(application.status === "pending" ||
+                                application.status === "pending_rev" ||
+                                application.status === "pending_review") && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleApproveAndConvert(application.id)
+                                    }
+                                    className="text-green-600"
+                                    disabled={isSubmitting}
+                                  >
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Approve & Convert
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `Are you sure you want to reject ${application.name}'s application?`
+                                        )
+                                      ) {
+                                        handleStatusChange(
+                                          application.id,
+                                          "rejected",
+                                          "Rejected via dropdown menu"
+                                        );
+                                      }
+                                    }}
+                                    className="text-red-600"
+                                    disabled={isSubmitting}
+                                  >
+                                    <XCircle className="h-4 w-4 mr-2" />
+                                    Reject Application
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
 
                               {application.status === "converted" &&
                                 application.candidateId && (
@@ -1141,12 +1159,12 @@ export default function ApplicationsPage() {
                   {isApproving ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-                      Approving...
+                      Approving & Converting...
                     </>
                   ) : (
                     <>
                       <Check className="h-4 w-4 mr-2" />
-                      Approve
+                      Approve & Convert
                     </>
                   )}
                 </Button>
