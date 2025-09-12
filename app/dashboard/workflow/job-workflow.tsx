@@ -121,9 +121,52 @@ export default function WorkflowPage() {
   // Track if job was set from URL to avoid infinite loops
   const [jobSetFromUrl, setJobSetFromUrl] = useState(false);
 
+  // Session storage key for persisting job selection
+  const WORKFLOW_JOB_SESSION_KEY = "workflow_selected_job_id";
+
+  // Helper functions for session storage
+  const saveJobSelectionToSession = (jobId: string) => {
+    try {
+      if (typeof window !== 'undefined' && jobId) {
+        sessionStorage.setItem(WORKFLOW_JOB_SESSION_KEY, jobId);
+        console.log("📱 Saved job selection to session:", jobId);
+      }
+    } catch (error) {
+      console.warn("Failed to save job selection to session storage:", error);
+    }
+  };
+
+  const getJobSelectionFromSession = (): string | null => {
+    try {
+      if (typeof window !== 'undefined') {
+        const savedJobId = sessionStorage.getItem(WORKFLOW_JOB_SESSION_KEY);
+        console.log("📱 Retrieved job selection from session:", savedJobId);
+        return savedJobId;
+      }
+    } catch (error) {
+      console.warn("Failed to retrieve job selection from session storage:", error);
+    }
+    return null;
+  };
+
+  const clearJobSelectionFromSession = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(WORKFLOW_JOB_SESSION_KEY);
+        console.log("📱 Cleared job selection from session");
+      }
+    } catch (error) {
+      console.warn("Failed to clear job selection from session storage:", error);
+    }
+  };
+
   // Function to handle job selection changes (both from dropdown and URL)
   const handleJobChange = (jobId: string, updateUrl = true) => {
     setSelectedJobId(jobId);
+    
+    // Save to session storage for persistence within the session
+    saveJobSelectionToSession(jobId);
+    
     if (updateUrl && jobId) {
       // Update URL without causing a page reload
       navigate(`/dashboard/workflow?job=${jobId}`, { replace: true });
@@ -208,14 +251,22 @@ export default function WorkflowPage() {
           console.log("📍 Auto-selected job from URL parameter:", jobIdFromUrl);
         } else {
           console.warn("⚠️ Job from URL parameter not found:", jobIdFromUrl);
-          // Clear the invalid job parameter from URL
+          // Clear the invalid job parameter from URL and session
           navigate('/dashboard/workflow', { replace: true });
+          clearJobSelectionFromSession();
         }
       } else if (!jobSetFromUrl) {
         // Jobs not loaded yet, set the selectedJobId anyway - it will be validated when jobs load
         setSelectedJobId(jobIdFromUrl);
         setJobSetFromUrl(true);
         console.log("📍 Pre-selected job from URL parameter (pending validation):", jobIdFromUrl);
+      }
+    } else if (!jobIdFromUrl && !selectedJobId && jobs.length > 0 && !jobSetFromUrl) {
+      // No URL parameter - check if we should restore from session
+      const savedJobId = getJobSelectionFromSession();
+      if (savedJobId && jobs.some(job => job.id === savedJobId)) {
+        console.log("📱 Restoring job from session (URL effect):", savedJobId);
+        handleJobChange(savedJobId);
       }
     }
   }, [searchParams, jobs, selectedJobId, jobSetFromUrl, navigate]);
@@ -235,16 +286,44 @@ export default function WorkflowPage() {
       });
       setJobs(jobList);
       
-      // Auto-select first job if none selected and jobs exist (and no URL parameter)
+      // Handle job selection with priority order:
+      // 1. URL parameter (highest priority)
+      // 2. Session storage (medium priority) 
+      // 3. No auto-selection (let user choose)
       const jobIdFromUrl = searchParams.get('job');
-      if (!selectedJobId && jobList.length > 0 && !jobIdFromUrl) {
-        handleJobChange(jobList[0].id);
+      
+      if (jobIdFromUrl) {
+        // URL has job parameter - validate it exists
+        const jobExists = jobList.some(job => job.id === jobIdFromUrl);
+        if (jobExists && jobIdFromUrl !== selectedJobId) {
+          handleJobChange(jobIdFromUrl, false); // Don't update URL since we're reading from URL
+        } else if (!jobExists) {
+          // Invalid job in URL - clear it and check session storage
+          navigate('/dashboard/workflow', { replace: true });
+          clearJobSelectionFromSession();
+        }
+      } else if (!selectedJobId && jobList.length > 0) {
+        // No URL parameter and no current selection - check session storage
+        const savedJobId = getJobSelectionFromSession();
+        if (savedJobId) {
+          const savedJobExists = jobList.some(job => job.id === savedJobId);
+          if (savedJobExists) {
+            console.log("📱 Restoring job selection from session:", savedJobId);
+            handleJobChange(savedJobId);
+          } else {
+            console.log("📱 Saved job no longer exists, clearing session");
+            clearJobSelectionFromSession();
+            // Don't auto-select first job - let user choose
+          }
+        }
+        // If no saved job or saved job doesn't exist, don't auto-select anything
+        // This ensures users must manually select a job in new sessions
       }
       
       setLoading(false);
     });
     return () => unsub();
-  }, [selectedJobId]);
+  }, [selectedJobId, searchParams, navigate]);
 
   // Subscribe to stages for the selected job
   useEffect(() => {
@@ -358,6 +437,17 @@ export default function WorkflowPage() {
     });
     return () => unsub();
   }, [selectedJobId]);
+
+  // Initialize job selection from session storage on component mount
+  useEffect(() => {
+    // This effect runs once on component mount to restore session if available
+    const savedJobId = getJobSelectionFromSession();
+    if (savedJobId && !selectedJobId && jobs.length === 0) {
+      // Jobs not loaded yet, pre-set the selection
+      console.log("📱 Pre-loading job selection from session:", savedJobId);
+      setSelectedJobId(savedJobId);
+    }
+  }, []); // Empty dependency array - runs only on mount
 
   // Create default stages for a job if none exist
   const createDefaultStagesForJob = async (jobId: string) => {
