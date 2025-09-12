@@ -377,6 +377,35 @@ class TeamService {
       try {
         const activities = snapshot.docs.map((doc) => {
           const data = doc.data();
+          
+          // Handle different date formats from Firebase
+          let createdAt: string;
+          if (data.createdAt) {
+            try {
+              // Handle Firebase Timestamp objects
+              if (typeof data.createdAt === 'object' && 'seconds' in data.createdAt) {
+                createdAt = new Date(data.createdAt.seconds * 1000).toISOString();
+              } else if (typeof data.createdAt === 'string') {
+                // Validate ISO string
+                const testDate = new Date(data.createdAt);
+                if (isNaN(testDate.getTime())) {
+                  createdAt = new Date().toISOString();
+                } else {
+                  createdAt = data.createdAt;
+                }
+              } else {
+                // Try to convert whatever format it is
+                const testDate = new Date(data.createdAt);
+                createdAt = isNaN(testDate.getTime()) ? new Date().toISOString() : testDate.toISOString();
+              }
+            } catch (error) {
+              console.warn("Error parsing createdAt for team activity:", error);
+              createdAt = new Date().toISOString();
+            }
+          } else {
+            createdAt = new Date().toISOString();
+          }
+          
           return {
             id: doc.id,
             type: data.type,
@@ -386,7 +415,7 @@ class TeamService {
             targetUserId: data.targetUserId,
             targetUserName: data.targetUserName,
             metadata: data.metadata,
-            createdAt: data.createdAt || new Date().toISOString(),
+            createdAt,
           } as TeamActivity;
         });
         callback(activities.slice(0, limit));

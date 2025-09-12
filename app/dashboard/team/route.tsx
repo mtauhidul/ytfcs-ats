@@ -655,7 +655,31 @@ export default function TeamLayout() {
                     <div className="flex-1">
                       <p className="text-sm font-medium">{activity.description}</p>
                       <p className="text-xs text-muted-foreground">
-                        {activity.createdAt && new Date(activity.createdAt).toLocaleString()}
+                        {(() => {
+                          if (!activity.createdAt) return "No date available";
+                          
+                          try {
+                            // Handle Firebase Timestamp objects
+                            let date: Date;
+                            if (activity.createdAt && typeof activity.createdAt === 'object' && 'seconds' in (activity.createdAt as any)) {
+                              // Firebase Timestamp object
+                              date = new Date((activity.createdAt as any).seconds * 1000);
+                            } else {
+                              // ISO string or regular Date
+                              date = new Date(activity.createdAt);
+                            }
+                            
+                            // Check if the date is valid
+                            if (isNaN(date.getTime())) {
+                              return "Invalid date";
+                            }
+                            
+                            return date.toLocaleString();
+                          } catch (error) {
+                            console.error("Error formatting activity date:", error);
+                            return "Invalid date";
+                          }
+                        })()}
                       </p>
                     </div>
                   </div>
