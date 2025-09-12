@@ -197,6 +197,45 @@ export default function KanbanWorkflowManagement() {
   const { jobs, loading: jobsLoading } = useSelector((state: RootState) => state.jobs);
   const { state: sidebarState } = useSidebar();
 
+  // Session storage key for persisting job selection
+  const WORKFLOW_JOB_SESSION_KEY = "workflow_selected_job_id";
+
+  // Helper functions for session storage
+  const saveJobSelectionToSession = (jobId: string) => {
+    try {
+      if (typeof window !== 'undefined' && jobId) {
+        sessionStorage.setItem(WORKFLOW_JOB_SESSION_KEY, jobId);
+        console.log("📱 Saved job selection to session:", jobId);
+      }
+    } catch (error) {
+      console.warn("Failed to save job selection to session storage:", error);
+    }
+  };
+
+  const getJobSelectionFromSession = (): string | null => {
+    try {
+      if (typeof window !== 'undefined') {
+        const savedJobId = sessionStorage.getItem(WORKFLOW_JOB_SESSION_KEY);
+        console.log("📱 Retrieved job selection from session:", savedJobId);
+        return savedJobId;
+      }
+    } catch (error) {
+      console.warn("Failed to retrieve job selection from session storage:", error);
+    }
+    return null;
+  };
+
+  const clearJobSelectionFromSession = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(WORKFLOW_JOB_SESSION_KEY);
+        console.log("📱 Cleared job selection from session");
+      }
+    } catch (error) {
+      console.warn("Failed to clear job selection from session storage:", error);
+    }
+  };
+
   // Local state
   const [selectedJobId, setSelectedJobId] = useState<string>('');
   const [workflow, setWorkflow] = useState<JobWorkflow | null>(null);
@@ -219,6 +258,12 @@ export default function KanbanWorkflowManagement() {
     { name: 'Hired', order: 5, color: '#10b981' }
   ]);
 
+  // Enhanced job selection handler with session storage
+  const handleJobSelection = (jobId: string) => {
+    setSelectedJobId(jobId);
+    saveJobSelectionToSession(jobId);
+  };
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -231,10 +276,37 @@ export default function KanbanWorkflowManagement() {
     })
   );
 
-  // Load jobs on mount
+  // Initialize job selection from session storage on component mount
+  useEffect(() => {
+    const savedJobId = getJobSelectionFromSession();
+    if (savedJobId && !selectedJobId) {
+      console.log("📱 Pre-loading job selection from session:", savedJobId);
+      setSelectedJobId(savedJobId);
+    }
+  }, []); // Empty dependency array - runs only on mount
+
+  // Load jobs on mount and handle session restoration
   useEffect(() => {
     dispatch(fetchJobs());
   }, [dispatch]);
+
+  // Handle job restoration when jobs are loaded
+  useEffect(() => {
+    if (jobs.length > 0 && !selectedJobId) {
+      const savedJobId = getJobSelectionFromSession();
+      if (savedJobId) {
+        const jobExists = jobs.some(job => job.id === savedJobId);
+        if (jobExists) {
+          console.log("📱 Restoring job selection from session:", savedJobId);
+          setSelectedJobId(savedJobId);
+        } else {
+          console.log("📱 Saved job no longer exists, clearing session");
+          clearJobSelectionFromSession();
+        }
+      }
+      // Don't auto-select first job - let user choose for new sessions
+    }
+  }, [jobs, selectedJobId]);
 
   // Load workflow and candidates when job is selected
   useEffect(() => {
@@ -466,7 +538,7 @@ export default function KanbanWorkflowManagement() {
             <h1 className="text-sm font-medium text-foreground">Workflow Board</h1>
           </div>
           <div className="flex items-center gap-2 min-w-0 flex-shrink">
-            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+            <Select value={selectedJobId} onValueChange={handleJobSelection}>
               <SelectTrigger className="w-40 sm:w-48 md:w-60 h-8 text-sm border-border focus:border-primary focus:ring-1 focus:ring-ring bg-background">
                 <SelectValue placeholder={jobsLoading ? "Loading..." : "Select job"} />
               </SelectTrigger>
